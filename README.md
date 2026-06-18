@@ -60,9 +60,22 @@ src/
   navigateur de l'utilisateur (BYOK assumé) — acceptable ici car chacun fournit
   sa propre clé.
 
+## Rendu Markdown &amp; artifacts
+
+Les réponses sont rendues en **Markdown** (marked + DOMPurify, vendorés dans
+`vendor/`). Les blocs de code ont une barre d'outils (langage + **Copier**), et
+deux types d'**artifacts** s'affichent dans des **iframes sandboxées** (origine
+opaque, isolées de l'extension et des pages, hors CSP) :
+
+- ` ```mermaid ` → **diagramme** rendu automatiquement (mermaid v10 inliné)
+- ` ```html ` / ` ```svg ` → bouton **Aperçu** (le HTML s'exécute en sandbox isolée)
+
+La hauteur des iframes s'ajuste via `postMessage`.
+
 ## Feuille de route
 
-- [ ] Rendu Markdown des réponses
+- [x] Rendu Markdown des réponses
+- [x] Artifacts (aperçu HTML/SVG, diagrammes Mermaid)
 - [ ] Historique de conversations persistant
 - [ ] Capture d'écran d'onglet pour modèles vision
 - [ ] Publication sur AMO (addons.mozilla.org)
