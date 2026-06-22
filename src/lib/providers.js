@@ -175,7 +175,7 @@ function anthropicProvider({ apiKey, model, baseUrl, thinking, webSearch }) {
 // Generic OpenAI-compatible (OpenAI, OpenRouter, Gemini, Mistral, Groq,
 // DeepSeek, Ollama, LM Studio, self-hosted…)
 // ---------------------------------------------------------------------------
-function openaiProvider({ apiKey, model, baseUrl }) {
+function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId }) {
   const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
   const headers = { "content-type": "application/json" };
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
@@ -190,6 +190,12 @@ function openaiProvider({ apiKey, model, baseUrl }) {
     async runTurn({ system, history, tools, onText, onThink, signal }) {
       const messages = system ? [{ role: "system", content: system }, ...history] : [...history];
       const body = { model, messages, stream: true };
+      // Web search: OpenRouter exposes a universal "web" plugin that works with
+      // ANY model (including the free ones), so a fast free model can search the
+      // web. Perplexity's Sonar models are online by default (nothing to add).
+      if (webSearch && providerId === "openrouter") {
+        body.plugins = [{ id: "web", max_results: 5 }];
+      }
       if (tools && tools.length) {
         body.tools = tools.map((t) => ({
           type: "function",
@@ -291,7 +297,13 @@ export function makeProvider(settings, opts = {}) {
       webSearch: !!opts.webSearch && meta.supportsWebSearch,
     });
   }
-  return openaiProvider({ apiKey, model, baseUrl });
+  return openaiProvider({
+    apiKey,
+    model,
+    baseUrl,
+    providerId: id,
+    webSearch: !!opts.webSearch && !!meta.supportsWebSearch,
+  });
 }
 
 // OpenRouter: rich model list with vendor, display name and per-token pricing.

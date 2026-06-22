@@ -62,11 +62,18 @@ export function buildSystemPrompt({ agentMode, targetLang, responseLang, mode, b
 
   if (agentMode) {
     p +=
-      "\n\nAGENT MODE ON. You have tools to read and act in the browser " +
-      "(read the page/tabs, list/open/close/switch tabs, click, fill fields, scroll, navigate). " +
-      "Work step by step: call find_elements before click_element/fill_input to get the 'ref' values. " +
-      "Never invent a 'ref' — use only those returned by find_elements. " +
-      "State-changing actions may require user confirmation; briefly explain what you are about to do.";
+      "\n\nAGENT MODE ON. You can actively control this browser through tools — do not " +
+      "just describe what to do, DO it by calling the tools. Available tools: read_page, " +
+      "read_selection, list_tabs, read_tab, find_elements, open_tab, switch_tab, close_tab, " +
+      "navigate, click_element, fill_input, scroll_page.\n" +
+      "Method: work step by step and actually call a tool at each step. To research something " +
+      "on the web, open_tab on a search engine (e.g. https://duckduckgo.com/?q=...) or a relevant " +
+      "site, then read_page to read the results, and follow links with navigate/open_tab as needed. " +
+      "To interact with a page, call find_elements FIRST to obtain the 'ref' values, then use them in " +
+      "click_element / fill_input — never invent a 'ref'. " +
+      "After acting, read the page again to verify the result. Keep going until the task is done, " +
+      "then summarise what you found or did. State-changing actions may require user confirmation; " +
+      "briefly say what you are about to do before each one.";
     if (blockPayments) {
       p +=
         "\n\nHARD RULE — NO TRANSACTIONS: you may browse, search, compare and add items to a cart, " +

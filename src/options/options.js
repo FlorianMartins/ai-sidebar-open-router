@@ -189,6 +189,32 @@ function buildImageProvider() {
   fillSelect($("imageSize"), IMAGE_SIZES.map((s) => [s, s]), settings.imageSize || "1024x1024");
 }
 
+// Web-search model picker: "Auto" + the catalogue models of every CONNECTED
+// provider (using the curated catalogue, not the huge live OpenRouter list, to
+// keep it usable). Perplexity Sonar and OpenRouter free models are the good picks.
+function buildSearchModelSelect() {
+  const sel = $("searchModel");
+  if (!sel) return;
+  sel.innerHTML = "";
+  const auto = el("option", null, "Auto (Perplexity / modèle gratuit + web)");
+  auto.value = "";
+  sel.appendChild(auto);
+  for (const id of PROVIDER_ORDER) {
+    if (!isConnected(id, settings)) continue;
+    const meta = PROVIDERS[id];
+    if (!meta.models || !meta.models.length) continue;
+    const group = document.createElement("optgroup");
+    group.label = meta.label + (meta.supportsWebSearch ? " · web" : "");
+    for (const [mid, mlabel] of meta.models) {
+      const o = el("option", null, mlabel);
+      o.value = id + "|" + mid;
+      group.appendChild(o);
+    }
+    sel.appendChild(group);
+  }
+  sel.value = settings.searchModel || "";
+}
+
 // Fetch live model lists for connected providers, then refresh the dropdowns.
 async function refreshModelLists() {
   const ids = PROVIDER_ORDER.filter((id) => isConnected(id, settings));
@@ -212,6 +238,7 @@ async function load() {
   modelLists = { ...(settings.modelLists || {}) };
   buildProviderFields();
   buildImageProvider();
+  buildSearchModelSelect();
   fillSelect($("responseLang"), LANGUAGES.map((l) => [l, l]), settings.responseLang || "English");
   fillSelect($("improvePreset"), WRITING_PRESETS.map((p) => [p[0], p[1]]), settings.improvePreset || "improve");
   $("imageModel").value = settings.imageModel || "";
@@ -254,6 +281,7 @@ async function save() {
     targetLang: $("targetLang").value.trim() || "Français",
     thinking: $("thinking").checked,
     webSearch: $("webSearch").checked,
+    searchModel: $("searchModel").value,
     agentMode: $("agentMode").checked,
     confirmActions: $("confirmActions").checked,
     blockPayments: $("blockPayments").checked,
@@ -266,6 +294,7 @@ async function save() {
   settings = await getSettings();
   modelLists = { ...(settings.modelLists || {}) };
   buildProviderFields();
+  buildSearchModelSelect();
   refreshModelLists();
   flash($("status"), "✓ Enregistré.");
 }
@@ -326,6 +355,7 @@ browser.storage.onChanged.addListener((changes, area) => {
     modelLists = { ...(s.modelLists || {}) };
     buildProviderFields();
     buildImageProvider();
+    buildSearchModelSelect();
     refreshModelLists();
   });
 });

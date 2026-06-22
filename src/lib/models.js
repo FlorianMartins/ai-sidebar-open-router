@@ -56,6 +56,7 @@ export const PROVIDERS = {
     keysUrl: "https://openrouter.ai/keys",
     keyHint: "sk-or-...",
     canListModels: true,
+    supportsWebSearch: true, // universal "web" plugin — works with any model, incl. free ones
     models: [
       ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B — gratuit"],
       ["deepseek/deepseek-r1:free", "DeepSeek R1 — gratuit"],
@@ -144,6 +145,7 @@ export const PROVIDERS = {
     needsKey: true,
     keysUrl: "https://www.perplexity.ai/settings/api",
     keyHint: "pplx-...",
+    supportsWebSearch: true, // Sonar models are online (web-grounded) by default
     models: [
       ["sonar", "Sonar"],
       ["sonar-pro", "Sonar Pro"],
@@ -314,6 +316,19 @@ export function isConnected(providerId, settings) {
 
 export function connectedProviders(settings) {
   return PROVIDER_ORDER.filter((id) => isConnected(id, settings));
+}
+
+// Pick a sensible model for WEB SEARCH mode, so we don't spend Claude on it.
+// Prefers Perplexity Sonar (online by default), then OpenRouter (its "web" plugin
+// works with any model, including the free ones), then any other connected
+// web-capable provider. Returns "providerId|modelId" or "" if none is available.
+export function defaultSearchModel(settings) {
+  if (isConnected("perplexity", settings)) return "perplexity|" + modelFor("perplexity", settings);
+  if (isConnected("openrouter", settings)) return "openrouter|" + modelFor("openrouter", settings);
+  for (const id of connectedProviders(settings)) {
+    if (PROVIDERS[id].supportsWebSearch) return id + "|" + modelFor(id, settings);
+  }
+  return "";
 }
 
 // Writing presets for the "Improve" workspace, Sider-style. Each maps to an

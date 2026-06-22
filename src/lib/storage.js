@@ -24,7 +24,8 @@ const DEFAULTS = {
   // ----- UI / behaviour ------------------------------------------------------
   mode: "chat", // active workspace tab: chat | translate | improve | image | terminal
   thinking: false, // surface the model's reasoning (supported models only)
-  webSearch: false, // server-side web search (Anthropic)
+  webSearch: false, // web search: Anthropic native, OpenRouter "web" plugin, Perplexity Sonar
+  searchModel: "", // "providerId|modelId" used in web-search mode ("" = auto-pick a free/online model)
   agentMode: false, // allow the model to act inside the browser
   confirmActions: true, // ask before every state-changing action
   includePageContext: true, // feed the active page into the chat

@@ -40,6 +40,20 @@
       <div id="providers"></div>
 
       <section>
+        <h2>🌐 Recherche web</h2>
+        <p class="muted">
+          En mode <b>Web</b>, la requête est envoyée à un modèle capable de chercher
+          sur le web — de préférence <b>Perplexity</b> (Sonar) ou un modèle
+          <b>gratuit OpenRouter</b> (plugin web intégré), pour éviter de dépenser sur
+          Claude. Laissez <b>Auto</b> pour un choix automatique parmi vos fournisseurs
+          connectés.
+        </p>
+        <label>Modèle de recherche web
+          <select id="searchModel"></select>
+        </label>
+      </section>
+
+      <section>
         <h2>Génération d'images</h2>
         <label>Fournisseur d'images
           <select id="imageProvider"></select>

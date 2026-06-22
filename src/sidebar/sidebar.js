@@ -7,12 +7,12 @@
 // available. Comparison is done per-message (a "Comparer" button on the latest
 // answer). Conversations are kept locally for privacy.
 
-import { getSettings, setSettings, setNested, onSettingsChanged } from "../lib/storage.js";
+import { getSettings, setSettings, onSettingsChanged } from "../lib/storage.js";
 import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../lib/providers.js";
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts } from "../lib/markdown.js";
-import { PROVIDERS, modelFor, keyFor, connectedProviders, WRITING_PRESETS } from "../lib/models.js";
+import { PROVIDERS, modelFor, keyFor, connectedProviders, defaultSearchModel, WRITING_PRESETS } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
 import {
   listConversations, getConversation, saveConversation, deleteConversation,
@@ -258,14 +258,23 @@ function populateImprovePresets() {
   }
 }
 
-async function onModelChange() {
-  const sel = currentSelection();
-  if (!sel.providerId) return;
+// Apply a "providerId|modelId" choice from a picker. Provider + model are written
+// in ONE atomic storage write: two separate writes used to race the storage
+// change-listener (which fired after the first), leaving the stale model selected
+// — that was the Terminal picker "doesn't change / glitches" bug.
+async function applyModelChoice(value) {
+  const sel = parseSel(value);
+  if (!sel.providerId) return null;
   settings.provider = sel.providerId;
-  settings.models = settings.models || {};
-  settings.models[sel.providerId] = sel.modelId;
-  await setSettings({ provider: sel.providerId });
-  await setNested("models", sel.providerId, sel.modelId);
+  settings.models = { ...(settings.models || {}), [sel.providerId]: sel.modelId };
+  await setSettings({ provider: sel.providerId, models: settings.models });
+  return sel;
+}
+
+async function onModelChange() {
+  await applyModelChoice(els.modelSelect.value);
+  // Keep the Terminal picker in sync with the same choice.
+  if (els.termModel) els.termModel.value = els.modelSelect.value;
 }
 
 // One-click free onboarding: OAuth to OpenRouter (free models, no manual key).
@@ -730,14 +739,11 @@ function wire() {
   els.termInput.addEventListener("input", autoGrowTerm);
   els.termClear.addEventListener("click", termClearAll);
   els.termModel.addEventListener("change", async () => {
-    const sel = parseSel(els.termModel.value);
-    if (!sel.providerId) return;
-    settings.provider = sel.providerId;
-    settings.models = settings.models || {};
-    settings.models[sel.providerId] = sel.modelId;
-    await setSettings({ provider: sel.providerId });
-    await setNested("models", sel.providerId, sel.modelId);
-    if (els.modelSelect) els.modelSelect.value = els.termModel.value;
+    const sel = await applyModelChoice(els.termModel.value);
+    if (sel) {
+      termAppend("sys", "● Modèle : " + sel.modelId);
+      if (els.modelSelect) els.modelSelect.value = els.termModel.value;
+    }
   });
 
   els.openOptions.addEventListener("click", () => browser.runtime.openOptionsPage());
@@ -745,11 +751,17 @@ function wire() {
   if (els.emptyOptions) els.emptyOptions.addEventListener("click", () => browser.runtime.openOptionsPage());
   if (els.freeConnect) els.freeConnect.addEventListener("click", doFreeConnect);
 
-  onSettingsChanged(async () => {
+  // React only to connection/model changes. Ignoring churn from our own frequent
+  // writes (terminalSession on every terminal message, mode, selectedTabs…) avoids
+  // rebuilding the pickers mid-stream and re-fetching model lists in a loop — that
+  // feedback was what glitched the sidebar when switching the Terminal model.
+  onSettingsChanged(async (changes) => {
+    const connChanged = !!(changes.keys || changes.baseUrls || changes.localEnabled);
+    if (!connChanged && !changes.modelLists && !changes.orModels) return;
     settings = await getSettings();
     updateImageNote();
     populateModelSelector();
-    autoListConnected();
+    if (connChanged) autoListConnected();
   });
 }
 
@@ -934,13 +946,12 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     addMessage("error", "Aucune clé pour ce modèle. Cliquez « Connexion / Ajouter un fournisseur » (⚙).");
     return;
   }
-  // Remember the last-used provider + model as the default for next time.
+  // Remember the last-used provider + model as the default for next time
+  // (single atomic write — see applyModelChoice).
   if (sel.providerId && sel.modelId) {
     settings.provider = sel.providerId;
-    settings.models = settings.models || {};
-    settings.models[sel.providerId] = sel.modelId;
-    setSettings({ provider: sel.providerId });
-    setNested("models", sel.providerId, sel.modelId);
+    settings.models = { ...(settings.models || {}), [sel.providerId]: sel.modelId };
+    setSettings({ provider: sel.providerId, models: settings.models });
   }
   addMessage("user", displayText);
   transcript.push({ role: "user", text: displayText });
@@ -949,18 +960,45 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   lastForceWeb = forceWeb;
   startBusy();
 
-  history.push({ role: "user", content: modelContent });
-  const provider = makeProvider(
-    { ...settings, provider: sel.providerId, models: { ...settings.models, [sel.providerId]: sel.modelId } },
-    { thinking: els.thinking.checked, webSearch: els.webSearch.checked || forceWeb }
-  );
+  const wantWeb = els.webSearch.checked || forceWeb;
   const agentMode = els.agentMode.checked;
+
+  // Web-search routing: send the turn to a dedicated web-capable model (Perplexity
+  // Sonar, or a free OpenRouter model with the "web" plugin) instead of e.g. Claude.
+  // When that model lives on a DIFFERENT provider we run it as an isolated single
+  // turn, so two providers' native message formats never get mixed in the shared
+  // history. (Skipped in agent mode, which keeps its tools on the chosen model.)
+  let turnSel = sel;
+  let isolated = false;
+  let badge = null;
+  if (wantWeb && !agentMode) {
+    const ss = parseSel(settings.searchModel || defaultSearchModel(settings));
+    if (ss.providerId && !currentKeyMissing(ss.providerId) &&
+        (ss.providerId !== sel.providerId || ss.modelId !== sel.modelId)) {
+      turnSel = ss;
+      isolated = true;
+      const lbl = PROVIDERS[ss.providerId] ? PROVIDERS[ss.providerId].label : ss.providerId;
+      badge = "🌐 Recherche web · " + lbl + " · " + ss.modelId;
+    }
+  }
+
+  let turnHistory;
+  if (isolated) {
+    turnHistory = [{ role: "user", content: modelContent }];
+  } else {
+    history.push({ role: "user", content: modelContent });
+    turnHistory = history;
+  }
+  const provider = makeProvider(
+    { ...settings, provider: turnSel.providerId, models: { ...settings.models, [turnSel.providerId]: turnSel.modelId } },
+    { thinking: els.thinking.checked, webSearch: wantWeb }
+  );
   const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: runMode, blockPayments: settings.blockPayments });
   const tools = activeTools({ agentMode });
-  const sink = makeSink(null);
+  const sink = makeSink(badge);
   try {
     await runConversation({
-      provider, system, history, tools,
+      provider, system, history: turnHistory, tools,
       onText: sink.onText, onThink: sink.onThink,
       onToolStart: (call) => { sink.finalize(); addMessage("tool", `→ ${call.name}(${JSON.stringify(call.input).slice(0, 80)})`); },
       onToolEnd: (call, out) => addMessage("tool", out && out.blocked ? `   🛡 ${out.error}` : `   ${out && out.error ? "✗ " + out.error : "✓ ok"}`),
