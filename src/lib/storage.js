@@ -31,6 +31,7 @@ const DEFAULTS = {
   autoReadPage: true, // re-read the page on every navigation (subdomains too)
   includeSelectedTabs: false, // also feed the user-selected extra tabs
   selectedTabs: [], // tab ids the user ticked for multi-tab context
+  localEnabled: {}, // explicit opt-in for local servers { ollama:true, lmstudio:true }
   maxPageChars: 12000, // truncation budget for a single page's text
   targetLang: "Français", // preferred target language for translations
   improvePreset: "improve", // default writing preset for the "improve" mode

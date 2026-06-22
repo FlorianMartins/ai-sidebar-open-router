@@ -6,16 +6,22 @@ import { clearConversations } from "../lib/history.js";
 
 const $ = (id) => document.getElementById(id);
 
-// Providers that offer a free tier (free API key / free models).
+// Providers with a free tier (free API key / free models).
 const FREE_TIER = new Set(["google", "groq", "openrouter", "mistral", "cerebras"]);
-// Providers that support real account OAuth (the rest use an API key).
+// Providers with a real in-app account OAuth (the rest log in on the provider's
+// own site to copy an API key).
 const OAUTH = new Set(["openrouter"]);
 
 let settings;
 let modelLists = {};
 
-// Build the list of model options for a provider's default-model dropdown:
-// live-fetched models when available (current models only), else the catalogue.
+function category(id) {
+  const meta = PROVIDERS[id];
+  if (meta.local) return "local";
+  if (meta.custom) return "custom";
+  return "cloud";
+}
+
 function modelOptionsFor(id) {
   const fetched = modelLists[id] || [];
   const labels = new Map(PROVIDERS[id].models);
@@ -42,98 +48,109 @@ function fillModelSelect(sel, id) {
   sel.value = chosen;
 }
 
-// One card per provider: connection status, account/key, and a default-model menu.
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function buildCard(id) {
+  const meta = PROVIDERS[id];
+  const sec = el("section", "provider-card");
+
+  const head = el("div", "provider-head");
+  head.appendChild(el("h3", null, meta.label + (meta.local ? "  (local)" : "")));
+  const connected = isConnected(id, settings);
+  head.appendChild(el("span", "badge " + (connected ? "ok" : "off"), connected ? "✅ Connecté" : "○ Non connecté"));
+  if (FREE_TIER.has(id)) head.appendChild(el("span", "badge free", "gratuit dispo"));
+  sec.appendChild(head);
+
+  // Connect affordance on EVERY cloud provider.
+  if (category(id) === "cloud") {
+    const btn = el("button", "grad small connect", OAUTH.has(id) ? "🔐 Se connecter avec mon compte" : "🔐 Se connecter à mon compte " + meta.label);
+    btn.addEventListener("click", () => connectAccount(id));
+    sec.appendChild(btn);
+    sec.appendChild(el("p", "muted hint", OAUTH.has(id)
+      ? "Compte (Google / GitHub / email) → débloque tous les modèles, y compris gratuits."
+      : "Ouvre le site du fournisseur : connectez-vous à VOTRE compte, créez une clé API, puis collez-la ci-dessous."));
+  }
+
+  // Local server: explicit opt-in.
+  if (meta.local) {
+    const lab = el("label", "switch");
+    const inp = el("input");
+    inp.type = "checkbox";
+    inp.id = `local_${id}`;
+    inp.checked = !!(settings.localEnabled && settings.localEnabled[id]);
+    lab.appendChild(inp);
+    lab.appendChild(el("span", "track"));
+    lab.appendChild(el("span", "lbl", "Activer ce serveur local (lancé sur ma machine)"));
+    sec.appendChild(lab);
+  }
+
+  // API key.
+  if (meta.needsKey || id === "custom") {
+    const lab = el("label", null, meta.needsKey ? "Clé API" : "Clé API (optionnelle)");
+    const inp = el("input");
+    inp.type = "password";
+    inp.id = `key_${id}`;
+    inp.placeholder = meta.keyHint || "clé…";
+    inp.value = (settings.keys && settings.keys[id]) || "";
+    lab.appendChild(inp);
+    sec.appendChild(lab);
+    if (meta.keysUrl) {
+      const p = el("p", "muted");
+      const tag = FREE_TIER.has(id) ? "Obtenir une clé (offre gratuite) : " : "Console du fournisseur : ";
+      p.innerHTML = `${tag}<a href="${meta.keysUrl}" target="_blank" rel="noreferrer">${meta.keysUrl.replace(/^https?:\/\//, "")}</a>`;
+      sec.appendChild(p);
+    }
+  }
+
+  // Base URL (local / custom).
+  if (meta.local || meta.custom) {
+    const lab = el("label", null, "URL de base");
+    const inp = el("input");
+    inp.type = "text";
+    inp.id = `url_${id}`;
+    inp.placeholder = meta.baseUrl || "https://votre-serveur/v1";
+    inp.value = (settings.baseUrls && settings.baseUrls[id]) || "";
+    lab.appendChild(inp);
+    sec.appendChild(lab);
+  }
+
+  // Default model — dropdown of currently available models.
+  const lab = el("label", null, "Modèle par défaut");
+  const sel = el("select");
+  sel.id = `model_${id}`;
+  lab.appendChild(sel);
+  sec.appendChild(lab);
+  fillModelSelect(sel, id);
+
+  return sec;
+}
+
+const GROUP_TITLES = { cloud: "Fournisseurs (compte / clé API)", local: "Modèles locaux", custom: "Serveur personnalisé" };
+
 function buildProviderFields() {
   const root = $("providers");
   root.innerHTML = "";
+  let lastCat = null;
   for (const id of PROVIDER_ORDER) {
-    const meta = PROVIDERS[id];
-    const sec = document.createElement("section");
-    sec.className = "provider-card";
-
-    const head = document.createElement("div");
-    head.className = "provider-head";
-    const h = document.createElement("h3");
-    h.textContent = meta.label + (meta.local ? "  (local, sans clé)" : "");
-    head.appendChild(h);
-    const badge = document.createElement("span");
-    const connected = isConnected(id, settings);
-    badge.className = "badge " + (connected ? "ok" : "off");
-    badge.textContent = connected ? "✅ Connecté" : "○ Non connecté";
-    head.appendChild(badge);
-    if (FREE_TIER.has(id)) {
-      const free = document.createElement("span");
-      free.className = "badge free";
-      free.textContent = "gratuit dispo";
-      head.appendChild(free);
+    const cat = category(id);
+    if (cat !== lastCat) {
+      root.appendChild(el("h2", "group-title", GROUP_TITLES[cat]));
+      lastCat = cat;
     }
-    sec.appendChild(head);
-
-    // Account OAuth (only providers that support it).
-    if (OAUTH.has(id)) {
-      const btn = document.createElement("button");
-      btn.className = "grad small";
-      btn.textContent = "Se connecter avec mon compte";
-      btn.addEventListener("click", () => connect(id));
-      sec.appendChild(btn);
-      const p = document.createElement("p");
-      p.className = "muted";
-      p.textContent = "Connexion par compte (Google / GitHub / email) — débloque tous les modèles, y compris gratuits.";
-      sec.appendChild(p);
-    }
-
-    // API key.
-    if (meta.needsKey || id === "custom") {
-      const lab = document.createElement("label");
-      lab.textContent = meta.needsKey ? "Clé API" : "Clé API (optionnelle)";
-      const inp = document.createElement("input");
-      inp.type = "password";
-      inp.id = `key_${id}`;
-      inp.placeholder = meta.keyHint || "clé…";
-      inp.value = (settings.keys && settings.keys[id]) || "";
-      lab.appendChild(inp);
-      sec.appendChild(lab);
-      if (meta.keysUrl) {
-        const p = document.createElement("p");
-        p.className = "muted";
-        const tag = FREE_TIER.has(id) ? "Obtenir une clé (offre gratuite) : " : "Obtenir une clé : ";
-        p.innerHTML = `${tag}<a href="${meta.keysUrl}" target="_blank" rel="noreferrer">${meta.keysUrl.replace(/^https?:\/\//, "")}</a>`;
-        sec.appendChild(p);
-      }
-    }
-
-    // Base URL (local / custom).
-    if (meta.local || meta.custom) {
-      const lab = document.createElement("label");
-      lab.textContent = "URL de base";
-      const inp = document.createElement("input");
-      inp.type = "text";
-      inp.id = `url_${id}`;
-      inp.placeholder = meta.baseUrl || "https://votre-serveur/v1";
-      inp.value = (settings.baseUrls && settings.baseUrls[id]) || "";
-      lab.appendChild(inp);
-      sec.appendChild(lab);
-    }
-
-    // Default model — dropdown of currently available models.
-    const lab = document.createElement("label");
-    lab.textContent = "Modèle par défaut";
-    const sel = document.createElement("select");
-    sel.id = `model_${id}`;
-    lab.appendChild(sel);
-    sec.appendChild(lab);
-    fillModelSelect(sel, id);
-
-    root.appendChild(sec);
+    root.appendChild(buildCard(id));
   }
 }
 
 function fillSelect(sel, items, value) {
   sel.innerHTML = "";
   for (const [val, label] of items) {
-    const o = document.createElement("option");
+    const o = el("option", null, label);
     o.value = val;
-    o.textContent = label;
     sel.appendChild(o);
   }
   if (value != null) sel.value = value;
@@ -145,8 +162,7 @@ function buildImageProvider() {
   fillSelect($("imageSize"), IMAGE_SIZES.map((s) => [s, s]), settings.imageSize || "1024x1024");
 }
 
-// Fetch the live model list for every connected provider, then refresh the
-// default-model dropdowns so they show only currently available models.
+// Fetch live model lists for connected providers, then refresh the dropdowns.
 async function refreshModelLists() {
   const ids = PROVIDER_ORDER.filter((id) => isConnected(id, settings));
   await Promise.allSettled(
@@ -161,7 +177,6 @@ async function refreshModelLists() {
     const sel = $(`model_${id}`);
     if (sel) fillModelSelect(sel, id);
   }
-  // Persist so the sidebar shows the same fresh lists.
   await setSettings({ modelLists: { ...(settings.modelLists || {}), ...modelLists } });
 }
 
@@ -183,13 +198,14 @@ async function load() {
   $("includePageContext").checked = settings.includePageContext;
   $("autoReadPage").checked = settings.autoReadPage;
   $("maxPageChars").value = settings.maxPageChars;
-  refreshModelLists(); // background: fill dropdowns with live models
+  refreshModelLists();
 }
 
 async function save() {
   const keys = {};
   const baseUrls = {};
   const models = {};
+  const localEnabled = {};
   for (const id of PROVIDER_ORDER) {
     const k = $(`key_${id}`);
     if (k && k.value.trim()) keys[id] = k.value.trim();
@@ -197,9 +213,11 @@ async function save() {
     if (u && u.value.trim()) baseUrls[id] = u.value.trim();
     const m = $(`model_${id}`);
     if (m && m.value) models[id] = m.value;
+    const lc = $(`local_${id}`);
+    if (lc && lc.checked) localEnabled[id] = true;
   }
   await setSettings({
-    keys, baseUrls, models,
+    keys, baseUrls, models, localEnabled,
     imageProvider: $("imageProvider").value,
     imageModel: $("imageModel").value.trim() || "gpt-image-1",
     imageSize: $("imageSize").value,
@@ -217,37 +235,46 @@ async function save() {
     maxPageChars: parseInt($("maxPageChars").value, 10) || 12000,
   });
   settings = await getSettings();
-  buildProviderFields(); // refresh statuses
+  modelLists = { ...(settings.modelLists || {}) };
+  buildProviderFields();
   refreshModelLists();
   flash($("status"), "✓ Enregistré.");
 }
 
 function flash(node, text) {
   node.textContent = text;
-  setTimeout(() => (node.textContent = ""), 2000);
+  setTimeout(() => (node.textContent = ""), 2500);
 }
 
-// OAuth account connection (currently OpenRouter).
-async function connect(id) {
+// "Connect": OpenRouter via in-app OAuth; other providers open their own console
+// (the user logs in with their account there, creates a key, and pastes it).
+async function connectAccount(id) {
   const status = $("connectStatus");
-  status.textContent = "Connexion…";
-  try {
-    if (id === "openrouter") {
+  if (OAUTH.has(id)) {
+    status.textContent = "Connexion…";
+    try {
       const key = await connectOpenRouter();
       const cur = await getSettings();
       cur.keys = cur.keys || {};
-      cur.keys.openrouter = key;
-      await setSettings({ keys: cur.keys, provider: "openrouter" });
+      cur.keys[id] = key;
+      await setSettings({ keys: cur.keys, provider: id });
+      await load();
+      flash(status, "✓ Connecté à " + PROVIDERS[id].label + ".");
+    } catch (e) {
+      flash(status, "Échec : " + (e && e.message ? e.message : e));
     }
-    await load();
-    flash(status, "✓ Connecté.");
-  } catch (e) {
-    flash(status, "Échec : " + (e && e.message ? e.message : e));
+    return;
   }
+  // Non-OAuth: open the provider's account/console, then focus the key field.
+  const meta = PROVIDERS[id];
+  if (meta.keysUrl) window.open(meta.keysUrl, "_blank", "noopener");
+  const f = $(`key_${id}`);
+  if (f) { f.focus(); f.scrollIntoView({ block: "center" }); }
+  flash(status, "Connectez-vous à " + meta.label + ", copiez votre clé, puis collez-la.");
 }
 
 $("save").addEventListener("click", save);
-$("connectBtn").addEventListener("click", () => connect("openrouter"));
+$("connectBtn").addEventListener("click", () => connectAccount("openrouter"));
 $("clearHistoryBtn").addEventListener("click", async () => {
   await clearConversations();
   flash($("status"), "✓ Historique effacé.");

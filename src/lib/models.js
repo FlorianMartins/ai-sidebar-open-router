@@ -298,7 +298,14 @@ export function keyFor(providerId, settings) {
 export function isConnected(providerId, settings) {
   const meta = PROVIDERS[providerId];
   if (!meta) return false;
-  if (meta.local) return true; // local servers are always offered (may be off)
+  // Local servers require an explicit opt-in (enabled in settings or a custom URL),
+  // so a brand-new install shows no default models — only a "connect" button.
+  if (meta.local) {
+    return !!(
+      (settings && settings.localEnabled && settings.localEnabled[providerId]) ||
+      (settings && settings.baseUrls && settings.baseUrls[providerId])
+    );
+  }
   if (meta.custom) return !!(settings && settings.baseUrls && settings.baseUrls[providerId]);
   return !!keyFor(providerId, settings);
 }

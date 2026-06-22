@@ -62,4 +62,17 @@ button.ghost:hover { border-color: var(--accent); }
 .badge.ok { color: #7ee787; border-color: #2ea04366; background: #13351f; }
 .badge.off { color: var(--muted); }
 .badge.free { color: #c4b5fd; border-color: #8b5cf666; background: #1e1b33; }
-button.small { padding: 6px 12px; font-size: 13px; }
+button.small { padding: 7px 12px; font-size: 13px; }
+button.connect { width: 100%; margin: 6px 0 2px; }
+
+/* Group titles + denser, more legible provider cards */
+.group-title {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--accent); margin: 28px 0 8px; padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+}
+.provider-card { padding: 16px 18px; margin: 12px 0; }
+.provider-card label { margin: 10px 0 0; }
+.hint { margin: 4px 0 2px; font-size: 12.5px; }
+h1 { margin-bottom: 4px; }
+section > .muted:first-of-type { margin-top: 0; }

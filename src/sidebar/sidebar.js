@@ -170,8 +170,9 @@ function currentSelection() {
 }
 
 function syncToggleVisibility() {
-  const meta = PROVIDERS[currentSelection().providerId] || {};
-  els.webSearch.closest(".switch").style.display = meta.supportsWebSearch ? "" : "none";
+  // Keep the Web toggle always visible (it drives real web search on Claude and the
+  // "research" quick action everywhere). Never hide it based on the provider.
+  els.webSearch.closest(".switch").style.display = "";
 }
 function updateImageNote() {
   const meta = PROVIDERS[settings.imageProvider || "openai"];
