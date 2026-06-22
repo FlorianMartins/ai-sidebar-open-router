@@ -28,8 +28,10 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
 - 🕘 **Historique local** : vos conversations sont enregistrées **uniquement dans
   ce navigateur** (privacy) ; liste, rechargement, et « tout effacer ».
 - 🗂 **Modes dédiés** (onglets façon Sider) : **💬 Chat**, **🌐 Traduire**,
-  **✨ Améliorer**, **🎨 Image**. Le mode Améliorer propose des **styles d'écriture**
-  (Marketing, Newsletter, Email pro, Post LinkedIn, Tweet, Blog, Académique…).
+  **✨ Améliorer**, **🎨 Image**, **⌨ Terminal**. Le mode Améliorer propose des
+  **styles d'écriture** (Marketing, Newsletter, Email pro, LinkedIn, Tweet, Blog…),
+  et le mode **Terminal** est un assistant dev (look terminal, code & commandes,
+  artifacts exécutables) — il **n'exécute pas** de commandes sur votre machine.
 - 👁 **L'IA voit la page** : le contenu est lu automatiquement à l'ouverture d'un
   site **et à chaque navigation** (y compris changement de sous-domaine et
   navigations SPA), puis utilisé comme support pour répondre.
@@ -51,12 +53,13 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
 
 ## Capture
 
-Sidebar V1.2 — thème sombre + dégradé bleu/violet, **sélecteur de modèle placé
-juste au-dessus du chat**, boutons à bascule, **bouton « Comparer » sous la dernière
-réponse**, et un **artifact interactif jouable** (un mini-jeu qui tourne dans
-l'aperçu sandboxé) — Firefox 152 :
+Sidebar — thème sombre + dégradé bleu/violet, **5 modes** (Chat / Traduire /
+Améliorer / Image / Terminal), sélecteur de modèle juste au-dessus du chat,
+boutons à bascule, **bouton « Comparer » sous la dernière réponse**, et un
+**artifact interactif jouable** (un mini-jeu qui tourne dans l'aperçu sandboxé) —
+Firefox 152 :
 
-![Sidebar V1.2](docs/screenshots/sidebar-v12.png)
+![Sidebar](docs/screenshots/sidebar-v14.png)
 
 > Capture générée via la page `demo/index.html` (reproduit la sidebar avec une
 > réponse type), rendue dans Firefox sous Xvfb. Validé par `web-ext lint`

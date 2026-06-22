@@ -38,6 +38,13 @@ export function buildSystemPrompt({ agentMode, targetLang, mode, blockPayments }
     p += "\n\nTRANSLATE MODE: output only the translation, preserving formatting, tone and meaning. No commentary.";
   } else if (mode === "improve") {
     p += "\n\nIMPROVE MODE: rewrite the user's text for clarity, style and correctness while keeping its original language and intent. Return only the rewritten text.";
+  } else if (mode === "terminal") {
+    p +=
+      "\n\nTERMINAL / DEV MODE: behave like an expert software engineer in a terminal-style assistant. " +
+      "Be concise and technical, skip pleasantries. Prefer concrete code and shell commands in fenced " +
+      "blocks (```bash, ```js, ```python, ```diff…). When asked for a runnable app, tool or game, return a " +
+      "complete self-contained ```html artifact the user can run directly. Note: you cannot execute commands " +
+      "on the user's machine — provide the exact commands to run instead.";
   }
 
   if (agentMode) {

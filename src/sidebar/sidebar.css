@@ -104,13 +104,14 @@ button { cursor: pointer; }
 
 /* ----- Workspace mode tabs (segmented) ----- */
 .modebar {
-  display: flex; gap: 3px; padding: 7px 8px; overflow: hidden;
+  display: flex; gap: 3px; padding: 7px 8px; overflow-x: auto;
   background: var(--panel); border-bottom: 1px solid var(--border-soft);
 }
+.modebar::-webkit-scrollbar { height: 0; }
 .mode {
-  flex: 1 1 0; min-width: 0; padding: 7px 2px; font-size: 12px; font-weight: 600;
+  flex: 0 0 auto; padding: 7px 11px; font-size: 12px; font-weight: 600;
   border: 1px solid transparent; border-radius: 9px; background: transparent;
-  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: 0.15s;
+  color: var(--muted); white-space: nowrap; transition: 0.15s;
 }
 .mode:hover { color: var(--text); background: var(--panel-2); }
 .mode.active {
@@ -265,6 +266,17 @@ button { cursor: pointer; }
 
 /* ----- Generated image ----- */
 .gen-image { max-width: 100%; border-radius: 10px; display: block; margin: 4px 0; }
+
+/* ----- Terminal / dev mode look ----- */
+body.mode-terminal .messages { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+body.mode-terminal .msg.user,
+body.mode-terminal .msg.assistant { align-self: stretch; max-width: 100%; }
+body.mode-terminal .msg.user {
+  background: #0c0e14; color: #cdd3e1; border: 1px solid var(--border); border-radius: 8px;
+}
+body.mode-terminal .msg.user::before { content: "$ "; color: #7ee787; font-weight: 700; }
+body.mode-terminal .msg.assistant { background: #0c0e14; border-color: #1c2233; }
+body.mode-terminal .composer textarea { font-family: ui-monospace, monospace; }
 
 /* ----- Per-message compare bar (on the latest answer) ----- */
 .msg-actions {

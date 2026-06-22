@@ -78,6 +78,7 @@ const PLACEHOLDERS = {
   translate: "Texte à traduire (ou laissez vide pour la page)…",
   improve: "Texte à améliorer (ou laissez vide pour la sélection)…",
   image: "Décrivez l'image à générer…",
+  terminal: "Demandez du code, une commande, un script…",
 };
 
 async function init() {
@@ -219,10 +220,12 @@ function setMode(next) {
   settings.mode = next;
   setSettings({ mode: next });
   els.modebar.querySelectorAll(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === next));
-  els.chatControls.classList.toggle("hidden", next !== "chat");
+  // Chat-style toggles are also useful in the terminal/dev mode.
+  els.chatControls.classList.toggle("hidden", !(next === "chat" || next === "terminal"));
   els.translateControls.classList.toggle("hidden", next !== "translate");
   els.improveControls.classList.toggle("hidden", next !== "improve");
   els.imageControls.classList.toggle("hidden", next !== "image");
+  document.body.classList.toggle("mode-terminal", next === "terminal");
   els.input.placeholder = PLACEHOLDERS[next] || PLACEHOLDERS.chat;
 }
 
@@ -700,7 +703,16 @@ async function onSend() {
   if (mode === "translate") return runTranslateFromInput();
   if (mode === "improve") return runImproveFromInput();
   if (mode === "image") return runImageFromInput();
+  if (mode === "terminal") return onTerminalSend();
   return onChatSend();
+}
+
+// Terminal/dev mode: send the raw prompt with the dev persona, no page injection.
+async function onTerminalSend() {
+  const text = els.input.value.trim();
+  if (!text) return;
+  els.input.value = "";
+  await sendToModel(text, text, { runMode: "terminal" });
 }
 async function onChatSend() {
   const text = els.input.value.trim();
