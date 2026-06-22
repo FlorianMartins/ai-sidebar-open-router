@@ -64,10 +64,20 @@ button { cursor: pointer; }
 
 /* ----- Unified model bar ----- */
 .modelbar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: 7px;
   padding: 8px 10px 9px; background: var(--panel);
 }
+.modelrow { display: flex; align-items: center; gap: 8px; }
 .modelbar #modelConnect { flex: 1 1 auto; }
+/* Segmented source switch: API (key) vs Compte (provider website) */
+.srcseg { display: flex; gap: 3px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 2px; }
+.srcseg .seg {
+  flex: 1 1 0; padding: 5px 8px; font-size: 11.5px; font-weight: 600;
+  border: 0; border-radius: 7px; background: transparent; color: var(--muted);
+  white-space: nowrap; cursor: pointer; transition: 0.15s;
+}
+.srcseg .seg:hover { color: var(--text); }
+.srcseg .seg.active { background: var(--grad); color: #fff; }
 .vs { color: var(--accent); font-weight: 700; font-size: 12px; }
 .select-wrap {
   flex: 1 1 140px; min-width: 0; position: relative; border-radius: var(--radius-sm);
