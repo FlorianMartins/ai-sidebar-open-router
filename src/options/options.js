@@ -12,22 +12,24 @@ const FREE_TIER = new Set(["google", "groq", "openrouter", "mistral", "cerebras"
 // own site to copy an API key).
 const OAUTH = new Set(["openrouter"]);
 
-// Direct sign-in (authentication) page for each provider, so "Se connecter"
-// opens the account login — not the raw API-keys page.
+// Sign-in / console page for each provider. We use the provider's CONSOLE (which
+// redirects to its login when the user isn't authenticated) rather than raw auth
+// endpoints like auth.openai.com — those reject direct access ("session ended").
+// After signing in with their account, the user creates an API key there.
 const LOGIN_URL = {
-  anthropic: "https://console.anthropic.com/login",
-  openai: "https://auth.openai.com/log-in",
-  google: "https://aistudio.google.com/",
-  mistral: "https://console.mistral.ai/",
-  groq: "https://console.groq.com/login",
-  deepseek: "https://platform.deepseek.com/sign_in",
-  xai: "https://accounts.x.ai/sign-in",
+  anthropic: "https://console.anthropic.com/",
+  openai: "https://platform.openai.com/api-keys",
+  google: "https://aistudio.google.com/app/apikey",
+  mistral: "https://console.mistral.ai/api-keys",
+  groq: "https://console.groq.com/keys",
+  deepseek: "https://platform.deepseek.com/api_keys",
+  xai: "https://console.x.ai/",
   perplexity: "https://www.perplexity.ai/settings/api",
-  together: "https://api.together.ai/signin",
-  fireworks: "https://fireworks.ai/login",
-  deepinfra: "https://deepinfra.com/login",
+  together: "https://api.together.ai/settings/api-keys",
+  fireworks: "https://fireworks.ai/",
+  deepinfra: "https://deepinfra.com/dash/api_keys",
   cerebras: "https://cloud.cerebras.ai/",
-  cohere: "https://dashboard.cohere.com/welcome/login",
+  cohere: "https://dashboard.cohere.com/api-keys",
 };
 
 let settings;
