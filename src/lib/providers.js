@@ -294,6 +294,23 @@ export function makeProvider(settings, opts = {}) {
   return openaiProvider({ apiKey, model, baseUrl });
 }
 
+// OpenRouter: rich model list with vendor, display name and per-token pricing.
+// Used to build the hierarchical menu (OpenRouter › vendor › model + cost).
+export async function listOpenRouterRich(settings) {
+  const baseUrl = baseUrlFor("openrouter", settings);
+  const apiKey = keyFor("openrouter", settings);
+  const headers = apiKey ? { authorization: `Bearer ${apiKey}` } : {};
+  const res = await fetch(baseUrl.replace(/\/$/, "") + "/models", { headers });
+  await ensureOk(res);
+  const json = await res.json();
+  return (json.data || []).map((m) => ({
+    id: m.id,
+    name: m.name || m.id,
+    prompt: parseFloat((m.pricing && m.pricing.prompt) || "0"),
+    completion: parseFloat((m.pricing && m.pricing.completion) || "0"),
+  }));
+}
+
 // -------- Dynamic model listing (OpenAI /models format) ---------------------
 export async function listModels(providerId, settings) {
   const meta = PROVIDERS[providerId];

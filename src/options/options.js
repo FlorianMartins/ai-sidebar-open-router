@@ -6,6 +6,13 @@ import { clearConversations } from "../lib/history.js";
 
 const $ = (id) => document.getElementById(id);
 
+// Most-spoken languages for the AI response language (English first / default).
+const LANGUAGES = [
+  "English", "中文 (Chinese)", "हिन्दी (Hindi)", "Español", "Français", "العربية (Arabic)",
+  "বাংলা (Bengali)", "Português", "Русский (Russian)", "Bahasa Indonesia", "Deutsch",
+  "日本語 (Japanese)", "Türkçe", "한국어 (Korean)", "Italiano", "Tiếng Việt", "Nederlands", "Polski",
+];
+
 // Providers with a free tier (free API key / free models).
 const FREE_TIER = new Set(["google", "groq", "openrouter", "mistral", "cerebras"]);
 // Providers with a real in-app account OAuth (the rest log in on the provider's
@@ -205,6 +212,7 @@ async function load() {
   modelLists = { ...(settings.modelLists || {}) };
   buildProviderFields();
   buildImageProvider();
+  fillSelect($("responseLang"), LANGUAGES.map((l) => [l, l]), settings.responseLang || "English");
   fillSelect($("improvePreset"), WRITING_PRESETS.map((p) => [p[0], p[1]]), settings.improvePreset || "improve");
   $("imageModel").value = settings.imageModel || "";
   $("targetLang").value = settings.targetLang || "Français";
@@ -242,6 +250,7 @@ async function save() {
     imageModel: $("imageModel").value.trim() || "gpt-image-1",
     imageSize: $("imageSize").value,
     improvePreset: $("improvePreset").value,
+    responseLang: $("responseLang").value,
     targetLang: $("targetLang").value.trim() || "Français",
     thinking: $("thinking").checked,
     webSearch: $("webSearch").checked,

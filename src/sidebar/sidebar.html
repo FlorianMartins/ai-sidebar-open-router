@@ -55,20 +55,25 @@
     <main id="messages" class="messages">
       <div class="empty" id="empty">
         <div class="empty-logo"><img src="../../icons/icon.svg" alt="" /></div>
-        <p class="empty-title">Sidebar IA — branchez votre IA</p>
-        <p class="muted">
-          Le plus simple et <b>gratuit</b> : connectez-vous à <b>OpenRouter</b>
-          (compte Google / GitHub / email) — accès à des <b>modèles gratuits</b>
-          (Llama, Gemini, DeepSeek…) sans gérer de clé.
-        </p>
-        <div class="empty-actions">
-          <button id="freeConnect" class="btn-grad">🎁 Se connecter (OpenRouter — gratuit)</button>
-          <button id="emptyOptions" class="btn-ghost">⚙ Autres fournisseurs / clé API</button>
+        <!-- Shown when no provider is connected (onboarding) -->
+        <div id="emptyOnboard">
+          <p class="empty-title">Sidebar IA — branchez votre IA</p>
+          <p class="muted">
+            Le plus simple et <b>gratuit</b> : connectez-vous à <b>OpenRouter</b>
+            (compte Google / GitHub / email) — accès à des <b>modèles gratuits</b>
+            (Llama, Gemini, DeepSeek…) sans gérer de clé.
+          </p>
+          <div class="empty-actions">
+            <button id="freeConnect" class="btn-grad">🎁 Se connecter (OpenRouter — gratuit)</button>
+            <button id="emptyOptions" class="btn-ghost">⚙ Autres fournisseurs / clé API</button>
+          </div>
+          <p class="muted" style="font-size:11.5px">
+            Ou : Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek… (clé API, souvent
+            gratuite) ou un modèle <b>local</b> (Ollama / LM Studio).
+          </p>
         </div>
-        <p class="muted" style="font-size:11.5px">
-          Ou : Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek… (clé API, souvent
-          gratuite) ou un modèle <b>local</b> (Ollama / LM Studio).
-        </p>
+        <!-- Shown when a provider IS connected (friendly greeting) -->
+        <p id="emptyGreeting" class="empty-title hidden">Comment puis-je vous aider ?</p>
       </div>
     </main>
 

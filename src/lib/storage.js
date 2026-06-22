@@ -34,6 +34,7 @@ const DEFAULTS = {
   localEnabled: {}, // explicit opt-in for local servers { ollama:true, lmstudio:true }
   maxPageChars: 12000, // truncation budget for a single page's text
   targetLang: "Français", // preferred target language for translations
+  responseLang: "English", // language the AI replies in (default: English)
   improvePreset: "improve", // default writing preset for the "improve" mode
 
   // ----- Compare & history ---------------------------------------------------

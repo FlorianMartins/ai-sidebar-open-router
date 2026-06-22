@@ -8,7 +8,7 @@
 // answer). Conversations are kept locally for privacy.
 
 import { getSettings, setSettings, setNested, onSettingsChanged } from "../lib/storage.js";
-import { makeProvider, listModels, generateImage } from "../lib/providers.js";
+import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../lib/providers.js";
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts } from "../lib/markdown.js";
@@ -42,6 +42,8 @@ const els = {
   useTabs: $("useTabs"),
   messages: $("messages"),
   empty: $("empty"),
+  emptyOnboard: $("emptyOnboard"),
+  emptyGreeting: $("emptyGreeting"),
   input: $("input"),
   send: $("send"),
   stop: $("stop"),
@@ -133,6 +135,40 @@ function modelsOf(providerId) {
 
 // Fill the model <select> with your connected API providers' models (grouped),
 // preceded by a neutral placeholder. (API mode only — sites have no model menu.)
+function prettifyVendor(v) {
+  return (v || "").split(/[-_]/).map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" ");
+}
+function prettifyORName(m) {
+  // OpenRouter "name" is usually "Vendor: Model Name" -> keep the model part.
+  if (m.name && m.name.includes(": ")) return m.name.split(": ").slice(1).join(": ");
+  return prettifyVendor(m.id.split("/")[1] || m.id);
+}
+function orCost(m) {
+  if (!m.prompt && !m.completion) return "gratuit";
+  const inM = m.prompt * 1e6; // price per 1M prompt tokens
+  return "$" + (inM >= 1 ? inM.toFixed(2) : inM.toFixed(3)) + "/M";
+}
+
+// OpenRouter hierarchy: one optgroup per vendor (OpenRouter › vendor › model+cost).
+function fillOpenRouterGroups(sel) {
+  const byVendor = {};
+  for (const m of settings.orModels) {
+    const vendor = (m.id.split("/")[0] || "autres");
+    (byVendor[vendor] = byVendor[vendor] || []).push(m);
+  }
+  for (const vendor of Object.keys(byVendor).sort()) {
+    const group = document.createElement("optgroup");
+    group.label = "OpenRouter · " + prettifyVendor(vendor);
+    for (const m of byVendor[vendor].sort((a, b) => prettifyORName(a).localeCompare(prettifyORName(b)))) {
+      const o = document.createElement("option");
+      o.value = "openrouter|" + m.id;
+      o.textContent = prettifyORName(m) + " — " + orCost(m);
+      group.appendChild(o);
+    }
+    sel.appendChild(group);
+  }
+}
+
 function fillModelSelect(sel, selectedValue) {
   sel.innerHTML = "";
   const ph = document.createElement("option");
@@ -140,6 +176,10 @@ function fillModelSelect(sel, selectedValue) {
   ph.textContent = "— Choisir un modèle —";
   sel.appendChild(ph);
   for (const pid of providersToShow()) {
+    if (pid === "openrouter" && settings.orModels && settings.orModels.length) {
+      fillOpenRouterGroups(sel);
+      continue;
+    }
     const group = document.createElement("optgroup");
     const noKey = !(keyFor(pid, settings) || PROVIDERS[pid].local);
     group.label = PROVIDERS[pid].label + (noKey ? " (clé manquante)" : "");
@@ -165,6 +205,20 @@ function populateModelSelector() {
     val = pid + "|" + modelFor(pid, settings);
   }
   fillModelSelect(els.modelSelect, val);
+  updateEmptyState();
+}
+
+// Empty-screen content: onboarding when no provider is connected, a friendly
+// greeting ("Comment puis-je vous aider ?") once one is — terminal-flavoured in
+// the Terminal tab.
+function updateEmptyState() {
+  const connected = connectedProviders(settings).length > 0;
+  els.emptyOnboard.classList.toggle("hidden", connected);
+  els.emptyGreeting.classList.toggle("hidden", !connected);
+  if (connected) {
+    els.emptyGreeting.textContent =
+      mode === "terminal" ? "⌨ Terminal prêt — décrivez une tâche de code." : "Comment puis-je vous aider ?";
+  }
 }
 
 function parseSel(value) {
@@ -228,6 +282,8 @@ async function doFreeConnect() {
 }
 
 // Best-effort: fetch the real available model list for every connected provider.
+// OpenRouter gets a richer fetch (vendor + display name + pricing) for the
+// hierarchical menu.
 async function autoListConnected() {
   const ids = connectedProviders(settings);
   if (!ids.length) return;
@@ -235,12 +291,20 @@ async function autoListConnected() {
   await Promise.allSettled(
     ids.map(async (pid) => {
       try {
-        const list = await listModels(pid, settings);
-        if (list && list.length) settings.modelLists[pid] = list;
+        if (pid === "openrouter") {
+          const rich = await listOpenRouterRich(settings);
+          if (rich && rich.length) {
+            settings.orModels = rich;
+            settings.modelLists[pid] = rich.map((m) => m.id);
+          }
+        } else {
+          const list = await listModels(pid, settings);
+          if (list && list.length) settings.modelLists[pid] = list;
+        }
       } catch (_) {}
     })
   );
-  await setSettings({ modelLists: settings.modelLists });
+  await setSettings({ modelLists: settings.modelLists, orModels: settings.orModels || [] });
   populateModelSelector();
 }
 
@@ -266,6 +330,7 @@ function setMode(next) {
   els.imageControls.classList.toggle("hidden", next !== "image");
   document.body.classList.toggle("mode-terminal", next === "terminal");
   els.input.placeholder = PLACEHOLDERS[next] || PLACEHOLDERS.chat;
+  updateEmptyState();
 }
 
 // ----- Page awareness -------------------------------------------------------
@@ -380,6 +445,8 @@ async function renderHistoryList() {
     del.addEventListener("click", async (e) => {
       e.stopPropagation();
       await deleteConversation(c.id);
+      // If the deleted conversation is the one open, switch to a fresh new chat.
+      if (c.id === convId) startFreshChat();
       renderHistoryList();
     });
     li.addEventListener("click", () => loadConversation(c.id));
@@ -426,14 +493,19 @@ async function loadConversation(id) {
 function clearMessages() {
   els.messages.querySelectorAll(".msg, .think").forEach((n) => n.remove());
 }
-async function newChat() {
-  await saveCurrent();
+// Reset the view to a brand-new empty conversation (no saving).
+function startFreshChat() {
   history = [];
   transcript = [];
   convId = newConversationId();
   lastUserContent = "";
   clearMessages();
   els.empty.classList.remove("hidden");
+  updateEmptyState();
+}
+async function newChat() {
+  await saveCurrent();
+  startFreshChat();
 }
 
 // ----- Pending actions ------------------------------------------------------
@@ -485,6 +557,7 @@ function wire() {
   });
   els.clearHistory.addEventListener("click", async () => {
     await clearConversations();
+    startFreshChat(); // the open one is gone too — start clean
     renderHistoryList();
   });
 
@@ -673,7 +746,7 @@ async function compareLast(second, btn) {
       { ...settings, provider: second.providerId, models: { ...settings.models, [second.providerId]: second.modelId } },
       { thinking: els.thinking.checked, webSearch: els.webSearch.checked || lastForceWeb }
     );
-    const system = buildSystemPrompt({ agentMode: false, targetLang: settings.targetLang, mode: lastRunMode, blockPayments: settings.blockPayments });
+    const system = buildSystemPrompt({ agentMode: false, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: lastRunMode, blockPayments: settings.blockPayments });
     const sink = makeSink(badge);
     await runConversation({ provider, system, history: [{ role: "user", content: lastUserContent }], tools: [], onText: sink.onText, onThink: sink.onThink, signal: abortController.signal });
     sink.finalize();
@@ -718,7 +791,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     { thinking: els.thinking.checked, webSearch: els.webSearch.checked || forceWeb }
   );
   const agentMode = els.agentMode.checked;
-  const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, mode: runMode, blockPayments: settings.blockPayments });
+  const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: runMode, blockPayments: settings.blockPayments });
   const tools = activeTools({ agentMode });
   const sink = makeSink(null);
   try {
