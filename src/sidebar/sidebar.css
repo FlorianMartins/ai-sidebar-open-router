@@ -64,20 +64,19 @@ button { cursor: pointer; }
 
 /* ----- Unified model bar ----- */
 .modelbar {
-  display: flex; flex-direction: column; gap: 7px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 8px 10px 9px; background: var(--panel);
 }
-.modelrow { display: flex; align-items: center; gap: 8px; }
 .modelbar #modelConnect { flex: 1 1 auto; }
-/* Segmented source switch: API (key) vs Compte (provider website) */
-.srcseg { display: flex; gap: 3px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 2px; }
-.srcseg .seg {
-  flex: 1 1 0; padding: 5px 8px; font-size: 11.5px; font-weight: 600;
-  border: 0; border-radius: 7px; background: transparent; color: var(--muted);
-  white-space: nowrap; cursor: pointer; transition: 0.15s;
+/* Provider/engine selector (top-left, under the tabs) */
+.providerbar { padding: 7px 10px; background: var(--panel); border-bottom: 1px solid var(--border-soft); }
+.providerbar select {
+  appearance: none; -webkit-appearance: none; max-width: 230px;
+  padding: 6px 26px 6px 10px; font-size: 12.5px; font-weight: 600;
+  background: var(--panel-2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><path d='M1 3l4 4 4-4' stroke='%239aa0b4' fill='none' stroke-width='1.5'/></svg>") no-repeat right 9px center;
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text);
 }
-.srcseg .seg:hover { color: var(--text); }
-.srcseg .seg.active { background: var(--grad); color: #fff; }
+.providerbar select:focus { outline: none; border-color: var(--accent); }
 .vs { color: var(--accent); font-weight: 700; font-size: 12px; }
 .select-wrap {
   flex: 1 1 140px; min-width: 0; position: relative; border-radius: var(--radius-sm);
@@ -343,6 +342,7 @@ body.mode-terminal .msg.assistant h3 { font-family: ui-monospace, SFMono-Regular
 body.mode-site .siteview { display: flex; }
 body.mode-site #messages,
 body.mode-site .controls,
+body.mode-site .modelbar,
 body.mode-site .composer,
 body.mode-site #pageBar,
 body.mode-site #confirmBar,
