@@ -333,12 +333,12 @@ body.mode-terminal .msg.assistant h3 { font-family: ui-monospace, SFMono-Regular
 body.mode-site .siteview { display: flex; }
 body.mode-site #messages,
 body.mode-site .controls,
-body.mode-site .modelbar,
 body.mode-site .composer,
 body.mode-site #pageBar,
 body.mode-site #confirmBar,
 body.mode-site #historyPanel,
 body.mode-site #tabsPanel { display: none !important; }
+.site-hint { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
 .site-toolbar {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;
   background: var(--panel); border-bottom: 1px solid var(--border-soft);

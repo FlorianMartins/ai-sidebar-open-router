@@ -56,7 +56,6 @@ const els = {
   imageSize: $("imageSize"),
   imageProviderNote: $("imageProviderNote"),
   siteView: $("siteView"),
-  siteProvider: $("siteProvider"),
   siteFrame: $("siteFrame"),
   siteInsertPage: $("siteInsertPage"),
   siteInsertSel: $("siteInsertSel"),
@@ -107,7 +106,6 @@ async function init() {
   settings = await getSettings();
   populateModelSelector();
   populateImprovePresets();
-  populateSiteProviders();
   els.thinking.checked = settings.thinking;
   els.webSearch.checked = settings.webSearch;
   els.agentMode.checked = settings.agentMode;
@@ -149,9 +147,20 @@ function modelsOf(providerId) {
   return out;
 }
 
-// Fill a <select> with optgroups of connected providers' models.
+// Fill a <select> with the engines: provider WEBSITES (your account, no key) first,
+// then your connected API providers' models. Picking a "site|…" entry switches the
+// Chat to the embedded website; picking a model uses the API.
 function fillModelSelect(sel, selectedValue) {
   sel.innerHTML = "";
+  const siteGroup = document.createElement("optgroup");
+  siteGroup.label = "🌐 Sites (mon compte)";
+  for (const [id, label] of SITE_PROVIDERS) {
+    const o = document.createElement("option");
+    o.value = "site|" + id;
+    o.textContent = label;
+    siteGroup.appendChild(o);
+  }
+  sel.appendChild(siteGroup);
   const ids = providersToShow();
   for (const pid of ids) {
     const group = document.createElement("optgroup");
@@ -170,14 +179,22 @@ function fillModelSelect(sel, selectedValue) {
 
 function populateModelSelector() {
   const connected = connectedProviders(settings);
-  const none = connected.length === 0;
-  // First-run / nothing connected: no default models — show a Connect button.
-  els.modelConnect.classList.toggle("hidden", !none);
-  els.modelWrap.classList.toggle("hidden", none);
-  els.refreshModels.classList.toggle("hidden", none);
-  if (none) return;
-  const pid = connected.includes(settings.provider) ? settings.provider : connected[0];
-  fillModelSelect(els.modelSelect, pid + "|" + modelFor(pid, settings));
+  // The selector always has the website engines, so it's never empty. The
+  // "connect" button is an extra prompt only when no API provider is set up.
+  els.modelConnect.classList.toggle("hidden", connected.length > 0);
+  els.modelWrap.classList.remove("hidden");
+  els.refreshModels.classList.remove("hidden");
+  let val;
+  if (settings.useSite) {
+    val = "site|" + (settings.siteProvider || SITE_PROVIDERS[0][0]);
+  } else if (connected.length) {
+    const pid = connected.includes(settings.provider) ? settings.provider : connected[0];
+    val = pid + "|" + modelFor(pid, settings);
+  } else {
+    val = "site|" + (settings.siteProvider || SITE_PROVIDERS[0][0]);
+  }
+  fillModelSelect(els.modelSelect, val);
+  syncEngine();
 }
 
 function parseSel(value) {
@@ -209,12 +226,20 @@ function populateImprovePresets() {
 
 async function onModelChange() {
   const sel = currentSelection();
-  settings.provider = sel.providerId;
-  settings.models = settings.models || {};
-  settings.models[sel.providerId] = sel.modelId;
-  await setSettings({ provider: sel.providerId });
-  await setNested("models", sel.providerId, sel.modelId);
-  syncToggleVisibility();
+  if (sel.providerId === "site") {
+    settings.useSite = true;
+    settings.siteProvider = sel.modelId;
+    await setSettings({ useSite: true, siteProvider: sel.modelId });
+  } else {
+    settings.useSite = false;
+    settings.provider = sel.providerId;
+    settings.models = settings.models || {};
+    settings.models[sel.providerId] = sel.modelId;
+    settings.lastApiValue = els.modelSelect.value;
+    await setSettings({ useSite: false, provider: sel.providerId, lastApiValue: els.modelSelect.value });
+    await setNested("models", sel.providerId, sel.modelId);
+  }
+  syncEngine();
 }
 
 // Best-effort: fetch the real available model list for every connected provider.
@@ -245,6 +270,13 @@ async function refreshModelsFromApi() {
 
 // ----- Workspace modes ------------------------------------------------------
 function setMode(next) {
+  // Switching to an API workspace (anything but Chat) exits the embedded-site engine.
+  if (settings.useSite && next !== "chat") {
+    settings.useSite = false;
+    setSettings({ useSite: false });
+    if (settings.lastApiValue) els.modelSelect.value = settings.lastApiValue;
+    document.body.classList.remove("mode-site");
+  }
   mode = next;
   settings.mode = next;
   setSettings({ mode: next });
@@ -255,32 +287,27 @@ function setMode(next) {
   els.improveControls.classList.toggle("hidden", next !== "improve");
   els.imageControls.classList.toggle("hidden", next !== "image");
   document.body.classList.toggle("mode-terminal", next === "terminal");
-  document.body.classList.toggle("mode-site", next === "account");
-  if (next === "account") loadSite();
   els.input.placeholder = PLACEHOLDERS[next] || PLACEHOLDERS.chat;
+  syncEngine(); // restore the embedded site if a "site|…" engine is selected (Chat)
 }
 
-// ----- Account / site mode --------------------------------------------------
-function populateSiteProviders() {
-  els.siteProvider.innerHTML = "";
-  for (const [id, label] of SITE_PROVIDERS) {
-    const o = document.createElement("option");
-    o.value = id;
-    o.textContent = label;
-    els.siteProvider.appendChild(o);
-  }
-  const chosen = SITE_PROVIDERS.some((s) => s[0] === settings.siteProvider) ? settings.siteProvider : SITE_PROVIDERS[0][0];
-  els.siteProvider.value = chosen;
-}
+// ----- Embedded provider website (account engine) --------------------------
 function siteUrl(id) {
   const p = SITE_PROVIDERS.find((s) => s[0] === id);
   return p ? p[2] : SITE_PROVIDERS[0][2];
 }
-function loadSite(force) {
-  const url = siteUrl(els.siteProvider.value);
-  if (force || els.siteFrame.dataset.url !== url) {
+// Show the embedded site (and load it) when a "site|…" engine is selected.
+function syncEngine() {
+  const sel = currentSelection();
+  const isSite = sel.providerId === "site";
+  document.body.classList.toggle("mode-site", isSite);
+  if (isSite) loadSite(sel.modelId);
+}
+function loadSite(id) {
+  const url = siteUrl(id || settings.siteProvider);
+  if (els.siteFrame.dataset.url !== url) {
     els.siteFrame.dataset.url = url;
-    els.siteFrame.src = url; // (re)load only when the provider actually changes
+    els.siteFrame.src = url; // (re)load only when the site actually changes
   }
 }
 function insertIntoSite(text) {
@@ -536,14 +563,13 @@ function wire() {
   els.openOptions.addEventListener("click", () => browser.runtime.openOptionsPage());
   els.modelConnect.addEventListener("click", () => browser.runtime.openOptionsPage());
 
-  els.siteProvider.addEventListener("change", async () => {
-    settings.siteProvider = els.siteProvider.value;
-    await setSettings({ siteProvider: settings.siteProvider });
-    loadSite(true);
-  });
   els.siteInsertPage.addEventListener("click", siteInsertPage);
   els.siteInsertSel.addEventListener("click", siteInsertSelection);
-  els.siteReload.addEventListener("click", () => loadSite(true));
+  els.siteReload.addEventListener("click", () => {
+    const u = siteUrl(settings.siteProvider);
+    els.siteFrame.dataset.url = u;
+    els.siteFrame.src = u;
+  });
 
   onSettingsChanged(async () => {
     settings = await getSettings();

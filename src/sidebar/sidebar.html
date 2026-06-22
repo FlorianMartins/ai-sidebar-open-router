@@ -27,13 +27,13 @@
       <button class="mode" data-mode="improve">✨ Améliorer</button>
       <button class="mode" data-mode="image">🎨 Image</button>
       <button class="mode" data-mode="terminal">⌨ Terminal</button>
-      <button class="mode" data-mode="account">👤 Compte</button>
     </nav>
 
-    <!-- Account / site mode: the provider's own chat website, embedded -->
+    <!-- Embedded provider website (shown in Chat when a "Site (mon compte)" entry
+         is picked in the model selector). Uses the user's account/subscription. -->
     <div id="siteView" class="siteview hidden">
       <div class="site-toolbar">
-        <select id="siteProvider" title="Service IA"></select>
+        <span class="muted site-hint">🌐 Site connecté à votre compte — donnez-lui la page :</span>
         <button id="siteInsertPage" class="chip-btn" title="Insérer le contenu de l'onglet actif">📄 Page</button>
         <button id="siteInsertSel" class="chip-btn" title="Insérer la sélection">✂ Sélection</button>
         <button id="siteReload" class="icon" title="Recharger">⟳</button>
