@@ -1,19 +1,18 @@
 // Sidebar UI controller.
 //
 // Workspaces ("modes"): chat / translate / improve / image. A single unified model
-// picker (grouped by connected provider) sits above the chat. Extra capabilities:
-// model comparison (run the prompt on a second model side by side), Claude-style
-// artifacts (handled in markdown.js), and local-only conversation history.
+// picker sits just above the composer and lists ONLY the models of connected
+// providers (a key set, an OAuth account, or a running local server) — fetched
+// live from each provider's /models endpoint so it reflects what is actually
+// available. Comparison is done per-message (a "Comparer" button on the latest
+// answer). Conversations are kept locally for privacy.
 
 import { getSettings, setSettings, setNested, onSettingsChanged } from "../lib/storage.js";
 import { makeProvider, listModels, generateImage } from "../lib/providers.js";
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts } from "../lib/markdown.js";
-import {
-  PROVIDERS, modelFor, keyFor, connectedProviders, WRITING_PRESETS,
-} from "../lib/models.js";
-import { connectOpenRouter } from "../lib/auth.js";
+import { PROVIDERS, modelFor, keyFor, connectedProviders, WRITING_PRESETS } from "../lib/models.js";
 import {
   listConversations, getConversation, saveConversation, deleteConversation,
   clearConversations, newConversationId, titleFrom,
@@ -23,9 +22,6 @@ const $ = (id) => document.getElementById(id);
 const els = {
   modelSelect: $("modelSelect"),
   refreshModels: $("refreshModels"),
-  compareMode: $("compareMode"),
-  compareRow: $("compareRow"),
-  compareSelect: $("compareSelect"),
   historyBtn: $("historyBtn"),
   newChat: $("newChat"),
   openOptions: $("openOptions"),
@@ -57,8 +53,7 @@ const els = {
   improvePreset: $("improvePreset"),
   imageSize: $("imageSize"),
   imageProviderNote: $("imageProviderNote"),
-  connectOpenRouter: $("connectOpenRouter"),
-  emptyOptions: $("emptyOptions"),
+  connectBtn: $("connectBtn"),
   confirmBar: $("confirmBar"),
   confirmText: $("confirmText"),
   confirmAllow: $("confirmAllow"),
@@ -66,13 +61,17 @@ const els = {
 };
 
 let settings;
-let history = [];        // provider-native message array (for multi-turn continuation)
-let transcript = [];     // UI transcript for local history { role, text, kind?, urls? }
+let history = [];        // provider-native message array (multi-turn continuation)
+let transcript = [];     // UI transcript for local history
 let convId = newConversationId();
 let abortController = null;
 let currentPage = null;
 let busy = false;
 let mode = "chat";
+// Last primary turn (to re-run on another model for the "compare" button).
+let lastUserContent = "";
+let lastRunMode = "chat";
+let lastForceWeb = false;
 
 const PLACEHOLDERS = {
   chat: "Écrivez un message…",
@@ -84,15 +83,13 @@ const PLACEHOLDERS = {
 async function init() {
   configureMarkdown();
   settings = await getSettings();
-  populateModelSelectors();
+  populateModelSelector();
   populateImprovePresets();
   els.thinking.checked = settings.thinking;
   els.webSearch.checked = settings.webSearch;
   els.agentMode.checked = settings.agentMode;
   els.pageCtx.checked = settings.includePageContext;
   els.useTabs.checked = settings.includeSelectedTabs;
-  els.compareMode.checked = settings.compareMode;
-  els.compareRow.classList.toggle("hidden", !settings.compareMode);
   els.translateLang.value = settings.targetLang || "Français";
   els.improvePreset.value = settings.improvePreset || "improve";
   els.imageSize.value = settings.imageSize || "1024x1024";
@@ -101,13 +98,12 @@ async function init() {
   wire();
   setMode(settings.mode || "chat");
   setupPageAwareness();
+  autoListConnected();           // refresh available models in the background
   await refreshCurrentPage();
   await consumePendingAction();
 }
 
 // ----- Unified model picker -------------------------------------------------
-// Build the list of providers to show: connected ones first, plus the currently
-// selected provider so there is always a valid choice.
 function providersToShow() {
   const set = [];
   for (const id of connectedProviders(settings)) set.push(id);
@@ -115,32 +111,30 @@ function providersToShow() {
   return set;
 }
 
+// Models for a provider: the live-fetched list when we have one (authoritative —
+// only what the key/account can access), otherwise the catalogue defaults.
 function modelsOf(providerId) {
-  const base = PROVIDERS[providerId].models.map((m) => m[0]);
   const fetched = (settings.modelLists && settings.modelLists[providerId]) || [];
+  const ids = fetched.length ? fetched : PROVIDERS[providerId].models.map((m) => m[0]);
+  const labels = new Map(PROVIDERS[providerId].models);
   const seen = new Set();
   const out = [];
-  for (const id of [...base, ...fetched]) {
+  for (const id of ids) {
     if (seen.has(id)) continue;
     seen.add(id);
-    const label = (PROVIDERS[providerId].models.find((m) => m[0] === id) || [])[1] || id;
-    out.push([id, label]);
+    out.push([id, labels.get(id) || id]);
   }
   return out;
 }
 
-function fillSelect(sel, selectedValue) {
+// Fill a <select> with optgroups of connected providers' models.
+function fillModelSelect(sel, selectedValue) {
   sel.innerHTML = "";
   const ids = providersToShow();
-  if (!ids.length) {
-    const o = document.createElement("option");
-    o.textContent = "Aucun modèle — connectez-vous";
-    sel.appendChild(o);
-    return;
-  }
   for (const pid of ids) {
     const group = document.createElement("optgroup");
-    group.label = PROVIDERS[pid].label + (keyFor(pid, settings) || PROVIDERS[pid].local ? "" : " (clé manquante)");
+    const noKey = !(keyFor(pid, settings) || PROVIDERS[pid].local);
+    group.label = PROVIDERS[pid].label + (noKey ? " (clé manquante)" : "");
     for (const [mid, mlabel] of modelsOf(pid)) {
       const o = document.createElement("option");
       o.value = pid + "|" + mid;
@@ -152,18 +146,8 @@ function fillSelect(sel, selectedValue) {
   if (selectedValue) sel.value = selectedValue;
 }
 
-function populateModelSelectors() {
-  const primary = settings.provider + "|" + modelFor(settings.provider, settings);
-  fillSelect(els.modelSelect, primary);
-  fillSelect(els.compareSelect, settings.compareModel || pickDifferent(primary));
-}
-
-// Default second model = first option different from the primary one.
-function pickDifferent(primaryValue) {
-  for (const opt of els.compareSelect.options) {
-    if (opt.value && opt.value !== primaryValue) return opt.value;
-  }
-  return primaryValue;
+function populateModelSelector() {
+  fillModelSelect(els.modelSelect, settings.provider + "|" + modelFor(settings.provider, settings));
 }
 
 function parseSel(value) {
@@ -171,7 +155,6 @@ function parseSel(value) {
   if (i < 0) return { providerId: settings.provider, modelId: modelFor(settings.provider, settings) };
   return { providerId: value.slice(0, i), modelId: value.slice(i + 1) };
 }
-
 function currentSelection() {
   return parseSel(els.modelSelect.value);
 }
@@ -180,12 +163,10 @@ function syncToggleVisibility() {
   const meta = PROVIDERS[currentSelection().providerId] || {};
   els.webSearch.closest(".switch").style.display = meta.supportsWebSearch ? "" : "none";
 }
-
 function updateImageNote() {
   const meta = PROVIDERS[settings.imageProvider || "openai"];
   els.imageProviderNote.textContent = meta ? "via " + meta.label : "";
 }
-
 function populateImprovePresets() {
   els.improvePreset.innerHTML = "";
   for (const [id, label] of WRITING_PRESETS) {
@@ -196,7 +177,7 @@ function populateImprovePresets() {
   }
 }
 
-async function onPrimaryModelChange() {
+async function onModelChange() {
   const sel = currentSelection();
   settings.provider = sel.providerId;
   settings.models = settings.models || {};
@@ -206,41 +187,29 @@ async function onPrimaryModelChange() {
   syncToggleVisibility();
 }
 
-async function refreshModelsFromApi() {
-  const { providerId } = currentSelection();
-  els.refreshModels.classList.add("spin");
-  try {
-    const ids = await listModels(providerId, settings);
-    settings.modelLists = settings.modelLists || {};
-    settings.modelLists[providerId] = ids;
-    await setSettings({ modelLists: settings.modelLists });
-    populateModelSelectors();
-  } catch (e) {
-    addMessage("error", "Impossible de lister les modèles : " + (e.message || e));
-  } finally {
-    els.refreshModels.classList.remove("spin");
-  }
+// Best-effort: fetch the real available model list for every connected provider.
+async function autoListConnected() {
+  const ids = connectedProviders(settings);
+  if (!ids.length) return;
+  settings.modelLists = settings.modelLists || {};
+  await Promise.allSettled(
+    ids.map(async (pid) => {
+      try {
+        const list = await listModels(pid, settings);
+        if (list && list.length) settings.modelLists[pid] = list;
+      } catch (_) {}
+    })
+  );
+  await setSettings({ modelLists: settings.modelLists });
+  populateModelSelector();
 }
 
-// ----- OAuth connect --------------------------------------------------------
-async function doConnectOpenRouter() {
-  els.connectOpenRouter.disabled = true;
-  els.connectOpenRouter.textContent = "Connexion…";
+async function refreshModelsFromApi() {
+  els.refreshModels.classList.add("spin");
   try {
-    const key = await connectOpenRouter();
-    settings.keys = settings.keys || {};
-    settings.keys.openrouter = key;
-    await setNested("keys", "openrouter", key);
-    settings.provider = "openrouter";
-    await setSettings({ provider: "openrouter" });
-    populateModelSelectors();
-    syncToggleVisibility();
-    addMessage("tool", "✓ Connecté à OpenRouter — tous les modèles sont disponibles.");
-  } catch (e) {
-    addMessage("error", "Connexion OpenRouter : " + (e && e.message ? e.message : e));
+    await autoListConnected();
   } finally {
-    els.connectOpenRouter.disabled = false;
-    els.connectOpenRouter.textContent = "Se connecter avec OpenRouter";
+    els.refreshModels.classList.remove("spin");
   }
 }
 
@@ -270,13 +239,11 @@ function setupPageAwareness() {
     else if (msg.type === "draft_reply") runQuickAction("reply", msg.thread || "");
   });
 }
-
 let refreshTimer = null;
 function debouncedRefresh() {
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(refreshCurrentPage, 350);
 }
-
 async function refreshCurrentPage() {
   try {
     const page = await executeTool("read_page", {}, {});
@@ -315,7 +282,6 @@ async function buildTabsList() {
     els.tabsList.appendChild(li);
   }
 }
-
 async function persistSelectedTabs() {
   const ids = [];
   els.tabsList.querySelectorAll("input[type=checkbox]").forEach((cb) => {
@@ -324,7 +290,6 @@ async function persistSelectedTabs() {
   settings.selectedTabs = ids;
   await setSettings({ selectedTabs: ids });
 }
-
 async function selectedTabsContext() {
   if (!els.useTabs.checked || !(settings.selectedTabs || []).length) return "";
   const parts = [];
@@ -347,7 +312,6 @@ function timeAgo(ts) {
   if (s < 86400) return Math.floor(s / 3600) + " h";
   return Math.floor(s / 86400) + " j";
 }
-
 async function renderHistoryList() {
   const list = await listConversations();
   els.historyList.innerHTML = "";
@@ -383,21 +347,14 @@ async function renderHistoryList() {
     els.historyList.appendChild(li);
   }
 }
-
 async function saveCurrent() {
   if (!settings.saveHistory || !transcript.length) return;
   const sel = currentSelection();
   await saveConversation({
-    id: convId,
-    title: titleFrom(transcript),
-    updatedAt: Date.now(),
-    providerId: sel.providerId,
-    model: sel.modelId,
-    transcript,
-    nativeHistory: history,
+    id: convId, title: titleFrom(transcript), updatedAt: Date.now(),
+    providerId: sel.providerId, model: sel.modelId, transcript, nativeHistory: history,
   });
 }
-
 function renderTranscriptItem(item) {
   if (item.role === "user") {
     addMessage("user", item.text);
@@ -413,7 +370,6 @@ function renderTranscriptItem(item) {
     enhanceArtifacts(el);
   }
 }
-
 async function loadConversation(id) {
   const c = await getConversation(id);
   if (!c) return;
@@ -425,16 +381,15 @@ async function loadConversation(id) {
   els.empty.classList.add("hidden");
   els.historyPanel.classList.add("hidden");
 }
-
 function clearMessages() {
   els.messages.querySelectorAll(".msg, .think").forEach((n) => n.remove());
 }
-
 async function newChat() {
   await saveCurrent();
   history = [];
   transcript = [];
   convId = newConversationId();
+  lastUserContent = "";
   clearMessages();
   els.empty.classList.remove("hidden");
 }
@@ -449,12 +404,8 @@ async function consumePendingAction() {
 
 // ----- Wiring ---------------------------------------------------------------
 function wire() {
-  els.modelSelect.addEventListener("change", onPrimaryModelChange);
+  els.modelSelect.addEventListener("change", onModelChange);
   els.refreshModels.addEventListener("click", refreshModelsFromApi);
-  els.compareSelect.addEventListener("change", async () => {
-    settings.compareModel = els.compareSelect.value;
-    await setSettings({ compareModel: settings.compareModel });
-  });
 
   const bindToggle = (el, key, after) =>
     el.addEventListener("change", async () => {
@@ -469,14 +420,6 @@ function wire() {
     els.pageBar.classList.toggle("hidden", !(els.pageCtx.checked && currentPage))
   );
   bindToggle(els.useTabs, "includeSelectedTabs");
-  bindToggle(els.compareMode, "compareMode", () => {
-    els.compareRow.classList.toggle("hidden", !els.compareMode.checked);
-    if (els.compareMode.checked && !settings.compareModel) {
-      settings.compareModel = pickDifferent(els.modelSelect.value);
-      els.compareSelect.value = settings.compareModel;
-      setSettings({ compareModel: settings.compareModel });
-    }
-  });
 
   els.modebar.querySelectorAll(".mode").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 
@@ -519,12 +462,13 @@ function wire() {
   els.stop.addEventListener("click", () => abortController && abortController.abort());
   els.newChat.addEventListener("click", newChat);
   els.openOptions.addEventListener("click", () => browser.runtime.openOptionsPage());
-  els.emptyOptions.addEventListener("click", (e) => { e.preventDefault(); browser.runtime.openOptionsPage(); });
-  els.connectOpenRouter.addEventListener("click", doConnectOpenRouter);
+  els.connectBtn.addEventListener("click", () => browser.runtime.openOptionsPage());
 
   onSettingsChanged(async () => {
     settings = await getSettings();
     updateImageNote();
+    populateModelSelector();
+    autoListConnected();
   });
 }
 
@@ -532,10 +476,7 @@ function autoGrow() {
   els.input.style.height = "auto";
   els.input.style.height = Math.min(els.input.scrollHeight, 150) + "px";
 }
-
-function resetComposerHeight() {
-  els.input.style.height = "auto";
-}
+function resetComposerHeight() { els.input.style.height = "auto"; }
 
 // ----- Message rendering ----------------------------------------------------
 function addMessage(role, text) {
@@ -547,7 +488,6 @@ function addMessage(role, text) {
   els.messages.scrollTop = els.messages.scrollHeight;
   return div;
 }
-
 function addThinkBlock() {
   els.empty.classList.add("hidden");
   const d = document.createElement("details");
@@ -564,8 +504,8 @@ function addThinkBlock() {
   return body;
 }
 
-// A streaming sink: owns one assistant card (with optional model badge) and its
-// thinking block. Used once for a normal turn, twice for a comparison.
+// Streaming sink: owns one assistant card (+ optional model badge) and its
+// thinking block. Used for a normal turn and for each compare run.
 function makeSink(badgeLabel) {
   let el = null, contentEl = null, raw = "", think = null;
   const ensure = () => {
@@ -596,6 +536,7 @@ function makeSink(badgeLabel) {
       if (contentEl) { contentEl.innerHTML = renderMarkdown(raw); enhanceArtifacts(contentEl); }
     },
     getRaw: () => raw,
+    getEl: () => el,
   };
 }
 
@@ -604,7 +545,6 @@ function currentKeyMissing(providerId) {
   if (!meta || !meta.needsKey) return false;
   return !keyFor(providerId, settings);
 }
-
 function confirmAction(name, input) {
   return new Promise((resolve) => {
     els.confirmText.textContent = `Autoriser l'action « ${name} » ? ${JSON.stringify(input).slice(0, 120)}`;
@@ -621,7 +561,6 @@ function confirmAction(name, input) {
     els.confirmDeny.addEventListener("click", onDeny);
   });
 }
-
 function pageContextBlock() {
   if (!currentPage) return "";
   const ctx = (currentPage.text || "").slice(0, settings.maxPageChars);
@@ -630,14 +569,12 @@ function pageContextBlock() {
     (currentPage.description ? `Description: ${currentPage.description}\n` : "") + `${ctx}\n\n`
   );
 }
-
 async function getSelection() {
   try {
     const sel = await executeTool("read_selection", {}, {});
     return (sel && sel.selection) || "";
   } catch (_) { return ""; }
 }
-
 function startBusy() {
   busy = true;
   els.send.classList.add("hidden");
@@ -651,23 +588,102 @@ function endBusy() {
   busy = false;
 }
 
+// ----- Per-message comparison ----------------------------------------------
+// Add a "compare with another model" bar under the latest assistant answer.
+function attachCompareBar(el) {
+  els.messages.querySelectorAll(".msg-actions").forEach((n) => n.remove());
+  if (!el || !lastUserContent) return;
+  const bar = document.createElement("div");
+  bar.className = "msg-actions";
+  const lbl = document.createElement("span");
+  lbl.className = "cmp-lbl";
+  lbl.textContent = "⚖ Comparer avec";
+  const sel = document.createElement("select");
+  sel.className = "cmp-select";
+  fillModelSelect(sel, null);
+  // Default to a model different from the current one.
+  for (const opt of sel.options) {
+    if (opt.value && opt.value !== els.modelSelect.value) { sel.value = opt.value; break; }
+  }
+  const btn = document.createElement("button");
+  btn.className = "cmp-btn";
+  btn.textContent = "Comparer";
+  btn.addEventListener("click", () => compareLast(parseSel(sel.value), btn));
+  bar.appendChild(lbl);
+  bar.appendChild(sel);
+  bar.appendChild(btn);
+  el.appendChild(bar);
+}
+
+async function compareLast(second, btn) {
+  if (busy || !lastUserContent) return;
+  if (currentKeyMissing(second.providerId)) {
+    addMessage("error", "Clé manquante pour " + PROVIDERS[second.providerId].label + ".");
+    return;
+  }
+  btn.disabled = true;
+  startBusy();
+  const badge = `${PROVIDERS[second.providerId].label} · ${second.modelId}`;
+  try {
+    const provider = makeProvider(
+      { ...settings, provider: second.providerId, models: { ...settings.models, [second.providerId]: second.modelId } },
+      { thinking: els.thinking.checked, webSearch: els.webSearch.checked || lastForceWeb }
+    );
+    const system = buildSystemPrompt({ agentMode: false, targetLang: settings.targetLang, mode: lastRunMode, blockPayments: settings.blockPayments });
+    const sink = makeSink(badge);
+    await runConversation({ provider, system, history: [{ role: "user", content: lastUserContent }], tools: [], onText: sink.onText, onThink: sink.onThink, signal: abortController.signal });
+    sink.finalize();
+    if (sink.getRaw()) transcript.push({ role: "assistant", text: `**${badge}**\n\n${sink.getRaw()}` });
+    attachCompareBar(sink.getEl()); // allow comparing again with yet another model
+  } catch (e) {
+    if (e && e.name === "AbortError") addMessage("tool", "■ Interrompu.");
+    else addMessage("error", "Erreur : " + (e && e.message ? e.message : String(e)));
+  } finally {
+    endBusy();
+    btn.disabled = false;
+    await saveCurrent();
+  }
+}
+
 // ----- Core send ------------------------------------------------------------
 async function sendToModel(displayText, modelContent, { forceWeb = false, runMode = "chat" } = {}) {
   if (busy) return;
   const sel = currentSelection();
   if (currentKeyMissing(sel.providerId)) {
-    addMessage("error", "Aucune clé pour ce modèle. Connectez-vous (OpenRouter) ou ajoutez une clé dans ⚙ Réglages.");
+    addMessage("error", "Aucune clé pour ce modèle. Cliquez « Connexion / Ajouter un fournisseur » (⚙).");
     return;
   }
   addMessage("user", displayText);
   transcript.push({ role: "user", text: displayText });
+  lastUserContent = modelContent;
+  lastRunMode = runMode;
+  lastForceWeb = forceWeb;
   startBusy();
 
+  history.push({ role: "user", content: modelContent });
+  const provider = makeProvider(
+    { ...settings, provider: sel.providerId, models: { ...settings.models, [sel.providerId]: sel.modelId } },
+    { thinking: els.thinking.checked, webSearch: els.webSearch.checked || forceWeb }
+  );
+  const agentMode = els.agentMode.checked;
+  const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, mode: runMode, blockPayments: settings.blockPayments });
+  const tools = activeTools({ agentMode });
+  const sink = makeSink(null);
   try {
-    if (els.compareMode.checked) {
-      await runComparison(sel, modelContent, runMode, forceWeb);
-    } else {
-      await runNormalTurn(sel, modelContent, runMode, forceWeb);
+    await runConversation({
+      provider, system, history, tools,
+      onText: sink.onText, onThink: sink.onThink,
+      onToolStart: (call) => { sink.finalize(); addMessage("tool", `→ ${call.name}(${JSON.stringify(call.input).slice(0, 80)})`); },
+      onToolEnd: (call, out) => addMessage("tool", out && out.blocked ? `   🛡 ${out.error}` : `   ${out && out.error ? "✗ " + out.error : "✓ ok"}`),
+      confirmActions: settings.confirmActions,
+      confirmFn: agentMode ? confirmAction : null,
+      guard: { blockPayments: settings.blockPayments },
+      signal: abortController.signal,
+    });
+    sink.finalize();
+    if (sink.getRaw()) {
+      transcript.push({ role: "assistant", text: sink.getRaw() });
+      attachCompareBar(sink.getEl());
     }
   } catch (e) {
     if (e && e.name === "AbortError") addMessage("tool", "■ Interrompu.");
@@ -678,56 +694,6 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   }
 }
 
-// Normal multi-turn path (with agent tools + thinking).
-async function runNormalTurn(sel, modelContent, runMode, forceWeb) {
-  history.push({ role: "user", content: modelContent });
-  const provider = makeProvider(
-    { ...settings, provider: sel.providerId, models: { ...settings.models, [sel.providerId]: sel.modelId } },
-    { thinking: els.thinking.checked, webSearch: els.webSearch.checked || forceWeb }
-  );
-  const agentMode = els.agentMode.checked;
-  const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, mode: runMode, blockPayments: settings.blockPayments });
-  const tools = activeTools({ agentMode });
-  const sink = makeSink(null);
-  await runConversation({
-    provider, system, history, tools,
-    onText: sink.onText, onThink: sink.onThink,
-    onToolStart: (call) => { sink.finalize(); addMessage("tool", `→ ${call.name}(${JSON.stringify(call.input).slice(0, 80)})`); },
-    onToolEnd: (call, out) => addMessage("tool", out && out.blocked ? `   🛡 ${out.error}` : `   ${out && out.error ? "✗ " + out.error : "✓ ok"}`),
-    confirmActions: settings.confirmActions,
-    confirmFn: agentMode ? confirmAction : null,
-    guard: { blockPayments: settings.blockPayments },
-    signal: abortController.signal,
-  });
-  sink.finalize();
-  if (sink.getRaw()) transcript.push({ role: "assistant", text: sink.getRaw() });
-}
-
-// Comparison path: same prompt to two models (single turn, no tools), side by side.
-async function runComparison(sel, modelContent, runMode, forceWeb) {
-  const second = parseSel(els.compareSelect.value);
-  const run = async (s) => {
-    if (currentKeyMissing(s.providerId)) {
-      addMessage("error", `Clé manquante pour ${PROVIDERS[s.providerId].label}.`);
-      return "";
-    }
-    const provider = makeProvider(
-      { ...settings, provider: s.providerId, models: { ...settings.models, [s.providerId]: s.modelId } },
-      { thinking: els.thinking.checked, webSearch: els.webSearch.checked || forceWeb }
-    );
-    const system = buildSystemPrompt({ agentMode: false, targetLang: settings.targetLang, mode: runMode, blockPayments: settings.blockPayments });
-    const sink = makeSink(`${PROVIDERS[s.providerId].label} · ${s.modelId}`);
-    const h = [{ role: "user", content: modelContent }];
-    await runConversation({ provider, system, history: h, tools: [], onText: sink.onText, onThink: sink.onThink, signal: abortController.signal });
-    sink.finalize();
-    return sink.getRaw();
-  };
-  const [a, b] = await Promise.all([run(sel), run(second)]);
-  // Comparison is single-turn: don't extend the continuing history (formats differ).
-  const merged = [a && `**${PROVIDERS[sel.providerId].label}**\n\n${a}`, b && `**${PROVIDERS[second.providerId].label}**\n\n${b}`].filter(Boolean).join("\n\n---\n\n");
-  if (merged) transcript.push({ role: "assistant", text: merged });
-}
-
 // ----- Send dispatch (per mode) ---------------------------------------------
 async function onSend() {
   resetComposerHeight();
@@ -736,7 +702,6 @@ async function onSend() {
   if (mode === "image") return runImageFromInput();
   return onChatSend();
 }
-
 async function onChatSend() {
   const text = els.input.value.trim();
   if (!text) return;
@@ -749,7 +714,6 @@ async function onChatSend() {
   const content = prefix ? prefix + `[Message]\n${text}` : text;
   await sendToModel(text, content);
 }
-
 async function runTranslateFromInput() {
   const lang = els.translateLang.value || "Français";
   let txt = els.input.value.trim();
@@ -759,7 +723,6 @@ async function runTranslateFromInput() {
   els.input.value = "";
   await sendToModel(label, `Traduis en ${lang}, en gardant la mise en forme :\n\n${txt}`, { runMode: "translate" });
 }
-
 async function runImproveFromInput() {
   const presetId = els.improvePreset.value || "improve";
   const preset = WRITING_PRESETS.find((p) => p[0] === presetId) || WRITING_PRESETS[0];
@@ -767,13 +730,8 @@ async function runImproveFromInput() {
   if (!txt) txt = await getSelection();
   if (!txt) return addMessage("error", "Saisissez ou sélectionnez du texte.");
   els.input.value = "";
-  await sendToModel(
-    "✨ " + preset[1],
-    `${preset[2]}\nRenvoie uniquement le résultat, sans préambule.\n\nTexte :\n${txt}`,
-    { runMode: "improve" }
-  );
+  await sendToModel("✨ " + preset[1], `${preset[2]}\nRenvoie uniquement le résultat, sans préambule.\n\nTexte :\n${txt}`, { runMode: "improve" });
 }
-
 async function runImageFromInput() {
   const prompt = els.input.value.trim();
   if (!prompt) return addMessage("error", "Décrivez l'image à générer.");
@@ -785,7 +743,6 @@ async function runImageFromInput() {
 async function runQuickAction(action, providedText) {
   if (busy) return;
   const lang = settings.targetLang || "Français";
-
   if (action === "image") {
     const prompt = providedText || els.input.value.trim();
     if (!prompt) { setMode("image"); els.input.focus(); return; }

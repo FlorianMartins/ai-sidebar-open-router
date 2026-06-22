@@ -301,9 +301,21 @@ export async function listModels(providerId, settings) {
   const baseUrl = baseUrlFor(providerId, settings);
   if (!baseUrl) throw new Error("Base URL manquante.");
   const apiKey = keyFor(providerId, settings);
-  const headers = {};
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-  const res = await fetch(baseUrl.replace(/\/$/, "") + "/models", { headers });
+  const url = baseUrl.replace(/\/$/, "") + "/models";
+
+  // Anthropic uses its own auth headers (no Bearer) for GET /v1/models.
+  const headers =
+    meta.kind === "anthropic"
+      ? {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        }
+      : apiKey
+        ? { authorization: `Bearer ${apiKey}` }
+        : {};
+
+  const res = await fetch(url, { headers });
   await ensureOk(res);
   const json = await res.json();
   const data = json.data || json.models || [];

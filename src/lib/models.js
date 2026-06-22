@@ -120,8 +120,103 @@ export const PROVIDERS = {
     ],
   },
 
+  xai: {
+    label: "xAI (Grok)",
+    kind: "openai",
+    baseUrl: "https://api.x.ai/v1",
+    needsKey: true,
+    keysUrl: "https://console.x.ai",
+    keyHint: "xai-...",
+    canListModels: true,
+    models: [
+      ["grok-2-latest", "Grok 2"],
+      ["grok-2-vision-latest", "Grok 2 Vision"],
+      ["grok-beta", "Grok Beta"],
+    ],
+  },
+
+  perplexity: {
+    label: "Perplexity",
+    kind: "openai",
+    baseUrl: "https://api.perplexity.ai",
+    needsKey: true,
+    keysUrl: "https://www.perplexity.ai/settings/api",
+    keyHint: "pplx-...",
+    models: [
+      ["sonar", "Sonar"],
+      ["sonar-pro", "Sonar Pro"],
+      ["sonar-reasoning", "Sonar Reasoning"],
+    ],
+  },
+
+  together: {
+    label: "Together AI",
+    kind: "openai",
+    baseUrl: "https://api.together.xyz/v1",
+    needsKey: true,
+    keysUrl: "https://api.together.ai/settings/api-keys",
+    canListModels: true,
+    models: [
+      ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B Turbo"],
+      ["deepseek-ai/DeepSeek-R1", "DeepSeek R1"],
+      ["Qwen/Qwen2.5-72B-Instruct-Turbo", "Qwen2.5 72B"],
+    ],
+  },
+
+  fireworks: {
+    label: "Fireworks AI",
+    kind: "openai",
+    baseUrl: "https://api.fireworks.ai/inference/v1",
+    needsKey: true,
+    keysUrl: "https://fireworks.ai/account/api-keys",
+    canListModels: true,
+    models: [
+      ["accounts/fireworks/models/llama-v3p3-70b-instruct", "Llama 3.3 70B"],
+      ["accounts/fireworks/models/deepseek-r1", "DeepSeek R1"],
+      ["accounts/fireworks/models/qwen2p5-72b-instruct", "Qwen2.5 72B"],
+    ],
+  },
+
+  deepinfra: {
+    label: "DeepInfra",
+    kind: "openai",
+    baseUrl: "https://api.deepinfra.com/v1/openai",
+    needsKey: true,
+    keysUrl: "https://deepinfra.com/dash/api_keys",
+    canListModels: true,
+    models: [
+      ["meta-llama/Llama-3.3-70B-Instruct", "Llama 3.3 70B"],
+      ["deepseek-ai/DeepSeek-R1", "DeepSeek R1"],
+    ],
+  },
+
+  cerebras: {
+    label: "Cerebras",
+    kind: "openai",
+    baseUrl: "https://api.cerebras.ai/v1",
+    needsKey: true,
+    keysUrl: "https://cloud.cerebras.ai",
+    canListModels: true,
+    models: [
+      ["llama-3.3-70b", "Llama 3.3 70B"],
+      ["llama3.1-8b", "Llama 3.1 8B"],
+    ],
+  },
+
+  cohere: {
+    label: "Cohere",
+    kind: "openai",
+    baseUrl: "https://api.cohere.ai/compatibility/v1",
+    needsKey: true,
+    keysUrl: "https://dashboard.cohere.com/api-keys",
+    models: [
+      ["command-r-plus", "Command R+"],
+      ["command-r", "Command R"],
+    ],
+  },
+
   ollama: {
-    label: "Ollama (local)",
+    label: "Local (Ollama)",
     kind: "openai",
     baseUrl: "http://localhost:11434/v1",
     needsKey: false,
@@ -136,7 +231,7 @@ export const PROVIDERS = {
   },
 
   lmstudio: {
-    label: "LM Studio (local)",
+    label: "Local (LM Studio)",
     kind: "openai",
     baseUrl: "http://localhost:1234/v1",
     needsKey: false,
@@ -165,6 +260,13 @@ export const PROVIDER_ORDER = [
   "mistral",
   "groq",
   "deepseek",
+  "xai",
+  "perplexity",
+  "together",
+  "fireworks",
+  "deepinfra",
+  "cerebras",
+  "cohere",
   "ollama",
   "lmstudio",
   "custom",

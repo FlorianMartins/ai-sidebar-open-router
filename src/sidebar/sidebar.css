@@ -62,9 +62,8 @@ button { cursor: pointer; }
 /* ----- Unified model bar ----- */
 .modelbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--border-soft);
+  padding: 8px 10px 9px; background: var(--panel);
 }
-.modelbar.compare-row { padding-top: 0; flex-wrap: nowrap; }
 .vs { color: var(--accent); font-weight: 700; font-size: 12px; }
 .select-wrap {
   flex: 1 1 140px; min-width: 0; position: relative; border-radius: var(--radius-sm);
@@ -266,5 +265,23 @@ button { cursor: pointer; }
 
 /* ----- Generated image ----- */
 .gen-image { max-width: 100%; border-radius: 10px; display: block; margin: 4px 0; }
+
+/* ----- Per-message compare bar (on the latest answer) ----- */
+.msg-actions {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--border);
+}
+.cmp-lbl { font-size: 11.5px; color: var(--muted); }
+.cmp-select {
+  appearance: none; -webkit-appearance: none; max-width: 160px; flex: 1 1 auto; min-width: 0;
+  padding: 4px 8px; font-size: 11.5px; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 7px; color: var(--text);
+}
+.cmp-btn {
+  font-size: 11.5px; padding: 4px 11px; border-radius: 7px; flex: 0 0 auto;
+  border: 1px solid rgba(139, 92, 246, 0.5); background: var(--grad-soft); color: var(--text); font-weight: 600;
+}
+.cmp-btn:hover { border-color: var(--accent); }
+.cmp-btn:disabled { opacity: 0.5; cursor: default; }
 
 .hidden { display: none !important; }

@@ -90,7 +90,6 @@ async function load() {
   $("thinking").checked = settings.thinking;
   $("webSearch").checked = settings.webSearch;
   $("agentMode").checked = settings.agentMode;
-  $("compareMode").checked = settings.compareMode;
   $("confirmActions").checked = settings.confirmActions;
   $("blockPayments").checked = settings.blockPayments;
   $("webmailAssist").checked = settings.webmailAssist;
@@ -125,7 +124,6 @@ async function save() {
     thinking: $("thinking").checked,
     webSearch: $("webSearch").checked,
     agentMode: $("agentMode").checked,
-    compareMode: $("compareMode").checked,
     confirmActions: $("confirmActions").checked,
     blockPayments: $("blockPayments").checked,
     webmailAssist: $("webmailAssist").checked,

@@ -8,15 +8,19 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
 - 🎨 **Interface moderne** : thème sombre + dégradé bleu/violet, **boutons à
   bascule**, et un **sélecteur de modèle unifié** au-dessus du chat (une seule liste
   groupée par fournisseur connecté).
-- 🔌 **Tous les fournisseurs** : **Claude** (Anthropic), **OpenAI**, **Gemini**,
-  **Mistral**, **Groq**, **DeepSeek**, **OpenRouter**, et les **modèles locaux**
-  **Ollama** / **LM Studio** (ou n'importe quel serveur compatible OpenAI via une
-  URL personnalisée).
+- 🔌 **Tous les fournisseurs** : **Claude**, **OpenAI**, **Gemini**, **Mistral**,
+  **Groq**, **DeepSeek**, **xAI (Grok)**, **Perplexity**, **Together**, **Fireworks**,
+  **DeepInfra**, **Cerebras**, **Cohere**, **OpenRouter**, et les **modèles locaux**
+  **Ollama** / **LM Studio** (ou tout serveur compatible OpenAI via URL personnalisée).
+- 📋 **Seulement les modèles disponibles** : la liste (unifiée, juste au-dessus du
+  chat) n'affiche que les fournisseurs **connectés** (clé/compte/serveur local) et,
+  pour chacun, les **modèles réellement accessibles** à votre clé (lus en direct via
+  l'endpoint `/models`).
 - 🔑 **Connexion par compte** : bouton **« Se connecter avec OpenRouter »** (OAuth
   PKCE — login Google / GitHub / email côté OpenRouter) qui débloque tous les
   modèles. Les autres fournisseurs utilisent une clé API (ils n'offrent pas d'OAuth).
-- ⚖️ **Comparaison de modèles** : envoyez le même message à **deux modèles** et
-  comparez leurs réponses côte à côte.
+- ⚖️ **Comparaison de modèles** : sur **la dernière réponse**, un bouton
+  **« Comparer »** rejoue votre demande sur **un autre modèle**, directement dans le chat.
 - 🧩 **Artifacts interactifs (façon Claude)** : demandez une app, un outil ou un
   **jeu** → l'IA renvoie un document HTML/JS (ou un composant **React/JSX**) qui
   s'exécute dans un aperçu sandboxé **et avec lequel vous interagissez/jouez**
@@ -47,11 +51,12 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
 
 ## Capture
 
-Sidebar V1.1 — thème sombre + dégradé bleu/violet, sélecteur de modèle unifié,
-boutons à bascule, comparaison de modèles, et un **artifact interactif jouable**
-(un mini-jeu qui tourne dans l'aperçu sandboxé) — Firefox 152 :
+Sidebar V1.2 — thème sombre + dégradé bleu/violet, **sélecteur de modèle placé
+juste au-dessus du chat**, boutons à bascule, **bouton « Comparer » sous la dernière
+réponse**, et un **artifact interactif jouable** (un mini-jeu qui tourne dans
+l'aperçu sandboxé) — Firefox 152 :
 
-![Sidebar V1.1](docs/screenshots/sidebar-v11.png)
+![Sidebar V1.2](docs/screenshots/sidebar-v12.png)
 
 > Capture générée via la page `demo/index.html` (reproduit la sidebar avec une
 > réponse type), rendue dans Firefox sous Xvfb. Validé par `web-ext lint`
@@ -70,13 +75,15 @@ boutons à bascule, comparaison de modèles, et un **artifact interactif jouable
 
 | Fournisseur | Type | Clé requise | Notes |
 |---|---|---|---|
-| Claude (Anthropic) | natif | ✅ | thinking + recherche web |
+| Claude (Anthropic) | natif | ✅ | thinking + recherche web ; liste `/v1/models` |
 | OpenAI | compatible OpenAI | ✅ | images (gpt-image-1 / DALL·E 3) |
 | Google Gemini | compatible OpenAI | ✅ | endpoint `/v1beta/openai` |
 | Mistral, Groq, DeepSeek | compatible OpenAI | ✅ | DeepSeek R1 = raisonnement |
-| OpenRouter | compatible OpenAI | ✅ | catalogue géant, `⟳` pour lister |
-| Ollama (local) | compatible OpenAI | ❌ | `http://localhost:11434/v1` |
-| LM Studio (local) | compatible OpenAI | ❌ | `http://localhost:1234/v1` |
+| xAI (Grok), Perplexity | compatible OpenAI | ✅ | Grok / Sonar |
+| Together, Fireworks, DeepInfra, Cerebras, Cohere | compatible OpenAI | ✅ | open-weights + listing `/models` |
+| OpenRouter | compatible OpenAI | ✅ (ou OAuth) | catalogue géant, **connexion par compte** |
+| Local (Ollama) | compatible OpenAI | ❌ | `http://localhost:11434/v1` |
+| Local (LM Studio) | compatible OpenAI | ❌ | `http://localhost:1234/v1` |
 | Personnalisé | compatible OpenAI | optionnel | n'importe quelle URL `/v1` |
 
 > Les serveurs locaux fonctionnent sans configuration CORS : l'extension dispose

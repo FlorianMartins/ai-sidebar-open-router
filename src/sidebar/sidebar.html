@@ -20,25 +20,6 @@
       </div>
     </header>
 
-    <!-- Unified model picker (above the chat zone) -->
-    <div class="modelbar">
-      <div class="select-wrap">
-        <select id="modelSelect" title="Modèle"></select>
-      </div>
-      <button id="refreshModels" class="icon" title="Rafraîchir la liste des modèles">⟳</button>
-      <label class="switch mini" title="Comparer avec un second modèle">
-        <input type="checkbox" id="compareMode" />
-        <span class="track"></span>
-        <span class="lbl">⚖ Comparer</span>
-      </label>
-    </div>
-    <div class="modelbar compare-row hidden" id="compareRow">
-      <span class="vs">vs</span>
-      <div class="select-wrap">
-        <select id="compareSelect" title="Second modèle"></select>
-      </div>
-    </div>
-
     <!-- Workspace tabs -->
     <nav class="modebar" id="modebar">
       <button class="mode active" data-mode="chat">💬 Chat</button>
@@ -75,12 +56,12 @@
         <div class="empty-logo"><img src="../../icons/icon.svg" alt="" /></div>
         <p class="empty-title">Sidebar IA — branchez votre IA</p>
         <p class="muted">
-          Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek, OpenRouter, ou un modèle
-          <b>local</b> (Ollama / LM Studio).
+          Connectez-vous à un fournisseur (compte ou clé API) pour commencer :
+          Claude, OpenAI, Gemini, OpenRouter, Mistral, Groq, DeepSeek, xAI,
+          Perplexity… ou un modèle <b>local</b> (Ollama / LM Studio).
         </p>
         <div class="empty-actions">
-          <button id="connectOpenRouter" class="btn-grad">Se connecter avec OpenRouter</button>
-          <button id="emptyOptions" class="btn-ghost">⚙ Ajouter une clé API</button>
+          <button id="connectBtn" class="btn-grad">🔌 Se connecter / Ajouter un fournisseur</button>
         </div>
       </div>
     </main>
@@ -93,9 +74,8 @@
       </div>
     </div>
 
-    <!-- Adaptive control row (changes with the active mode) -->
+    <!-- Adaptive control row (toggles / per-mode controls) -->
     <div class="controls" id="controls">
-      <!-- chat: toggle switches -->
       <div class="ctl-group" id="chatControls">
         <label class="switch" title="Afficher le raisonnement du modèle">
           <input type="checkbox" id="thinking" /><span class="track"></span><span class="lbl">💭 Réflexion</span>
@@ -111,7 +91,6 @@
         </label>
       </div>
 
-      <!-- translate -->
       <div class="ctl-group hidden" id="translateControls">
         <label>Traduire vers
           <select id="translateLang">
@@ -124,14 +103,12 @@
         <span class="muted">vide = la page</span>
       </div>
 
-      <!-- improve -->
       <div class="ctl-group hidden" id="improveControls">
         <label>Style d'écriture
           <select id="improvePreset"></select>
         </label>
       </div>
 
-      <!-- image -->
       <div class="ctl-group hidden" id="imageControls">
         <label>Taille
           <select id="imageSize">
@@ -141,6 +118,14 @@
         </label>
         <span class="muted" id="imageProviderNote"></span>
       </div>
+    </div>
+
+    <!-- Unified model picker: between the controls and the composer -->
+    <div class="modelbar">
+      <div class="select-wrap">
+        <select id="modelSelect" title="Modèle"></select>
+      </div>
+      <button id="refreshModels" class="icon" title="Rafraîchir les modèles disponibles">⟳</button>
     </div>
 
     <footer class="composer">
