@@ -13,6 +13,7 @@ import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js
 import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts } from "../lib/markdown.js";
 import { PROVIDERS, modelFor, keyFor, connectedProviders, WRITING_PRESETS } from "../lib/models.js";
+import { connectOpenRouter } from "../lib/auth.js";
 import {
   listConversations, getConversation, saveConversation, deleteConversation,
   clearConversations, newConversationId, titleFrom,
@@ -24,7 +25,8 @@ const els = {
   modelWrap: $("modelWrap"),
   modelConnect: $("modelConnect"),
   refreshModels: $("refreshModels"),
-  providerSelect: $("providerSelect"),
+  freeConnect: $("freeConnect"),
+  emptyOptions: $("emptyOptions"),
   historyBtn: $("historyBtn"),
   newChat: $("newChat"),
   openOptions: $("openOptions"),
@@ -56,11 +58,6 @@ const els = {
   improvePreset: $("improvePreset"),
   imageSize: $("imageSize"),
   imageProviderNote: $("imageProviderNote"),
-  siteView: $("siteView"),
-  siteFrame: $("siteFrame"),
-  siteInsertPage: $("siteInsertPage"),
-  siteInsertSel: $("siteInsertSel"),
-  siteReload: $("siteReload"),
   confirmBar: $("confirmBar"),
   confirmText: $("confirmText"),
   confirmAllow: $("confirmAllow"),
@@ -88,29 +85,10 @@ const PLACEHOLDERS = {
   terminal: "Demandez du code, une commande, un script…",
 };
 
-// Provider websites used with the user's own account/subscription (embedded in
-// the sidebar, like Firefox's native AI sidebar). The "AI Sidebar" entry instead
-// uses the built-in API interface (see providerbar).
-const SITE_PROVIDERS = [
-  ["anthropic", "Anthropic", "https://claude.ai/new"],
-  ["chatgpt", "ChatGPT", "https://chatgpt.com/"],
-  ["copilot", "Copilot", "https://copilot.microsoft.com/"],
-  ["gemini", "Gemini", "https://gemini.google.com/app"],
-  ["mistral", "Mistral", "https://chat.mistral.ai/chat"],
-];
-
 async function init() {
   configureMarkdown();
   settings = await getSettings();
-  // Always open in API/chat mode. Never restore an embedded-site engine on load:
-  // a site that blocks framing (ChatGPT/Gemini…) would render blank and hide the
-  // whole chat UI. The user re-selects "Compte" per session if they want it.
-  if (settings.useSite) {
-    settings.useSite = false;
-    await setSettings({ useSite: false });
-  }
   populateModelSelector();
-  populateProviderSelect();
   populateImprovePresets();
   els.thinking.checked = settings.thinking;
   els.webSearch.checked = settings.webSearch;
@@ -189,39 +167,6 @@ function populateModelSelector() {
   fillModelSelect(els.modelSelect, val);
 }
 
-// ----- Provider selector (top-left): AI Sidebar (API) or a site (account) -----
-function populateProviderSelect() {
-  els.providerSelect.innerHTML = "";
-  for (const [id, label] of SITE_PROVIDERS) {
-    const o = document.createElement("option");
-    o.value = "site:" + id;
-    o.textContent = label;
-    els.providerSelect.appendChild(o);
-  }
-  const sep = document.createElement("option");
-  sep.disabled = true;
-  sep.textContent = "──────────";
-  els.providerSelect.appendChild(sep);
-  const api = document.createElement("option");
-  api.value = "api";
-  api.textContent = "AI Sidebar (API)";
-  els.providerSelect.appendChild(api);
-  els.providerSelect.value = settings.useSite ? "site:" + (settings.siteProvider || SITE_PROVIDERS[0][0]) : "api";
-}
-
-async function onProviderChange() {
-  const v = els.providerSelect.value;
-  if (v === "api") {
-    settings.useSite = false;
-    await setSettings({ useSite: false });
-  } else if (v.startsWith("site:")) {
-    settings.useSite = true;
-    settings.siteProvider = v.slice(5);
-    await setSettings({ useSite: true, siteProvider: settings.siteProvider });
-  }
-  syncEngine();
-}
-
 function parseSel(value) {
   const i = (value || "").indexOf("|");
   if (i < 0) return { providerId: settings.provider, modelId: modelFor(settings.provider, settings) };
@@ -259,6 +204,29 @@ async function onModelChange() {
   await setNested("models", sel.providerId, sel.modelId);
 }
 
+// One-click free onboarding: OAuth to OpenRouter (free models, no manual key).
+async function doFreeConnect() {
+  const prev = els.freeConnect.textContent;
+  els.freeConnect.disabled = true;
+  els.freeConnect.textContent = "Connexion…";
+  try {
+    const key = await connectOpenRouter();
+    settings.keys = settings.keys || {};
+    settings.keys.openrouter = key;
+    await setNested("keys", "openrouter", key);
+    settings.provider = "openrouter";
+    await setSettings({ provider: "openrouter" });
+    populateModelSelector();
+    autoListConnected();
+    addMessage("tool", "✓ Connecté à OpenRouter — choisissez un modèle gratuit ci-dessous.");
+  } catch (e) {
+    addMessage("error", "Connexion OpenRouter : " + (e && e.message ? e.message : e));
+  } finally {
+    els.freeConnect.disabled = false;
+    els.freeConnect.textContent = prev;
+  }
+}
+
 // Best-effort: fetch the real available model list for every connected provider.
 async function autoListConnected() {
   const ids = connectedProviders(settings);
@@ -287,13 +255,6 @@ async function refreshModelsFromApi() {
 
 // ----- Workspace modes ------------------------------------------------------
 function setMode(next) {
-  // Switching to an API workspace (anything but Chat) returns to "AI Sidebar" (API).
-  if (settings.useSite && next !== "chat") {
-    settings.useSite = false;
-    setSettings({ useSite: false });
-    document.body.classList.remove("mode-site");
-    els.providerSelect.value = "api";
-  }
   mode = next;
   settings.mode = next;
   setSettings({ mode: next });
@@ -305,42 +266,6 @@ function setMode(next) {
   els.imageControls.classList.toggle("hidden", next !== "image");
   document.body.classList.toggle("mode-terminal", next === "terminal");
   els.input.placeholder = PLACEHOLDERS[next] || PLACEHOLDERS.chat;
-  syncEngine(); // restore the embedded site if a "site|…" engine is selected (Chat)
-}
-
-// ----- Embedded provider website (account engine) --------------------------
-function siteUrl(id) {
-  const p = SITE_PROVIDERS.find((s) => s[0] === id);
-  return p ? p[2] : SITE_PROVIDERS[0][2];
-}
-// Show the embedded site ONLY when the user has explicitly chosen one
-// (settings.useSite). Never auto-enter site mode on load — otherwise a blank /
-// blocked iframe would hide the whole chat UI.
-function syncEngine() {
-  const isSite = settings.useSite === true;
-  document.body.classList.toggle("mode-site", isSite);
-  if (isSite) loadSite(settings.siteProvider);
-}
-function loadSite(id) {
-  const url = siteUrl(id || settings.siteProvider);
-  if (els.siteFrame.dataset.url !== url) {
-    els.siteFrame.dataset.url = url;
-    els.siteFrame.src = url; // (re)load only when the site actually changes
-  }
-}
-function insertIntoSite(text) {
-  try {
-    els.siteFrame.contentWindow.postMessage({ __aiSiteInsert: true, text }, "*");
-  } catch (_) {}
-}
-async function siteInsertPage() {
-  const p = await executeTool("read_page", {}, {});
-  if (!p || p.error || !p.text) return addMessage("error", "Page illisible.");
-  insertIntoSite(`Contenu de la page « ${p.title || ""} » (${p.url}) :\n\n${(p.text || "").slice(0, settings.maxPageChars)}\n\n`);
-}
-async function siteInsertSelection() {
-  const sel = await getSelection();
-  if (sel) insertIntoSite(sel + "\n\n");
 }
 
 // ----- Page awareness -------------------------------------------------------
@@ -580,15 +505,8 @@ function wire() {
   els.newChat.addEventListener("click", newChat);
   els.openOptions.addEventListener("click", () => browser.runtime.openOptionsPage());
   els.modelConnect.addEventListener("click", () => browser.runtime.openOptionsPage());
-  els.providerSelect.addEventListener("change", onProviderChange);
-
-  els.siteInsertPage.addEventListener("click", siteInsertPage);
-  els.siteInsertSel.addEventListener("click", siteInsertSelection);
-  els.siteReload.addEventListener("click", () => {
-    const u = siteUrl(settings.siteProvider);
-    els.siteFrame.dataset.url = u;
-    els.siteFrame.src = u;
-  });
+  if (els.emptyOptions) els.emptyOptions.addEventListener("click", () => browser.runtime.openOptionsPage());
+  if (els.freeConnect) els.freeConnect.addEventListener("click", doFreeConnect);
 
   onSettingsChanged(async () => {
     settings = await getSettings();

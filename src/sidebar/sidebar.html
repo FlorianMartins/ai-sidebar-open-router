@@ -29,23 +29,6 @@
       <button class="mode" data-mode="terminal">⌨ Terminal</button>
     </nav>
 
-    <!-- Provider/engine selector (top-left): a site (your account) or "AI Sidebar" (API) -->
-    <div class="providerbar">
-      <select id="providerSelect" title="Fournisseur"></select>
-    </div>
-
-    <!-- Embedded provider website (shown when a site is selected above).
-         Uses the user's account/subscription. -->
-    <div id="siteView" class="siteview hidden">
-      <div class="site-toolbar">
-        <span class="muted site-hint">🌐 Site connecté à votre compte — donnez-lui la page :</span>
-        <button id="siteInsertPage" class="chip-btn" title="Insérer le contenu de l'onglet actif">📄 Page</button>
-        <button id="siteInsertSel" class="chip-btn" title="Insérer la sélection">✂ Sélection</button>
-        <button id="siteReload" class="icon" title="Recharger">⟳</button>
-      </div>
-      <iframe id="siteFrame" class="site-frame" referrerpolicy="no-referrer"></iframe>
-    </div>
-
     <!-- History panel -->
     <div id="historyPanel" class="panel hidden">
       <div class="panel-head">
@@ -74,10 +57,17 @@
         <div class="empty-logo"><img src="../../icons/icon.svg" alt="" /></div>
         <p class="empty-title">Sidebar IA — branchez votre IA</p>
         <p class="muted">
-          Pour commencer, connectez un fournisseur via le bouton
-          <b>« 🔌 Se connecter »</b> ci-dessous (compte ou clé API) :
-          Claude, OpenAI, Gemini, OpenRouter, Mistral, Groq, DeepSeek, xAI,
-          Perplexity… ou un modèle <b>local</b> (Ollama / LM Studio).
+          Le plus simple et <b>gratuit</b> : connectez-vous à <b>OpenRouter</b>
+          (compte Google / GitHub / email) — accès à des <b>modèles gratuits</b>
+          (Llama, Gemini, DeepSeek…) sans gérer de clé.
+        </p>
+        <div class="empty-actions">
+          <button id="freeConnect" class="btn-grad">🎁 Se connecter (OpenRouter — gratuit)</button>
+          <button id="emptyOptions" class="btn-ghost">⚙ Autres fournisseurs / clé API</button>
+        </div>
+        <p class="muted" style="font-size:11.5px">
+          Ou : Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek… (clé API, souvent
+          gratuite) ou un modèle <b>local</b> (Ollama / LM Studio).
         </p>
       </div>
     </main>
