@@ -81,11 +81,11 @@ button { cursor: pointer; }
   background: transparent; border-color: transparent;
   filter: brightness(1.18); transform: translateY(-1px);
 }
-/* Per-glyph optical sizing so History 🕘, New +, and Settings ⚙ read at the same
-   visual weight (the ASCII + is thin, the clock glyph is wide — balance them). */
-#historyBtn.icon-accent { font-size: 20px; }
-#newChat.icon-accent { font-size: 30px; font-weight: 400; }
-#openOptions.icon-accent { font-size: 21px; }
+/* All four header actions (History, New, Expand, Settings) are now SVG icons sharing
+   one gradient + the same .icon-accent hover/active animation, so they behave
+   identically. Sizing comes from each <svg> width/height. */
+.icon-accent svg { display: block; }
+.icon-accent:active { transform: translateY(0) scale(0.94); }
 
 /* ----- Workspace: left activity rail + work area ----- */
 #workspace { flex: 1; min-height: 0; display: flex; }
