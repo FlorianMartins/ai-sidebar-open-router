@@ -290,7 +290,8 @@ async function load() {
   fillSelect($("responseLang"), LANGUAGES.map((l) => [l, l]), settings.responseLang || "English");
   fillSelect($("improvePreset"), WRITING_PRESETS.map((p) => [p[0], p[1]]), settings.improvePreset || "improve");
   $("imageModel").value = settings.imageModel || "";
-  $("targetLang").value = settings.targetLang || "Français";
+  $("uiLang").value = settings.uiLang || "en";
+  $("targetLang").value = settings.targetLang || "French";
   $("thinking").checked = settings.thinking;
   $("webSearch").checked = settings.webSearch;
   $("agentPermission").value = settings.agentPermission || "manual";
@@ -325,8 +326,9 @@ async function save() {
     imageModel: $("imageModel").value.trim() || "gpt-image-1",
     imageSize: $("imageSize").value,
     improvePreset: $("improvePreset").value,
+    uiLang: $("uiLang").value === "fr" ? "fr" : "en",
     responseLang: $("responseLang").value,
-    targetLang: $("targetLang").value.trim() || "Français",
+    targetLang: $("targetLang").value.trim() || "French",
     thinking: $("thinking").checked,
     webSearch: $("webSearch").checked,
     searchModel: $("searchModel").value,

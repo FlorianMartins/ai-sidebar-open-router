@@ -14,6 +14,7 @@ import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts } from "../lib/markdown.js";
 import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
+import { t, setLang, applyDom } from "../lib/i18n.js";
 import {
   listConversations, getConversation, saveConversation, deleteConversation,
   clearConversations, newConversationId, titleFrom,
@@ -90,14 +91,8 @@ let lastForceWeb = false;
 // scrollback, independent from the chat. `cmds`/`cmdIdx` drive ↑/↓ recall.
 const term = { native: [], lines: [], cmds: [], cmdIdx: 0, booted: false };
 
-const PLACEHOLDERS = {
-  chat: "Écrivez un message…",
-  agent: "Décrivez une tâche à réaliser dans le navigateur…",
-  translate: "Texte à traduire (ou laissez vide pour la page)…",
-  improve: "Texte à améliorer (ou laissez vide pour la sélection)…",
-  image: "Décrivez l'image à générer…",
-  terminal: "Demandez du code, une commande, un script…",
-};
+// Composer placeholder for a workspace — resolved live so it follows the UI language.
+function placeholderFor(m) { return t("ph." + m) || t("ph.chat"); }
 
 // The Agent workspace IS a dedicated tab now (no more "Agent" chip): being in it is
 // what turns on tool-use. The page-context chips (Réflexion/Web/Page) stay available.
@@ -106,13 +101,16 @@ function agentActive() { return mode === "agent"; }
 async function init() {
   configureMarkdown();
   settings = await getSettings();
+  setLang(settings.uiLang || "en");   // English by default; French chosen in Settings
+  applyDom(document);                  // fill all data-i18n static markup
+  document.documentElement.lang = settings.uiLang === "fr" ? "fr" : "en";
   populateModelSelector();
   populateImprovePresets();
   els.thinking.checked = settings.thinking;
   els.webSearch.checked = settings.webSearch;
   els.pageCtx.checked = settings.includePageContext;
   els.useTabs.checked = settings.includeSelectedTabs;
-  els.translateLang.value = settings.targetLang || "Français";
+  els.translateLang.value = settings.targetLang || "French";
   els.improvePreset.value = settings.improvePreset || "improve";
   populateImageSizes();
   els.imageSize.value = settings.imageSize || "1024x1024";
@@ -160,7 +158,7 @@ function prettifyORName(m) {
   return prettifyVendor(m.id.split("/")[1] || m.id);
 }
 function orCost(m) {
-  if (!m.prompt && !m.completion) return "gratuit";
+  if (!m.prompt && !m.completion) return t("cost.free");
   const inM = m.prompt * 1e6; // price per 1M prompt tokens
   return "$" + (inM >= 1 ? inM.toFixed(2) : inM.toFixed(3)) + "/M";
 }
@@ -218,14 +216,14 @@ function fillModelSelect(sel, selectedValue) {
   sel.innerHTML = "";
   const ph = document.createElement("option");
   ph.value = "";
-  ph.textContent = "— Choisir un modèle —";
+  ph.textContent = t("model.choose");
   sel.appendChild(ph);
   // Pin the active model as the FIRST entry so the native dropdown opens at the TOP
   // showing it, instead of scrolling deep into a long list (the "list opens at the
   // end" glitch). A duplicate value lower down is harmless.
   if (selectedValue) {
     const cur = document.createElement("optgroup");
-    cur.label = "✓ Modèle actuel";
+    cur.label = t("model.current");
     const o = document.createElement("option");
     o.value = selectedValue;
     o.textContent = labelForValue(selectedValue);
@@ -239,7 +237,7 @@ function fillModelSelect(sel, selectedValue) {
     }
     const group = document.createElement("optgroup");
     const noKey = !(keyFor(pid, settings) || PROVIDERS[pid].local);
-    group.label = PROVIDERS[pid].label + (noKey ? " (clé manquante)" : "");
+    group.label = PROVIDERS[pid].label + (noKey ? t("model.keyMissing") : "");
     for (const [mid, mlabel] of modelsOf(pid)) {
       const o = document.createElement("option");
       o.value = pid + "|" + mid;
@@ -279,8 +277,8 @@ function populateImageModelSelector() {
     const o = document.createElement("option");
     o.value = "";
     o.textContent = anyConnected
-      ? "— Connectez OpenAI pour générer des images —"
-      : "— Connectez un fournisseur d'images (ex. OpenAI) —";
+      ? t("image.connectOpenAI")
+      : t("image.connectAny");
     sel.appendChild(o);
     updateEmptyState();
     return;
@@ -306,7 +304,7 @@ function imagePriceTier(pid, mid) {
   if (m.includes("dall-e-2")) return { emoji: "🟢", color: "#34d399", note: "~$0.02/image" };
   if (m.includes("dall-e-3")) return { emoji: "🟡", color: "#fbbf24", note: "~$0.04–0.12/image" };
   if (m.includes("gpt-image")) return { emoji: "🟠", color: "#fb923c", note: "~$0.04–0.17/image" };
-  return { emoji: "⚪", color: "#9aa0b4", note: "tarif selon le modèle" };
+  return { emoji: "⚪", color: "#9aa0b4", note: t("image.tierDefault") };
 }
 
 // Refresh whichever model picker the active workspace needs.
@@ -338,9 +336,9 @@ function updateEmptyState() {
   els.emptyGreeting.classList.toggle("hidden", !connected);
   if (connected) {
     els.emptyGreeting.textContent =
-      mode === "terminal" ? "⌨️ Terminal prêt — décrivez une tâche de code." :
-      mode === "agent" ? "🤖 Mode agent — décrivez une tâche à automatiser." :
-      "Comment puis-je vous aider ?";
+      mode === "terminal" ? t("greeting.terminal") :
+      mode === "agent" ? t("greeting.agent") :
+      t("greeting");
   }
 }
 
@@ -363,19 +361,19 @@ function updateImageNote() {
 }
 function populateImprovePresets() {
   els.improvePreset.innerHTML = "";
-  for (const [id, label] of WRITING_PRESETS) {
+  for (const [id] of WRITING_PRESETS) {
     const o = document.createElement("option");
     o.value = id;
-    o.textContent = label;
+    o.textContent = t("preset." + id);
     els.improvePreset.appendChild(o);
   }
 }
 function populateImageSizes() {
   els.imageSize.innerHTML = "";
-  for (const [value, label] of IMAGE_SIZES) {
+  for (const [value] of IMAGE_SIZES) {
     const o = document.createElement("option");
     o.value = value;
-    o.textContent = label;
+    o.textContent = t("size." + value);
     els.imageSize.appendChild(o);
   }
 }
@@ -415,7 +413,7 @@ async function onModelChange() {
 async function doFreeConnect() {
   const prev = els.freeConnect.textContent;
   els.freeConnect.disabled = true;
-  els.freeConnect.textContent = "Connexion…";
+  els.freeConnect.textContent = t("or.connecting");
   try {
     const key = await connectOpenRouter();
     settings.keys = { ...(settings.keys || {}), openrouter: key };
@@ -425,9 +423,9 @@ async function doFreeConnect() {
     await setSettings({ keys: settings.keys, provider: "openrouter" });
     populateModelSelector();
     autoListConnected();
-    addMessage("tool", "✓ Connecté à OpenRouter — choisissez un modèle gratuit ci-dessous.");
+    addMessage("tool", t("or.connected"));
   } catch (e) {
-    addMessage("error", "Connexion OpenRouter : " + (e && e.message ? e.message : e));
+    addMessage("error", t("or.connectErr", { msg: e && e.message ? e.message : e }));
   } finally {
     els.freeConnect.disabled = false;
     els.freeConnect.textContent = prev;
@@ -476,7 +474,7 @@ function setMode(next) {
   document.body.classList.toggle("mode-code", next === "code");
   els.terminalView.classList.toggle("hidden", next !== "terminal");
   els.codeView.classList.toggle("hidden", next !== "code");
-  els.input.placeholder = PLACEHOLDERS[next] || PLACEHOLDERS.chat;
+  els.input.placeholder = placeholderFor(next);
   refreshModelUI(); // Image tab lists image models; others list chat models.
   if (next === "terminal") {
     termBoot();
@@ -494,24 +492,34 @@ function updateCodeLauncher() {
   const url = (settings.codeAppUrl || "").trim();
   if (url) {
     els.openCodeApp.disabled = false;
-    els.openCodeApp.textContent = "🚀 Ouvrir l'atelier dans un nouvel onglet";
+    els.openCodeApp.textContent = t("code.open");
     els.codeAppUrlLabel.textContent = url;
   } else {
     els.openCodeApp.disabled = true;
-    els.openCodeApp.textContent = "URL de l'atelier non configurée";
-    els.codeAppUrlLabel.textContent = "Renseignez l'URL dans Réglages → Atelier de code.";
+    els.openCodeApp.textContent = t("code.notConfigured");
+    els.codeAppUrlLabel.textContent = t("code.setUrl");
   }
 }
-async function openCodeApp() {
+// Program Generator and the sidebar are ONE service: hand the builder this sidebar's
+// OpenRouter key via the URL fragment (#sk=). The fragment is never sent to the
+// server; Program Generator's bridge copies it into its own cookie then strips it.
+function codeAppLaunchUrl() {
   const url = (settings.codeAppUrl || "").trim();
-  if (!url) return browser.runtime.openOptionsPage();
+  if (!url) return "";
+  const orKey = (settings.keys && settings.keys.openrouter) || "";
+  if (!orKey) return url; // no key to share yet — open it blank
+  return url + (url.includes("#") ? "&" : "#") + "sk=" + encodeURIComponent(orKey);
+}
+async function openCodeApp() {
+  if (!(settings.codeAppUrl || "").trim()) return browser.runtime.openOptionsPage();
+  const url = codeAppLaunchUrl();
   try { await browser.tabs.create({ url }); } catch (_) { window.open(url, "_blank", "noopener"); }
 }
 
 // ----- Terminal workspace (OpenClaude) --------------------------------------
 function termModelLabel() {
   const sel = parseSel(els.termModel && els.termModel.value);
-  if (!sel.providerId) return "(aucun modèle — connectez un fournisseur)";
+  if (!sel.providerId) return t("term.noModel");
   return sel.modelId;
 }
 // Append a line/block to the terminal scrollback. `kind`: banner | sys | cmd | out | err.
@@ -538,10 +546,10 @@ function termAppend(kind, text) {
   return div;
 }
 function termPrintBanner() {
-  termAppend("banner", "OpenClaude · agent de code en terminal (via OpenRouter & autres API)");
+  termAppend("banner", t("term.banner"));
   termAppend("sys", "$ claude");
-  termAppend("sys", "● Session démarrée — modèle : " + termModelLabel() + "  ·  historique local actif.");
-  termAppend("sys", "  Décris une tâche de code. 'help' pour l'aide, 'clear' pour effacer, ↑/↓ pour rappeler.");
+  termAppend("sys", t("term.sessionStarted", { model: termModelLabel() }));
+  termAppend("sys", t("term.describeTask"));
 }
 // Boot once per page load: print banner, then replay any locally-saved session.
 function termBoot() {
@@ -557,7 +565,7 @@ function termBoot() {
       if (ln.kind === "cmd") term.cmds.push(ln.text);
     }
     term.cmdIdx = term.cmds.length;
-    termAppend("sys", "— session précédente restaurée —");
+    termAppend("sys", t("term.restored"));
   }
 }
 async function termPersist() {
@@ -581,17 +589,12 @@ async function termSend(rawText) {
   const lower = text.toLowerCase();
   if (lower === "clear" || lower === "cls") return termClearAll();
   if (lower === "help") {
-    termAppend("sys",
-      "OpenClaude — tape une tâche de code (ex: « écris un script bash qui sauvegarde /etc »).\n" +
-      "  • le modèle répond façon agent CLI (commandes, diffs, statuts) ;\n" +
-      "  • il ne PEUT PAS exécuter sur ta machine — il fournit les commandes à lancer ;\n" +
-      "  • 'clear' efface · ↑/↓ rappellent tes commandes · Entrée envoie, Maj+Entrée = nouvelle ligne ;\n" +
-      "  • le modèle se choisit en haut à droite ; l'historique reste 100% local.");
+    termAppend("sys", t("term.help"));
     return;
   }
   const sel = parseSel(els.termModel.value);
   if (!sel.providerId || currentKeyMissing(sel.providerId)) {
-    termAppend("err", "✗ aucun modèle connecté — connecte un fournisseur (OpenRouter) puis choisis un modèle en haut à droite.");
+    termAppend("err", t("term.noModelConnected"));
     return;
   }
   term.cmds.push(text); term.cmdIdx = term.cmds.length;
@@ -621,7 +624,7 @@ async function termSend(rawText) {
     term.lines.push({ kind: "out", text: raw });
   } catch (e) {
     out.remove();
-    if (e && e.name === "AbortError") termAppend("err", "■ interrompu");
+    if (e && e.name === "AbortError") termAppend("err", t("term.interrupted"));
     else termAppend("err", "✗ " + (e && e.message ? e.message : String(e)));
   } finally {
     endBusy();
@@ -700,20 +703,20 @@ async function selectedTabsContext() {
     try {
       const p = await executeTool("read_tab", { tabId }, {});
       if (p && !p.error && p.text) {
-        parts.push(`[Onglet] ${p.title || ""} (${p.url})\n` + p.text.slice(0, Math.floor(settings.maxPageChars / 2)));
+        parts.push(`[Tab] ${p.title || ""} (${p.url})\n` + p.text.slice(0, Math.floor(settings.maxPageChars / 2)));
       }
     } catch (_) {}
   }
-  return parts.length ? `[Contexte multi-onglets]\n${parts.join("\n\n")}\n\n` : "";
+  return parts.length ? `[Multi-tab context]\n${parts.join("\n\n")}\n\n` : "";
 }
 
 // ----- Local history --------------------------------------------------------
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return "à l'instant";
-  if (s < 3600) return Math.floor(s / 60) + " min";
-  if (s < 86400) return Math.floor(s / 3600) + " h";
-  return Math.floor(s / 86400) + " j";
+  if (s < 60) return t("time.now");
+  if (s < 3600) return t("time.min", { n: Math.floor(s / 60) });
+  if (s < 86400) return t("time.hour", { n: Math.floor(s / 3600) });
+  return t("time.day", { n: Math.floor(s / 86400) });
 }
 async function renderHistoryList() {
   const list = await listConversations();
@@ -721,7 +724,7 @@ async function renderHistoryList() {
   if (!list.length) {
     const li = document.createElement("li");
     li.className = "muted";
-    li.textContent = "Aucune conversation enregistrée.";
+    li.textContent = t("history.empty");
     els.historyList.appendChild(li);
     return;
   }
@@ -730,14 +733,14 @@ async function renderHistoryList() {
     li.className = "histrow";
     const title = document.createElement("span");
     title.className = "htitle";
-    title.textContent = c.title || "Conversation";
+    title.textContent = c.title || t("history.untitled");
     const meta = document.createElement("span");
     meta.className = "hmeta";
     meta.textContent = timeAgo(c.updatedAt || Date.now());
     const del = document.createElement("button");
     del.className = "hdel";
     del.textContent = "✕";
-    del.title = "Supprimer";
+    del.title = t("delete.title");
     del.addEventListener("click", async (e) => {
       e.stopPropagation();
       await deleteConversation(c.id);
@@ -893,7 +896,7 @@ function wire() {
   els.termModel.addEventListener("change", async () => {
     const sel = await applyModelChoice(els.termModel.value);
     if (sel) {
-      termAppend("sys", "● Modèle : " + sel.modelId);
+      termAppend("sys", t("term.modelLine", { model: sel.modelId }));
       if (els.modelSelect) els.modelSelect.value = els.termModel.value;
     }
   });
@@ -908,6 +911,9 @@ function wire() {
   // rebuilding the pickers mid-stream and re-fetching model lists in a loop — that
   // feedback was what glitched the sidebar when switching the Terminal model.
   onSettingsChanged(async (changes) => {
+    // A UI-language switch in Settings: reload so every static + dynamic string is
+    // rebuilt in the new language (simplest and fully consistent).
+    if (changes.uiLang) { location.reload(); return; }
     const connChanged = !!(changes.keys || changes.baseUrls || changes.localEnabled);
     if (!connChanged && !changes.modelLists && !changes.orModels && !changes.codeAppUrl) return;
     settings = await getSettings();
@@ -940,7 +946,7 @@ function addThinkBlock() {
   d.className = "think";
   d.open = true;
   const s = document.createElement("summary");
-  s.textContent = "💭 Réflexion";
+  s.textContent = t("chip.thinking");
   const body = document.createElement("div");
   body.className = "think-body";
   d.appendChild(s);
@@ -993,7 +999,7 @@ function currentKeyMissing(providerId) {
 }
 function confirmAction(name, input) {
   return new Promise((resolve) => {
-    els.confirmText.textContent = `Autoriser l'action « ${name} » ? ${JSON.stringify(input).slice(0, 120)}`;
+    els.confirmText.textContent = t("confirm.prompt", { name, input: JSON.stringify(input).slice(0, 120) });
     els.confirmBar.classList.remove("hidden");
     const cleanup = (v) => {
       els.confirmBar.classList.add("hidden");
@@ -1011,7 +1017,7 @@ function pageContextBlock() {
   if (!currentPage) return "";
   const ctx = (currentPage.text || "").slice(0, settings.maxPageChars);
   return (
-    `[Contexte de la page active]\nTitre: ${currentPage.title}\nURL: ${currentPage.url}\n` +
+    `[Active page context]\nTitle: ${currentPage.title}\nURL: ${currentPage.url}\n` +
     (currentPage.description ? `Description: ${currentPage.description}\n` : "") + `${ctx}\n\n`
   );
 }
@@ -1043,7 +1049,7 @@ function attachCompareBar(el) {
   bar.className = "msg-actions";
   const lbl = document.createElement("span");
   lbl.className = "cmp-lbl";
-  lbl.textContent = "⚖ Comparer avec";
+  lbl.textContent = t("compare.with");
   const sel = document.createElement("select");
   sel.className = "cmp-select";
   fillModelSelect(sel, null);
@@ -1053,7 +1059,7 @@ function attachCompareBar(el) {
   }
   const btn = document.createElement("button");
   btn.className = "cmp-btn";
-  btn.textContent = "Comparer";
+  btn.textContent = t("compare.btn");
   btn.addEventListener("click", () => compareLast(parseSel(sel.value), btn));
   bar.appendChild(lbl);
   bar.appendChild(sel);
@@ -1064,7 +1070,7 @@ function attachCompareBar(el) {
 async function compareLast(second, btn) {
   if (busy || !lastUserContent) return;
   if (currentKeyMissing(second.providerId)) {
-    addMessage("error", "Clé manquante pour " + PROVIDERS[second.providerId].label + ".");
+    addMessage("error", t("err.keyMissingFor", { label: PROVIDERS[second.providerId].label }));
     return;
   }
   btn.disabled = true;
@@ -1082,8 +1088,8 @@ async function compareLast(second, btn) {
     if (sink.getRaw()) transcript.push({ role: "assistant", text: `**${badge}**\n\n${sink.getRaw()}` });
     attachCompareBar(sink.getEl()); // allow comparing again with yet another model
   } catch (e) {
-    if (e && e.name === "AbortError") addMessage("tool", "■ Interrompu.");
-    else addMessage("error", "Erreur : " + (e && e.message ? e.message : String(e)));
+    if (e && e.name === "AbortError") addMessage("tool", t("msg.interrupted"));
+    else addMessage("error", t("err.generic", { msg: e && e.message ? e.message : String(e) }));
   } finally {
     endBusy();
     btn.disabled = false;
@@ -1096,7 +1102,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   if (busy) return;
   const sel = currentSelection();
   if (currentKeyMissing(sel.providerId)) {
-    addMessage("error", "Aucune clé pour ce modèle. Cliquez « Connexion / Ajouter un fournisseur » (⚙).");
+    addMessage("error", t("err.noKeyModel"));
     return;
   }
   // Remember the last-used provider + model as the default for next time
@@ -1131,7 +1137,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       turnSel = ss;
       isolated = true;
       const lbl = PROVIDERS[ss.providerId] ? PROVIDERS[ss.providerId].label : ss.providerId;
-      badge = "🌐 Recherche web · " + lbl + " · " + ss.modelId;
+      badge = t("badge.web", { label: lbl, model: ss.modelId });
     }
   }
 
@@ -1144,7 +1150,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       turnSel = as;
       if (as.providerId !== sel.providerId || as.modelId !== sel.modelId) {
         const lbl = PROVIDERS[as.providerId] ? PROVIDERS[as.providerId].label : as.providerId;
-        badge = "🤖 Agent · " + lbl + " · " + as.modelId;
+        badge = t("badge.agent", { label: lbl, model: as.modelId });
       }
     }
   }
@@ -1182,8 +1188,8 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       attachCompareBar(sink.getEl());
     }
   } catch (e) {
-    if (e && e.name === "AbortError") addMessage("tool", "■ Interrompu.");
-    else addMessage("error", "Erreur : " + (e && e.message ? e.message : String(e)));
+    if (e && e.name === "AbortError") addMessage("tool", t("msg.interrupted"));
+    else addMessage("error", t("err.generic", { msg: e && e.message ? e.message : String(e) }));
   } finally {
     endBusy();
     await saveCurrent();
@@ -1221,26 +1227,27 @@ async function onChatSend() {
   await sendToModel(text, content);
 }
 async function runTranslateFromInput() {
-  const lang = els.translateLang.value || "Français";
+  const lang = els.translateLang.value || "French";
   let txt = els.input.value.trim();
-  let label = "🌐 Traduire";
-  if (!txt) { txt = currentPage ? (currentPage.text || "").slice(0, settings.maxPageChars) : ""; label = "🌐 Traduire la page"; }
-  if (!txt) return addMessage("error", "Rien à traduire (saisissez du texte ou ouvrez une page).");
+  let label = t("label.translate");
+  if (!txt) { txt = currentPage ? (currentPage.text || "").slice(0, settings.maxPageChars) : ""; label = t("label.translatePage"); }
+  if (!txt) return addMessage("error", t("err.nothingToTranslateInput"));
   els.input.value = "";
-  await sendToModel(label, `Traduis en ${lang}, en gardant la mise en forme :\n\n${txt}`, { runMode: "translate" });
+  await sendToModel(label, t("prompt.translate", { lang, text: txt }), { runMode: "translate" });
 }
 async function runImproveFromInput() {
   const presetId = els.improvePreset.value || "improve";
-  const preset = WRITING_PRESETS.find((p) => p[0] === presetId) || WRITING_PRESETS[0];
   let txt = els.input.value.trim();
   if (!txt) txt = await getSelection();
-  if (!txt) return addMessage("error", "Saisissez ou sélectionnez du texte.");
+  if (!txt) return addMessage("error", t("err.typeOrSelect"));
   els.input.value = "";
-  await sendToModel("✨ " + preset[1], `${preset[2]}\nRenvoie uniquement le résultat, sans préambule.\n\nTexte :\n${txt}`, { runMode: "improve" });
+  const label = "✨ " + t("preset." + presetId);
+  const instruction = t("presetPrompt." + presetId);
+  await sendToModel(label, `${instruction}\n${t("improve.only")}\n\n${t("improve.textLabel")}\n${txt}`, { runMode: "improve" });
 }
 async function runImageFromInput() {
   const prompt = els.input.value.trim();
-  if (!prompt) return addMessage("error", "Décrivez l'image à générer.");
+  if (!prompt) return addMessage("error", t("err.describeImage"));
   els.input.value = "";
   await runImage(prompt);
 }
@@ -1248,7 +1255,7 @@ async function runImageFromInput() {
 // ----- Quick actions / context menus ----------------------------------------
 async function runQuickAction(action, providedText) {
   if (busy) return;
-  const lang = settings.targetLang || "Français";
+  const lang = settings.targetLang || "French";
   if (action === "image") {
     const prompt = providedText || els.input.value.trim();
     if (!prompt) { setMode("image"); els.input.focus(); return; }
@@ -1257,46 +1264,46 @@ async function runQuickAction(action, providedText) {
   }
   if (action === "summarize") {
     if (!currentPage) await refreshCurrentPage();
-    if (!currentPage) return addMessage("error", "Aucune page lisible à résumer.");
-    return sendToModel("📝 Résumer la page", pageContextBlock() + "[Tâche]\nRésume cette page en points clés (titre, idées principales, conclusion).");
+    if (!currentPage) return addMessage("error", t("err.noReadablePage"));
+    return sendToModel(t("label.summarizePage"), pageContextBlock() + "[Task]\n" + t("prompt.summarizePage"));
   }
   if (action === "summarize-selection") {
     const txt = providedText || (await getSelection());
-    if (!txt) return addMessage("error", "Rien à résumer.");
-    return sendToModel("📝 Résumer la sélection", "Résume en points clés :\n\n" + txt);
+    if (!txt) return addMessage("error", t("err.nothingToSummarize"));
+    return sendToModel(t("label.summarizeSel"), t("prompt.summarizeSel", { text: txt }));
   }
   if (action === "translate") {
     let txt = providedText || (await getSelection());
-    let label = "🌐 Traduire la sélection";
-    if (!txt && currentPage) { txt = (currentPage.text || "").slice(0, settings.maxPageChars); label = "🌐 Traduire la page"; }
-    if (!txt) return addMessage("error", "Rien à traduire.");
-    return sendToModel(label, `Traduis en ${lang}, en gardant la mise en forme :\n\n${txt}`, { runMode: "translate" });
+    let label = t("label.translateSel");
+    if (!txt && currentPage) { txt = (currentPage.text || "").slice(0, settings.maxPageChars); label = t("label.translatePage"); }
+    if (!txt) return addMessage("error", t("err.nothingToTranslate"));
+    return sendToModel(label, t("prompt.translate", { lang, text: txt }), { runMode: "translate" });
   }
   if (action === "improve") {
     const txt = providedText || (await getSelection());
-    if (!txt) return addMessage("error", "Sélectionne d'abord du texte à améliorer.");
-    return sendToModel("✨ Améliorer le texte", "Améliore ce texte (clarté, style, grammaire), garde la langue d'origine, renvoie uniquement le texte réécrit :\n\n" + txt, { runMode: "improve" });
+    if (!txt) return addMessage("error", t("err.selectToImprove"));
+    return sendToModel(t("label.improve"), t("prompt.improve", { text: txt }), { runMode: "improve" });
   }
   if (action === "explain") {
     const txt = providedText || (await getSelection());
-    if (!txt) return addMessage("error", "Rien à expliquer.");
-    return sendToModel("💡 Expliquer", "Explique simplement et clairement :\n\n" + txt);
+    if (!txt) return addMessage("error", t("err.nothingToExplain"));
+    return sendToModel(t("label.explain"), t("prompt.explain", { text: txt }));
   }
   if (action === "reply") {
     const txt = providedText || (await getSelection());
-    if (!txt) return addMessage("error", "Aucun message à qui répondre.");
-    return sendToModel("✉️ Brouillon de réponse", `Rédige une réponse polie et adaptée (en ${lang}) au message/email suivant. Propose un brouillon prêt à relire et envoyer (je vérifierai avant l'envoi) :\n\n${txt}`);
+    if (!txt) return addMessage("error", t("err.noMessageToReply"));
+    return sendToModel(t("label.reply"), t("prompt.reply", { lang, text: txt }));
   }
 }
 
 // ----- Image generation -----------------------------------------------------
 async function runImage(prompt) {
   if (currentKeyMissing(settings.imageProvider || "openai")) {
-    return addMessage("error", `Clé manquante pour la génération d'images (${PROVIDERS[settings.imageProvider || "openai"].label}).`);
+    return addMessage("error", t("err.imageKeyMissing", { label: PROVIDERS[settings.imageProvider || "openai"].label }));
   }
   addMessage("user", "🎨 " + prompt);
   transcript.push({ role: "user", text: "🎨 " + prompt });
-  const status = addMessage("tool", "Génération de l'image…");
+  const status = addMessage("tool", t("image.generating"));
   startBusy();
   try {
     const urls = await generateImage(settings, { prompt, size: els.imageSize.value || settings.imageSize, signal: abortController.signal });
@@ -1310,7 +1317,7 @@ async function runImage(prompt) {
     transcript.push({ role: "assistant", kind: "image", urls });
   } catch (e) {
     status.remove();
-    addMessage("error", "Image : " + (e && e.message ? e.message : String(e)));
+    addMessage("error", t("err.image", { msg: e && e.message ? e.message : String(e) }));
   } finally {
     endBusy();
     await saveCurrent();

@@ -62,14 +62,25 @@ button { cursor: pointer; }
 .icon.spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Accent header actions (new chat ＋, settings ⚙): bigger and gradient blue/violet
-   so the primary actions stand out next to the neutral history icon. */
+/* Accent header actions (new chat ＋, settings ⚙): bigger, NO filled background —
+   just the glyph painted in the blue/violet gradient. background-clip:text paints
+   the gradient onto the glyph itself; -webkit-text-fill-color:transparent reveals
+   only the clipped gradient. A solid colour is kept as a fallback. The gear uses a
+   text-presentation variation selector (⚙︎) in the HTML so it stays a monochrome
+   glyph the gradient can clip onto (instead of a multicolour emoji). */
 .icon-accent {
-  width: 34px; height: 34px; font-size: 18px; font-weight: 700;
-  color: #fff; background: var(--grad); border-color: transparent;
-  box-shadow: 0 3px 10px rgba(124, 58, 237, 0.32);
+  width: 34px; height: 34px; font-size: 22px; font-weight: 700;
+  background: transparent; border-color: transparent; box-shadow: none;
+  color: #7c6cff;
+  background-image: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
-.icon-accent:hover { color: #fff; background: var(--grad); border-color: transparent; filter: brightness(1.1); }
+.icon-accent:hover {
+  background: transparent; border-color: transparent;
+  filter: brightness(1.18); transform: translateY(-1px);
+}
 
 /* ----- Workspace: left activity rail + work area ----- */
 #workspace { flex: 1; min-height: 0; display: flex; }

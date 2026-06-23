@@ -38,17 +38,20 @@ const DEFAULTS = {
   selectedTabs: [], // tab ids the user ticked for multi-tab context
   localEnabled: {}, // explicit opt-in for local servers { ollama:true, lmstudio:true }
   maxPageChars: 12000, // truncation budget for a single page's text
-  targetLang: "Français", // preferred target language for translations
+  targetLang: "French", // preferred target language for translations (canonical English name)
   responseLang: "English", // language the AI replies in (default: English)
   improvePreset: "improve", // default writing preset for the "improve" mode
+  uiLang: "en", // sidebar interface language: "en" (default) | "fr". Changed from Settings.
 
   // ----- Code workspace ------------------------------------------------------
-  // The "Code" tab launches a self-hosted AI app builder (Bolt.diy / Behivey)
-  // in a NEW BROWSER TAB. WebContainers there require cross-origin isolation
-  // (COOP/COEP) and can't run inside an extension iframe, so a new tab is the
-  // only robust integration. URL is user-configurable (default: the maintainer's
-  // public instance). Leave blank to hide the launcher.
-  codeAppUrl: "https://www.behivey.com",
+  // The "Code" tab launches a self-hosted AI app builder ("Program Generator",
+  // a Bolt.diy instance) in a NEW BROWSER TAB. WebContainers there require
+  // cross-origin isolation (COOP/COEP) and can't run inside an extension iframe,
+  // so a new tab is the only robust integration. The builder is keyless server-
+  // side: the sidebar hands it its OpenRouter key via the URL fragment (#sk=) so
+  // both share one and the same key/budget — a single service. URL is user-
+  // configurable; leave blank to hide the launcher.
+  codeAppUrl: "https://code.hivey.be",
 
   // ----- Compare & history ---------------------------------------------------
   compareMode: false, // run the prompt on a second model side-by-side
@@ -75,6 +78,15 @@ function migrate(s) {
   if (s.openrouterKey && !s.keys.openrouter) s.keys.openrouter = s.openrouterKey;
   if (s.anthropicModel && !s.models.anthropic) s.models.anthropic = s.anthropicModel;
   if (s.openrouterModel && !s.models.openrouter) s.models.openrouter = s.openrouterModel;
+  // The translate-target language is now stored as a canonical English name (the
+  // <option> values). Map any legacy French label to it so the dropdown still matches.
+  const LANG_FR2EN = {
+    "Français": "French", "Anglais": "English", "Espagnol": "Spanish",
+    "Allemand": "German", "Italien": "Italian", "Portugais": "Portuguese",
+    "Néerlandais": "Dutch", "Arabe": "Arabic", "Chinois": "Chinese",
+    "Japonais": "Japanese", "Russe": "Russian",
+  };
+  if (s.targetLang && LANG_FR2EN[s.targetLang]) s.targetLang = LANG_FR2EN[s.targetLang];
   delete s.anthropicKey;
   delete s.openrouterKey;
   delete s.anthropicModel;

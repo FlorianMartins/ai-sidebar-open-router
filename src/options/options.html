@@ -103,19 +103,26 @@
       <section>
         <h2>&lt;/&gt; Atelier de code</h2>
         <p class="muted">
-          L'onglet <b>Code</b> de la sidebar ouvre un atelier d'app IA (type
-          <b>Bolt.diy</b> / Behivey) dans un <b>nouvel onglet</b> : génération de code,
-          aperçu live, terminal intégré et <b>Expo Go</b>. Renseignez l'URL de votre
-          instance (la vôtre, auto-hébergée, ou l'instance publique par défaut).
+          L'onglet <b>Code</b> de la sidebar ouvre <b>Program Generator</b>, un atelier
+          d'app IA auto-hébergé (basé sur <b>Bolt.diy</b>) dans un <b>nouvel onglet</b> :
+          génération de code, aperçu live, terminal intégré et <b>Expo Go</b>. Il forme
+          <b>un seul service</b> avec la sidebar : votre clé OpenRouter lui est transmise
+          automatiquement, sans la ressaisir. Renseignez l'URL de votre instance.
           Laissez vide pour masquer le lanceur.
         </p>
         <label>URL de l'atelier de code
-          <input type="text" id="codeAppUrl" placeholder="https://www.behivey.com" />
+          <input type="text" id="codeAppUrl" placeholder="https://code.hivey.be" />
         </label>
       </section>
 
       <section>
         <h2>Langue &amp; rédaction</h2>
+        <label>Langue de l'interface (sidebar)
+          <select id="uiLang">
+            <option value="en">English (default)</option>
+            <option value="fr">Français</option>
+          </select>
+        </label>
         <label>Langue des réponses de l'IA
           <select id="responseLang"></select>
         </label>
@@ -123,7 +130,7 @@
           <select id="improvePreset"></select>
         </label>
         <label>Langue cible des traductions
-          <input type="text" id="targetLang" placeholder="Français" />
+          <input type="text" id="targetLang" placeholder="French" />
         </label>
       </section>
 
