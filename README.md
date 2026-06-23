@@ -239,3 +239,7 @@ bouton **Ouvrir** (plein écran) :
 ## Licence
 
 MIT — voir [LICENSE](./LICENSE).
+
+## Building / reviewers
+
+The extension ships hand-written, non-minified source (only `vendor/` holds unmodified third-party libraries). To reproduce the exact packages: `bash scripts/build.sh`. Verify the third-party libs with `bash scripts/fetch-vendor.sh --check`. Full reviewer/build documentation: see [REVIEWERS.md](REVIEWERS.md).
