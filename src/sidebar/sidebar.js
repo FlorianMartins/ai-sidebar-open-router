@@ -24,7 +24,6 @@ const els = {
   modelSelect: $("modelSelect"),
   modelWrap: $("modelWrap"),
   modelConnect: $("modelConnect"),
-  refreshModels: $("refreshModels"),
   freeConnect: $("freeConnect"),
   emptyOptions: $("emptyOptions"),
   historyBtn: $("historyBtn"),
@@ -48,7 +47,10 @@ const els = {
   input: $("input"),
   send: $("send"),
   stop: $("stop"),
-  modebar: $("modebar"),
+  rail: $("rail"),
+  codeView: $("codeView"),
+  openCodeApp: $("openCodeApp"),
+  codeAppUrlLabel: $("codeAppUrlLabel"),
   terminalView: $("terminalView"),
   termLog: $("termLog"),
   termInput: $("termInput"),
@@ -60,7 +62,6 @@ const els = {
   imageControls: $("imageControls"),
   thinking: $("thinking"),
   webSearch: $("webSearch"),
-  agentMode: $("agentMode"),
   pageCtx: $("pageCtx"),
   translateLang: $("translateLang"),
   improvePreset: $("improvePreset"),
@@ -91,11 +92,16 @@ const term = { native: [], lines: [], cmds: [], cmdIdx: 0, booted: false };
 
 const PLACEHOLDERS = {
   chat: "Écrivez un message…",
+  agent: "Décrivez une tâche à réaliser dans le navigateur…",
   translate: "Texte à traduire (ou laissez vide pour la page)…",
   improve: "Texte à améliorer (ou laissez vide pour la sélection)…",
   image: "Décrivez l'image à générer…",
   terminal: "Demandez du code, une commande, un script…",
 };
+
+// The Agent workspace IS a dedicated tab now (no more "Agent" chip): being in it is
+// what turns on tool-use. The page-context chips (Réflexion/Web/Page) stay available.
+function agentActive() { return mode === "agent"; }
 
 async function init() {
   configureMarkdown();
@@ -104,7 +110,6 @@ async function init() {
   populateImprovePresets();
   els.thinking.checked = settings.thinking;
   els.webSearch.checked = settings.webSearch;
-  els.agentMode.checked = settings.agentMode;
   els.pageCtx.checked = settings.includePageContext;
   els.useTabs.checked = settings.includeSelectedTabs;
   els.translateLang.value = settings.targetLang || "Français";
@@ -264,13 +269,18 @@ function populateImageModelSelector() {
   const sel = els.modelSelect;
   sel.innerHTML = "";
   const list = imageModelChoices();
-  els.refreshModels.classList.remove("hidden");
   els.modelWrap.classList.remove("hidden");
-  els.modelConnect.classList.toggle("hidden", list.length > 0);
+  // BUGFIX (P6): the connect button used to show whenever there was no IMAGE model,
+  // even with another provider (e.g. OpenRouter) already connected — confusing. Now
+  // it only shows when NOTHING is connected at all; otherwise we show an inline hint.
+  const anyConnected = connectedProviders(settings).length > 0;
+  els.modelConnect.classList.toggle("hidden", anyConnected || list.length > 0);
   if (!list.length) {
     const o = document.createElement("option");
     o.value = "";
-    o.textContent = "— Connectez un fournisseur d'images (ex. OpenAI) —";
+    o.textContent = anyConnected
+      ? "— Connectez OpenAI pour générer des images —"
+      : "— Connectez un fournisseur d'images (ex. OpenAI) —";
     sel.appendChild(o);
     updateEmptyState();
     return;
@@ -278,13 +288,25 @@ function populateImageModelSelector() {
   const cur = (settings.imageProvider || "openai") + "|" + (settings.imageModel || "");
   for (const [pid, mid, mlabel] of list) {
     const o = document.createElement("option");
+    const t = imagePriceTier(pid, mid); // P6: price colour code in the image list too
     o.value = pid + "|" + mid;
-    o.textContent = PROVIDERS[pid].label + " · " + mlabel;
+    o.textContent = t.emoji + " " + PROVIDERS[pid].label + " · " + mlabel + " — " + t.note;
+    o.style.color = t.color;
     sel.appendChild(o);
   }
   sel.value = cur;
   if (!sel.value) sel.value = list[0][0] + "|" + list[0][1];
   updateEmptyState();
+}
+
+// Approximate cost tier per image model (these endpoints don't expose token pricing
+// the way chat models do, so we annotate from each model's published per-image price).
+function imagePriceTier(pid, mid) {
+  const m = (mid || "").toLowerCase();
+  if (m.includes("dall-e-2")) return { emoji: "🟢", color: "#34d399", note: "~$0.02/image" };
+  if (m.includes("dall-e-3")) return { emoji: "🟡", color: "#fbbf24", note: "~$0.04–0.12/image" };
+  if (m.includes("gpt-image")) return { emoji: "🟠", color: "#fb923c", note: "~$0.04–0.17/image" };
+  return { emoji: "⚪", color: "#9aa0b4", note: "tarif selon le modèle" };
 }
 
 // Refresh whichever model picker the active workspace needs.
@@ -296,7 +318,6 @@ function refreshModelUI() {
 function populateModelSelector() {
   const connected = connectedProviders(settings);
   els.modelConnect.classList.toggle("hidden", connected.length > 0);
-  els.refreshModels.classList.remove("hidden");
   els.modelWrap.classList.remove("hidden");
   let val = "";
   if (connected.length) {
@@ -317,7 +338,9 @@ function updateEmptyState() {
   els.emptyGreeting.classList.toggle("hidden", !connected);
   if (connected) {
     els.emptyGreeting.textContent =
-      mode === "terminal" ? "</> Code prêt — décrivez une tâche de code." : "Comment puis-je vous aider ?";
+      mode === "terminal" ? "⌨️ Terminal prêt — décrivez une tâche de code." :
+      mode === "agent" ? "🤖 Mode agent — décrivez une tâche à automatiser." :
+      "Comment puis-je vous aider ?";
   }
 }
 
@@ -438,34 +461,51 @@ async function autoListConnected() {
   refreshModelUI();
 }
 
-async function refreshModelsFromApi() {
-  els.refreshModels.classList.add("spin");
-  try {
-    await autoListConnected();
-  } finally {
-    els.refreshModels.classList.remove("spin");
-  }
-}
-
 // ----- Workspace modes ------------------------------------------------------
 function setMode(next) {
   mode = next;
   settings.mode = next;
   setSettings({ mode: next });
-  els.modebar.querySelectorAll(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === next));
-  els.chatControls.classList.toggle("hidden", next !== "chat");
+  els.rail.querySelectorAll(".railtab").forEach((b) => b.classList.toggle("active", b.dataset.mode === next));
+  // Chat + Agent share the chat composer & the Réflexion/Web/Page chips.
+  els.chatControls.classList.toggle("hidden", !(next === "chat" || next === "agent"));
   els.translateControls.classList.toggle("hidden", next !== "translate");
   els.improveControls.classList.toggle("hidden", next !== "improve");
   els.imageControls.classList.toggle("hidden", next !== "image");
   document.body.classList.toggle("mode-terminal", next === "terminal");
+  document.body.classList.toggle("mode-code", next === "code");
   els.terminalView.classList.toggle("hidden", next !== "terminal");
+  els.codeView.classList.toggle("hidden", next !== "code");
   els.input.placeholder = PLACEHOLDERS[next] || PLACEHOLDERS.chat;
   refreshModelUI(); // Image tab lists image models; others list chat models.
   if (next === "terminal") {
     termBoot();
     setTimeout(() => els.termInput.focus(), 0);
   }
+  if (next === "code") updateCodeLauncher();
   updateEmptyState();
+}
+
+// ----- Code workspace (AI app builder launcher) -----------------------------
+// The builder (Bolt.diy / Behivey) runs WebContainers, which require cross-origin
+// isolation (COOP/COEP) and therefore cannot live inside an extension iframe — we
+// open it in a dedicated browser tab where preview / terminal / Expo Go all work.
+function updateCodeLauncher() {
+  const url = (settings.codeAppUrl || "").trim();
+  if (url) {
+    els.openCodeApp.disabled = false;
+    els.openCodeApp.textContent = "🚀 Ouvrir l'atelier dans un nouvel onglet";
+    els.codeAppUrlLabel.textContent = url;
+  } else {
+    els.openCodeApp.disabled = true;
+    els.openCodeApp.textContent = "URL de l'atelier non configurée";
+    els.codeAppUrlLabel.textContent = "Renseignez l'URL dans Réglages → Atelier de code.";
+  }
+}
+async function openCodeApp() {
+  const url = (settings.codeAppUrl || "").trim();
+  if (!url) return browser.runtime.openOptionsPage();
+  try { await browser.tabs.create({ url }); } catch (_) { window.open(url, "_blank", "noopener"); }
 }
 
 // ----- Terminal workspace (OpenClaude) --------------------------------------
@@ -775,7 +815,6 @@ async function consumePendingAction() {
 // ----- Wiring ---------------------------------------------------------------
 function wire() {
   els.modelSelect.addEventListener("change", onModelChange);
-  els.refreshModels.addEventListener("click", refreshModelsFromApi);
 
   const bindToggle = (el, key, after) =>
     el.addEventListener("change", async () => {
@@ -785,13 +824,13 @@ function wire() {
     });
   bindToggle(els.thinking, "thinking");
   bindToggle(els.webSearch, "webSearch");
-  bindToggle(els.agentMode, "agentMode");
   bindToggle(els.pageCtx, "includePageContext", () =>
     els.pageBar.classList.toggle("hidden", !(els.pageCtx.checked && currentPage))
   );
   bindToggle(els.useTabs, "includeSelectedTabs");
 
-  els.modebar.querySelectorAll(".mode").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  els.rail.querySelectorAll(".railtab").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  els.openCodeApp.addEventListener("click", openCodeApp);
 
   els.translateLang.addEventListener("change", async () => {
     settings.targetLang = els.translateLang.value;
@@ -870,10 +909,11 @@ function wire() {
   // feedback was what glitched the sidebar when switching the Terminal model.
   onSettingsChanged(async (changes) => {
     const connChanged = !!(changes.keys || changes.baseUrls || changes.localEnabled);
-    if (!connChanged && !changes.modelLists && !changes.orModels) return;
+    if (!connChanged && !changes.modelLists && !changes.orModels && !changes.codeAppUrl) return;
     settings = await getSettings();
     updateImageNote();
     refreshModelUI();
+    if (changes.codeAppUrl) updateCodeLauncher();
     if (connChanged) autoListConnected();
   });
 }
@@ -1074,7 +1114,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   startBusy();
 
   const wantWeb = els.webSearch.checked || forceWeb;
-  const agentMode = els.agentMode.checked;
+  const agentMode = agentActive();
 
   // Web-search routing: send the turn to a dedicated web-capable model (Perplexity
   // Sonar, or a free OpenRouter model with the "web" plugin) instead of e.g. Claude.
@@ -1129,8 +1169,10 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       onText: sink.onText, onThink: sink.onThink,
       onToolStart: (call) => { sink.finalize(); addMessage("tool", `→ ${call.name}(${JSON.stringify(call.input).slice(0, 80)})`); },
       onToolEnd: (call, out) => addMessage("tool", out && out.blocked ? `   🛡 ${out.error}` : `   ${out && out.error ? "✗ " + out.error : "✓ ok"}`),
-      confirmActions: settings.confirmActions,
-      confirmFn: agentMode ? confirmAction : null,
+      // P2 — agent permission: "auto" runs every (non-payment) action without asking;
+      // "manual" (default) confirms each one. The anti-purchase guard applies in BOTH.
+      confirmActions: settings.agentPermission !== "auto",
+      confirmFn: (agentMode && settings.agentPermission !== "auto") ? confirmAction : null,
       guard: { blockPayments: settings.blockPayments },
       signal: abortController.signal,
     });
@@ -1155,7 +1197,8 @@ async function onSend() {
   if (mode === "improve") return runImproveFromInput();
   if (mode === "image") return runImageFromInput();
   if (mode === "terminal") return onTerminalSend();
-  return onChatSend();
+  if (mode === "code") return; // Code workspace has no composer — use the launcher button.
+  return onChatSend(); // chat + agent
 }
 
 // Terminal/dev mode: send the raw prompt with the dev persona, no page injection.
@@ -1170,7 +1213,7 @@ async function onChatSend() {
   if (!text) return;
   els.input.value = "";
   let prefix = "";
-  if (!els.agentMode.checked) {
+  if (!agentActive()) {
     if (els.pageCtx.checked && currentPage) prefix += pageContextBlock();
     prefix += await selectedTabsContext();
   }

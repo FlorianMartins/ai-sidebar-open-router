@@ -52,6 +52,18 @@
         <label>Modèle de l'agent
           <select id="agentModel"></select>
         </label>
+        <label>Autorisations de l'agent
+          <select id="agentPermission">
+            <option value="manual">Validation manuelle — demander avant chaque action</option>
+            <option value="auto">Tout autoriser — aucune demande d'autorisation</option>
+          </select>
+        </label>
+        <p class="muted">
+          En <b>validation manuelle</b> (recommandé), chaque action modifiant l'état
+          (clic, saisie, navigation…) demande votre accord. En <b>tout autoriser</b>,
+          l'agent enchaîne les actions sans confirmation. Dans les deux cas, le
+          <b>garde-fou anti-achat</b> reste actif : l'agent ne peut jamais payer.
+        </p>
       </section>
 
       <section>
@@ -89,6 +101,20 @@
       </section>
 
       <section>
+        <h2>&lt;/&gt; Atelier de code</h2>
+        <p class="muted">
+          L'onglet <b>Code</b> de la sidebar ouvre un atelier d'app IA (type
+          <b>Bolt.diy</b> / Behivey) dans un <b>nouvel onglet</b> : génération de code,
+          aperçu live, terminal intégré et <b>Expo Go</b>. Renseignez l'URL de votre
+          instance (la vôtre, auto-hébergée, ou l'instance publique par défaut).
+          Laissez vide pour masquer le lanceur.
+        </p>
+        <label>URL de l'atelier de code
+          <input type="text" id="codeAppUrl" placeholder="https://www.behivey.com" />
+        </label>
+      </section>
+
+      <section>
         <h2>Langue &amp; rédaction</h2>
         <label>Langue des réponses de l'IA
           <select id="responseLang"></select>
@@ -108,7 +134,6 @@
           (clés, conversations, contenu des pages) restent dans ce navigateur et ne sont
           envoyées qu'à l'API IA que vous choisissez. Aucune analytique, aucune télémétrie.
         </p>
-        <label class="switch"><input type="checkbox" id="confirmActions" /><span class="track"></span><span class="lbl">Demander confirmation avant chaque action (clic, saisie…)</span></label>
         <label class="switch"><input type="checkbox" id="blockPayments" /><span class="track"></span><span class="lbl"><b>Garde-fou anti-achat</b> : l'agent ne peut jamais payer/commander</span></label>
         <label class="switch"><input type="checkbox" id="webmailAssist" /><span class="track"></span><span class="lbl">Bouton « Répondre avec l'IA » sur les webmails (jamais d'envoi auto)</span></label>
         <label class="switch"><input type="checkbox" id="saveHistory" /><span class="track"></span><span class="lbl">Enregistrer l'historique des conversations (local uniquement)</span></label>
@@ -119,7 +144,6 @@
         <h2>Comportement</h2>
         <label class="switch"><input type="checkbox" id="thinking" /><span class="track"></span><span class="lbl">Afficher le raisonnement du modèle (thinking)</span></label>
         <label class="switch"><input type="checkbox" id="webSearch" /><span class="track"></span><span class="lbl">Recherche web activée par défaut (Perplexity / OpenRouter / Claude)</span></label>
-        <label class="switch"><input type="checkbox" id="agentMode" /><span class="track"></span><span class="lbl">Activer le mode agent par défaut</span></label>
         <label class="switch"><input type="checkbox" id="includePageContext" /><span class="track"></span><span class="lbl">L'IA voit la page consultée (injection auto en mode chat)</span></label>
         <label class="switch"><input type="checkbox" id="autoReadPage" /><span class="track"></span><span class="lbl">Relire la page à chaque navigation (y compris sous-domaine)</span></label>
         <label>Taille max du contexte de page (caractères)

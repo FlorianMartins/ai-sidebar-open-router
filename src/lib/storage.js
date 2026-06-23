@@ -22,14 +22,16 @@ const DEFAULTS = {
   imageSize: "1024x1024",
 
   // ----- UI / behaviour ------------------------------------------------------
-  mode: "chat", // active workspace tab: chat | translate | improve | image | terminal
+  mode: "chat", // active workspace tab: chat | agent | translate | improve | image | terminal | code
   thinking: false, // surface the model's reasoning (supported models only)
   webSearch: false, // web search: Anthropic native, OpenRouter "web" plugin, Perplexity Sonar
   searchModel: "", // "providerId|modelId" used in web-search mode ("" = auto-pick a free/online model)
   agentMode: false, // allow the model to act inside the browser
   agentModel: "", // "providerId|modelId" forced for agent mode ("" = use the selected model). Many free
                   // models (e.g. Llama) can't call tools — let the user pick a tool-capable model here.
-  confirmActions: true, // ask before every state-changing action
+  agentPermission: "manual", // "manual" = confirm each state-changing action ; "auto" = allow all (no prompt).
+                             // The anti-purchase guardrail (blockPayments) still applies in BOTH modes.
+  confirmActions: true, // ask before every state-changing action (kept in sync with agentPermission)
   includePageContext: true, // feed the active page into the chat
   autoReadPage: true, // re-read the page on every navigation (subdomains too)
   includeSelectedTabs: false, // also feed the user-selected extra tabs
@@ -39,6 +41,14 @@ const DEFAULTS = {
   targetLang: "Français", // preferred target language for translations
   responseLang: "English", // language the AI replies in (default: English)
   improvePreset: "improve", // default writing preset for the "improve" mode
+
+  // ----- Code workspace ------------------------------------------------------
+  // The "Code" tab launches a self-hosted AI app builder (Bolt.diy / Behivey)
+  // in a NEW BROWSER TAB. WebContainers there require cross-origin isolation
+  // (COOP/COEP) and can't run inside an extension iframe, so a new tab is the
+  // only robust integration. URL is user-configurable (default: the maintainer's
+  // public instance). Leave blank to hide the launcher.
+  codeAppUrl: "https://www.behivey.com",
 
   // ----- Compare & history ---------------------------------------------------
   compareMode: false, // run the prompt on a second model side-by-side

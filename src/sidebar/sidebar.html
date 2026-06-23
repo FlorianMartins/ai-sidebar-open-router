@@ -15,19 +15,10 @@
       </div>
       <div class="row">
         <button id="historyBtn" class="icon" title="Historique (local)">🕘</button>
-        <button id="newChat" class="icon" title="Nouvelle conversation">＋</button>
-        <button id="openOptions" class="icon" title="Réglages">⚙</button>
+        <button id="newChat" class="icon icon-accent" title="Nouvelle conversation">＋</button>
+        <button id="openOptions" class="icon icon-accent" title="Réglages">⚙</button>
       </div>
     </header>
-
-    <!-- Workspace tabs -->
-    <nav class="modebar" id="modebar">
-      <button class="mode active" data-mode="chat">💬 Chat</button>
-      <button class="mode" data-mode="translate">🌐 Traduire</button>
-      <button class="mode" data-mode="improve">✨ Améliorer</button>
-      <button class="mode" data-mode="image">🎨 Image</button>
-      <button class="mode" data-mode="terminal">&lt;/&gt; Code</button>
-    </nav>
 
     <!-- History panel -->
     <div id="historyPanel" class="panel hidden">
@@ -54,6 +45,22 @@
       </div>
       <ul id="tabsList" class="tabslist"></ul>
     </div>
+
+    <!-- Workspace = left activity rail (always-visible workspace switcher) + work area.
+         The rail scales cleanly to many workspaces where a horizontal tab bar can't,
+         and matches the current "activity bar" convention (VS Code / Slack / Sider). -->
+    <div id="workspace">
+      <nav class="rail" id="rail" aria-label="Espaces de travail">
+        <button class="railtab active" data-mode="chat" title="Chat"><span class="ri">💬</span><span class="rl">Chat</span></button>
+        <button class="railtab" data-mode="agent" title="Agent — l'IA agit dans le navigateur"><span class="ri">🤖</span><span class="rl">Agent</span></button>
+        <button class="railtab" data-mode="translate" title="Traduire"><span class="ri">🌐</span><span class="rl">Traduire</span></button>
+        <button class="railtab" data-mode="improve" title="Améliorer un texte"><span class="ri">✨</span><span class="rl">Améliorer</span></button>
+        <button class="railtab" data-mode="image" title="Générer une image"><span class="ri">🎨</span><span class="rl">Image</span></button>
+        <button class="railtab" data-mode="terminal" title="Terminal (agent de code en ligne de commande)"><span class="ri">⌨️</span><span class="rl">Terminal</span></button>
+        <button class="railtab" data-mode="code" title="Atelier de code IA (preview, Expo Go…)"><span class="ri">&lt;/&gt;</span><span class="rl">Code</span></button>
+      </nav>
+
+      <div id="workArea">
 
     <main id="messages" class="messages">
       <div class="empty" id="empty">
@@ -97,6 +104,35 @@
       </div>
     </section>
 
+    <!-- Code workspace: a launcher for the full AI app builder (Bolt.diy / Behivey).
+         The builder uses WebContainers (needs COOP/COEP cross-origin isolation) and
+         can't run inside an extension iframe, so it opens in a dedicated browser tab
+         where live preview, the integrated terminal and Expo Go all keep working. -->
+    <section id="codeView" class="codeview hidden">
+      <div class="code-launch">
+        <div class="cl-logo"><img src="../../icons/icon.svg" alt="" /></div>
+        <h2 class="cl-title">Atelier de code IA</h2>
+        <p class="cl-sub muted">
+          Construisez des apps web &amp; mobiles avec l'IA : génération de code,
+          <b>preview live</b>, terminal intégré et <b>Expo Go</b> pour tester sur
+          mobile. Propulsé par votre instance <b>Behivey</b> (Bolt.diy).
+        </p>
+        <button id="openCodeApp" class="btn-grad">🚀 Ouvrir l'atelier dans un nouvel onglet</button>
+        <p class="cl-url muted" id="codeAppUrlLabel"></p>
+        <ul class="cl-feats">
+          <li>⚡ Génération &amp; édition de code par l'IA</li>
+          <li>👁 Aperçu en direct (web) dans le navigateur</li>
+          <li>📱 QR code <b>Expo Go</b> pour tester sur téléphone</li>
+          <li>⌨️ Terminal &amp; gestion de fichiers intégrés</li>
+        </ul>
+        <p class="cl-sec muted">
+          🔒 L'atelier s'ouvre dans un onglet isolé et protégé par mot de passe ;
+          aucune clé ni donnée n'est partagée avec la sidebar. URL configurable dans
+          <b>Réglages → Atelier de code</b>.
+        </p>
+      </div>
+    </section>
+
     <div id="confirmBar" class="confirm hidden">
       <span id="confirmText"></span>
       <div class="confirm-actions">
@@ -110,9 +146,6 @@
       <div class="ctl-group" id="chatControls">
         <label class="chip" title="Afficher le raisonnement du modèle">
           <input type="checkbox" id="thinking" /><span>💭 Réflexion</span>
-        </label>
-        <label class="chip" title="Le modèle peut agir dans le navigateur (sans achat) — modèle réglable dans ⚙">
-          <input type="checkbox" id="agentMode" /><span>🤖 Agent</span>
         </label>
         <label class="chip" title="Recherche web (Perplexity / OpenRouter / Claude) — réglable dans ⚙">
           <input type="checkbox" id="webSearch" /><span>🌐 Web</span>
@@ -153,7 +186,6 @@
       <div class="select-wrap" id="modelWrap">
         <select id="modelSelect" title="Modèle"></select>
       </div>
-      <button id="refreshModels" class="icon" title="Rafraîchir les modèles disponibles">⟳</button>
       <button id="modelConnect" class="btn-grad hidden">🔌 Se connecter à un fournisseur</button>
     </div>
 
@@ -162,6 +194,9 @@
       <button id="send" class="btn-grad send" title="Envoyer">➤</button>
       <button id="stop" class="hidden send" title="Stop">■</button>
     </footer>
+
+      </div><!-- /#workArea -->
+    </div><!-- /#workspace -->
 
     <!-- Cross-browser: provides `browser.*` on Chromium; no-op on Firefox -->
     <script src="../../vendor/browser-polyfill.min.js"></script>

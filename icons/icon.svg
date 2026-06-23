@@ -1,25 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
   <defs>
-    <linearGradient id="g" x1="14" y1="18" x2="82" y2="80" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4f8cff"/>
-      <stop offset="0.5" stop-color="#8b5cf6"/>
-      <stop offset="1" stop-color="#e040fb"/>
+    <linearGradient id="g" x1="18" y1="14" x2="78" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="0.55" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#a855f7"/>
     </linearGradient>
   </defs>
-  <!-- Bold neural-network mark: four outer nodes feeding one big hub. Thick strokes
-       and large filled nodes so it stays legible from afar / at favicon size.
-       Blue->violet->fuchsia gradient, transparent background. -->
-  <g stroke="url(#g)" stroke-width="5.5" stroke-linecap="round">
-    <line x1="24" y1="28" x2="50" y2="48"/>
-    <line x1="24" y1="68" x2="50" y2="48"/>
-    <line x1="76" y1="28" x2="50" y2="48"/>
-    <line x1="76" y1="68" x2="50" y2="48"/>
-  </g>
+  <!-- Clean modern mark: a chat bubble (the AI) with a sidebar bar + message lines.
+       Reads instantly as "AI sidebar", legible down to favicon size, gradient fill,
+       transparent background, no framing box/border. -->
   <g fill="url(#g)">
-    <circle cx="24" cy="28" r="9.5"/>
-    <circle cx="24" cy="68" r="9.5"/>
-    <circle cx="76" cy="28" r="9.5"/>
-    <circle cx="76" cy="68" r="9.5"/>
-    <circle cx="50" cy="48" r="14"/>
+    <!-- bubble tail (bottom-left), merged with the body -->
+    <path d="M30 60 L22 81 L46 64 Z"/>
+    <!-- bubble body -->
+    <rect x="14" y="15" width="68" height="51" rx="17"/>
+  </g>
+  <!-- interior: sidebar bar + three message lines -->
+  <g fill="#ffffff">
+    <rect x="25" y="27" width="7.5" height="27" rx="3.75"/>
+    <rect x="39.5" y="28" width="28" height="6.6" rx="3.3"/>
+    <rect x="39.5" y="39.7" width="28" height="6.6" rx="3.3"/>
+    <rect x="39.5" y="51.4" width="18" height="6.6" rx="3.3"/>
   </g>
 </svg>

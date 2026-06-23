@@ -64,6 +64,8 @@ button.ghost:hover { border-color: var(--accent); }
 .badge.free { color: #c4b5fd; border-color: #8b5cf666; background: #1e1b33; }
 button.small { padding: 7px 12px; font-size: 13px; }
 button.connect { width: 100%; margin: 6px 0 2px; }
+button.connect.connected { color: #7ee787; border: 1px solid #2ea04366; background: #13351f; }
+button.connect.connected:hover { border-color: #3fb950; }
 
 /* Group titles + denser, more legible provider cards */
 .group-title {

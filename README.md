@@ -27,11 +27,14 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
   directement. (Mermaid/SVG pour les diagrammes.)
 - 🕘 **Historique local** : vos conversations sont enregistrées **uniquement dans
   ce navigateur** (privacy) ; liste, rechargement, et « tout effacer ».
-- 🗂 **Modes dédiés** (onglets façon Sider) : **💬 Chat**, **🌐 Traduire**,
-  **✨ Améliorer**, **🎨 Image**, **⌨ Terminal**. Le mode Améliorer propose des
-  **styles d'écriture** (Marketing, Newsletter, Email pro, LinkedIn, Tweet, Blog…),
-  et le mode **Terminal** est un assistant dev (look terminal, code & commandes,
-  artifacts exécutables) — il **n'exécute pas** de commandes sur votre machine.
+- 🗂 **7 espaces de travail** via une **barre latérale d'activité** à gauche
+  (convention « activity bar » façon VS Code / Slack — scale mieux qu'une rangée
+  d'onglets) : **💬 Chat**, **🤖 Agent**, **🌐 Traduire**, **✨ Améliorer**,
+  **🎨 Image**, **⌨️ Terminal**, **&lt;/&gt; Code**. Le mode Améliorer propose des
+  **styles d'écriture** (Marketing, Newsletter, Email pro, LinkedIn, Tweet, Blog…) ;
+  le mode **Terminal** est un assistant dev (look terminal, code & commandes,
+  artifacts exécutables) — il **n'exécute pas** de commandes sur votre machine ; le
+  mode **Code** ouvre un atelier d'app IA complet (voir ci-dessous).
 - 👁 **L'IA voit la page** : le contenu est lu automatiquement à l'ouverture d'un
   site **et à chaque navigation** (y compris changement de sous-domaine et
   navigations SPA), puis utilisé comme support pour répondre.
@@ -44,20 +47,31 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
 - 💭 **Thinking** : le raisonnement du modèle (extended thinking de Claude,
   `reasoning` de DeepSeek / o-series) s'affiche dans un bloc repliable.
 - 🎨 **Génération d'images** (endpoint compatible OpenAI `/images/generations`).
-- 🤖 **Mode agent** : l'IA peut lire la page/les onglets, naviguer, cliquer,
-  remplir des champs — avec **confirmation** des actions et un **garde-fou
-  anti-achat** : elle peut remplir un panier mais **ne peut jamais payer/commander**.
+- 🤖 **Espace Agent** (onglet dédié) : l'IA peut lire la page/les onglets, naviguer,
+  cliquer, remplir des champs. **Autorisations réglables** : *validation manuelle*
+  (confirmation avant chaque action, par défaut) ou *tout autoriser* (sans demande).
+  Dans les deux cas, le **garde-fou anti-achat** s'applique : elle peut remplir un
+  panier mais **ne peut jamais payer/commander**. Un **modèle d'agent** dédié est
+  réglable (beaucoup de modèles rapides/gratuits ne savent pas appeler d'outils).
+- 🛠 **Espace Code — atelier d'app IA** : ouvre, dans un **nouvel onglet isolé**, un
+  builder d'apps web & mobiles (type **Bolt.diy** / Behivey) avec **génération de
+  code par l'IA**, **aperçu live**, **terminal intégré** et **QR code Expo Go** pour
+  tester sur mobile. L'URL de l'atelier est **configurable** dans les réglages (votre
+  instance auto-hébergée ou l'instance publique). *Pourquoi un onglet et pas une
+  iframe ?* le builder s'appuie sur **WebContainers**, qui exigent l'isolation
+  cross-origine (COOP/COEP) impossible dans une iframe d'extension — le nouvel onglet
+  préserve preview, terminal et Expo Go.
 - 🔒 **100% BYOK, zéro rétention serveur** : aucune clé fournie, **aucun serveur**,
   aucune télémétrie. Vos clés et données restent **locales** (`storage.local`),
   jamais synchronisées, envoyées uniquement à l'API que vous choisissez.
 
 ## Capture
 
-Sidebar — thème sombre + dégradé bleu/violet, **5 modes** (Chat / Traduire /
-Améliorer / Image / Terminal), sélecteur de modèle juste au-dessus du chat,
-boutons à bascule, **bouton « Comparer » sous la dernière réponse**, et un
-**artifact interactif jouable** (un mini-jeu qui tourne dans l'aperçu sandboxé) —
-Firefox 152 :
+Sidebar — thème sombre + dégradé bleu/violet, **barre latérale d'activité** à
+gauche (7 espaces : Chat / Agent / Traduire / Améliorer / Image / Terminal / Code),
+sélecteur de modèle juste au-dessus du chat, boutons à bascule, **bouton
+« Comparer » sous la dernière réponse**, et un **artifact interactif jouable** (un
+mini-jeu qui tourne dans l'aperçu sandboxé) — Firefox 152 :
 
 ![Sidebar](docs/screenshots/sidebar-v14.png)
 
@@ -130,7 +144,7 @@ src/
     tools.js             Outils navigateur (onglets, DOM) + exécuteur
     auth.js              Connexion OAuth (PKCE) OpenRouter via browser.identity
     history.js           Historique local des conversations (storage.local)
-    storage.js           Réglages locaux (clés/modèles/URLs par fournisseur)
+    storage.js           Réglages locaux (clés/modèles/URLs, autorisations agent, URL atelier Code)
     markdown.js          Rendu Markdown + artifacts interactifs (HTML/JS, React, SVG, Mermaid)
 ```
 
@@ -166,7 +180,16 @@ src/
 - **Anti prompt-injection** : le contenu des pages, onglets et sélections est traité
   comme une **donnée non fiable**. Le prompt système interdit d'obéir à des
   instructions trouvées dans une page et de divulguer les clés/réglages.
-- Le mode agent demande **confirmation** avant toute action modifiant l'état.
+- **Autorisations de l'agent réglables** : en *validation manuelle* (par défaut)
+  chaque action modifiant l'état est confirmée ; en *tout autoriser* l'agent enchaîne
+  sans demande — mais le **garde-fou anti-achat reste actif dans les deux cas**
+  (refus codé en dur, indépendant du prompt). Le défaut sûr est la validation manuelle.
+- **Espace Code isolé** : l'atelier d'app IA s'ouvre dans un **onglet distinct**
+  (origine séparée, protégé côté serveur). Aucune clé, aucun réglage et aucune donnée
+  de la sidebar n'est partagé avec l'atelier ; l'URL cible est explicitement
+  configurée par l'utilisateur (pas de redirection silencieuse). La séparation
+  d'origine (WebContainers/COOP-COEP) qui empêche l'embarquement en iframe **renforce**
+  aussi l'isolation : la sidebar et l'atelier ne partagent pas de contexte d'exécution.
 - **CSP stricte** sur les pages d'extension (`script-src 'self'`) ; les artifacts
   (HTML/JS/React/SVG/Mermaid) s'exécutent en **iframe sandboxée** (origine opaque,
   sans `allow-same-origin`), isolés de l'extension, des pages et des clés.
@@ -196,10 +219,11 @@ bouton **Ouvrir** (plein écran) :
 - [x] Multi-fournisseurs + modèles locaux (Ollama / LM Studio / custom)
 - [x] Lecture auto de la page à chaque navigation (sous-domaine, SPA)
 - [x] Lecture multi-onglets (sélection des onglets à donner en contexte)
-- [x] Modes dédiés : Chat / Traduire / Améliorer / Image
+- [x] Espaces dédiés via barre d'activité : Chat / Agent / Traduire / Améliorer / Image / Terminal / Code
 - [x] Actions rapides + clic droit (page & sélection) + rédaction de réponse
 - [x] Réponse mail assistée sur les webmails (sans envoi auto)
-- [x] Mode agent avec garde-fou anti-achat (s'arrête au panier)
+- [x] Espace agent avec autorisations réglables (manuel / auto) + garde-fou anti-achat
+- [x] Espace Code : atelier d'app IA (Bolt.diy / Behivey) en nouvel onglet (preview, Expo Go)
 - [x] Thinking / raisonnement
 - [x] Interface moderne (sombre + dégradé), sélecteur unifié, boutons à bascule
 - [x] Connexion par compte (OAuth OpenRouter)

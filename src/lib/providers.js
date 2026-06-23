@@ -175,7 +175,7 @@ function anthropicProvider({ apiKey, model, baseUrl, thinking, webSearch }) {
 // Generic OpenAI-compatible (OpenAI, OpenRouter, Gemini, Mistral, Groq,
 // DeepSeek, Ollama, LM Studio, self-hosted…)
 // ---------------------------------------------------------------------------
-function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId }) {
+function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinking }) {
   const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
   const headers = { "content-type": "application/json" };
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
@@ -195,6 +195,15 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId }) {
       // web. Perplexity's Sonar models are online by default (nothing to add).
       if (webSearch && providerId === "openrouter") {
         body.plugins = [{ id: "web", max_results: 5 }];
+      }
+      // Reasoning / "thinking" for OpenAI-compatible providers. OpenRouter exposes a
+      // universal `reasoning` switch that turns on a model's chain-of-thought (when it
+      // supports one) and streams it back as `delta.reasoning` — which we surface in the
+      // 💭 block. DeepSeek's reasoner models stream `reasoning_content` on their own.
+      // We only send the param to OpenRouter; other strict APIs would reject an unknown
+      // field, and models that don't reason simply ignore the toggle.
+      if (thinking && providerId === "openrouter") {
+        body.reasoning = { effort: "medium" };
       }
       if (tools && tools.length) {
         body.tools = tools.map((t) => ({
@@ -303,6 +312,7 @@ export function makeProvider(settings, opts = {}) {
     baseUrl,
     providerId: id,
     webSearch: !!opts.webSearch && !!meta.supportsWebSearch,
+    thinking: !!opts.thinking,
   });
 }
 

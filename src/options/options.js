@@ -88,20 +88,38 @@ function buildCard(id) {
 
   const head = el("div", "provider-head");
   head.appendChild(el("h3", null, meta.label + (meta.local ? "  (local)" : "")));
-  const connected = isConnected(id, settings);
-  head.appendChild(el("span", "badge " + (connected ? "ok" : "off"), connected ? "✅ Connecté" : "○ Non connecté"));
+  const badge = el("span", "badge");
+  head.appendChild(badge);
   if (FREE_TIER.has(id)) head.appendChild(el("span", "badge free", "gratuit dispo"));
   sec.appendChild(head);
 
-  // Connect affordance on EVERY cloud provider.
+  // Connect affordance on EVERY cloud provider. P8 — the badge AND this button now
+  // reflect the connection state live (as soon as a key is pasted, before saving),
+  // so "Se connecter" never lingers next to an already-connected provider.
+  let connectBtn = null;
   if (category(id) === "cloud") {
-    const btn = el("button", "grad small connect", OAUTH.has(id) ? "🔐 Se connecter avec mon compte" : "🔐 Se connecter à mon compte " + meta.label);
-    btn.addEventListener("click", () => connectAccount(id));
-    sec.appendChild(btn);
+    connectBtn = el("button", "small connect");
+    connectBtn.addEventListener("click", () => connectAccount(id));
+    sec.appendChild(connectBtn);
     sec.appendChild(el("p", "muted hint", OAUTH.has(id)
       ? "Compte (Google / GitHub / email) → débloque tous les modèles, y compris gratuits."
       : "Ouvre la page de connexion du fournisseur : identifiez-vous avec VOTRE compte, créez une clé API, puis collez-la ci-dessous. (Un abonnement type ChatGPT Plus / Claude Pro ne donne pas accès à l'API — il faut une clé.)"));
   }
+
+  // Reflect connected/disconnected state on the badge + connect button.
+  const applyConnState = (connectedNow) => {
+    badge.className = "badge " + (connectedNow ? "ok" : "off");
+    badge.textContent = connectedNow ? "✅ Connecté(e)" : "○ Non connecté";
+    if (!connectBtn) return;
+    if (connectedNow) {
+      connectBtn.className = "ghost small connect connected";
+      connectBtn.textContent = OAUTH.has(id) ? "✓ Connecté — reconnecter mon compte" : "✓ Connecté — reconnecter " + meta.label;
+    } else {
+      connectBtn.className = "grad small connect";
+      connectBtn.textContent = OAUTH.has(id) ? "🔐 Se connecter avec mon compte" : "🔐 Se connecter à mon compte " + meta.label;
+    }
+  };
+  applyConnState(isConnected(id, settings));
 
   // Local server: explicit opt-in.
   if (meta.local) {
@@ -110,6 +128,7 @@ function buildCard(id) {
     inp.type = "checkbox";
     inp.id = `local_${id}`;
     inp.checked = !!(settings.localEnabled && settings.localEnabled[id]);
+    inp.addEventListener("change", () => applyConnState(inp.checked));
     lab.appendChild(inp);
     lab.appendChild(el("span", "track"));
     lab.appendChild(el("span", "lbl", "Activer ce serveur local (lancé sur ma machine)"));
@@ -124,6 +143,8 @@ function buildCard(id) {
     inp.id = `key_${id}`;
     inp.placeholder = meta.keyHint || "clé…";
     inp.value = (settings.keys && settings.keys[id]) || "";
+    // Live feedback: a non-empty key counts as "Connecté(e)" immediately (P8).
+    inp.addEventListener("input", () => applyConnState(!!inp.value.trim() || isConnected(id, settings)));
     lab.appendChild(inp);
     sec.appendChild(lab);
     if (meta.keysUrl) {
@@ -272,8 +293,8 @@ async function load() {
   $("targetLang").value = settings.targetLang || "Français";
   $("thinking").checked = settings.thinking;
   $("webSearch").checked = settings.webSearch;
-  $("agentMode").checked = settings.agentMode;
-  $("confirmActions").checked = settings.confirmActions;
+  $("agentPermission").value = settings.agentPermission || "manual";
+  $("codeAppUrl").value = settings.codeAppUrl != null ? settings.codeAppUrl : "";
   $("blockPayments").checked = settings.blockPayments;
   $("webmailAssist").checked = settings.webmailAssist;
   $("saveHistory").checked = settings.saveHistory;
@@ -309,9 +330,12 @@ async function save() {
     thinking: $("thinking").checked,
     webSearch: $("webSearch").checked,
     searchModel: $("searchModel").value,
-    agentMode: $("agentMode").checked,
     agentModel: $("agentModel").value,
-    confirmActions: $("confirmActions").checked,
+    agentPermission: $("agentPermission").value,
+    // Keep the legacy `confirmActions` flag in sync with the permission select so
+    // older code paths stay consistent (manual = confirm, auto = no confirm).
+    confirmActions: $("agentPermission").value !== "auto",
+    codeAppUrl: $("codeAppUrl").value.trim(),
     blockPayments: $("blockPayments").checked,
     webmailAssist: $("webmailAssist").checked,
     saveHistory: $("saveHistory").checked,
