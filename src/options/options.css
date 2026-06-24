@@ -1,10 +1,10 @@
 :root {
-  --bg: #0f1117;
-  --panel: #161922;
-  --panel-2: #1c2030;
-  --border: #272c3b;
-  --text: #e7e8ef;
-  --muted: #9aa0b4;
+  --bg: #1f1f34;
+  --panel: #272741;
+  --panel-2: #31314f;
+  --border: #3c3c5e;
+  --text: #e8e8f2;
+  --muted: #9d9dbb;
   --accent: #716bf6;
   --grad: linear-gradient(135deg, #3b82f6 0%, #716bf6 50%, #a855f7 100%);
 }
