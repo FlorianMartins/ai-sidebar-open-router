@@ -1,12 +1,12 @@
 :root {
-  --bg: #0f1117;
-  --panel: #1f1f34;
-  --panel-2: #2a2a45;
-  --border: #383859;
-  --text: #e8e8f2;
-  --muted: #9c9cba;
-  --accent: #4d7ef7;
-  --grad: linear-gradient(135deg, #3b82f6 0%, #4d7ef7 50%, #8b5cf6 100%);
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --panel-2: #334155;
+  --border: #2e3c53;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #2563eb;
+  --grad: linear-gradient(135deg, #2563eb 0%, #2563eb 40%, #7c3aed 100%);
 }
 * { box-sizing: border-box; }
 body {

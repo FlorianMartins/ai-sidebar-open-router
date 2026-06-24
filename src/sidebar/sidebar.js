@@ -204,13 +204,12 @@ function agentActive() { return mode === "agent"; }
 async function updateActionIcon() {
   try {
     const cs = getComputedStyle(document.documentElement);
-    const a2 = (cs.getPropertyValue("--accent-2") || "#fbbf24").trim();
-    const a1 = (cs.getPropertyValue("--accent") || "#f59e0b").trim();
-    const a3 = (cs.getPropertyValue("--accent-3") || "#f97316").trim();
+    const a1 = (cs.getPropertyValue("--accent") || "#2563eb").trim();   // base majority
+    const a2 = (cs.getPropertyValue("--accent-2") || "#7c3aed").trim(); // end touch
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">' +
       '<defs><linearGradient id="g" x1="12" y1="10" x2="84" y2="86" gradientUnits="userSpaceOnUse">' +
-      '<stop offset="0" stop-color="' + a2 + '"/><stop offset="0.5" stop-color="' + a1 + '"/><stop offset="1" stop-color="' + a3 + '"/>' +
+      '<stop offset="0" stop-color="' + a1 + '"/><stop offset="0.55" stop-color="' + a1 + '"/><stop offset="1" stop-color="' + a2 + '"/>' +
       '</linearGradient></defs><g fill="url(#g)">' +
       '<rect x="17" y="9" width="62" height="14" rx="7"/>' +
       '<rect x="8" y="30" width="80" height="14" rx="7"/>' +

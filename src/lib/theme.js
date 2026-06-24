@@ -4,14 +4,18 @@
 // :root, so BOTH the sidebar and the options page restyle live. Users can pick a
 // theme AND override individual colours on top of it (stored in settings.themeColors).
 
+// Each theme defines a 5-colour palette (background, surface, accent, accent2, text);
+// the rest (panel2 / borders / muted) is tuned per theme. `split` controls the brand
+// gradient: `accent` is the base majority and `accent2` only the end touch, where
+// `split` is the % of the gradient held solid by accent before it transitions
+// (0 → a balanced accent↔accent2; 0.4 → ~70% accent / 30% accent2).
 export const THEMES = {
-  hive:   { label: "Hivey (yellow/orange)", bg: "#1c1d20", panel: "#242529", panel2: "#2c2d31", border: "#3a3c41", borderSoft: "#2a2b2f", text: "#e9e9ec", muted: "#9b9da4", accent: "#f59e0b", accent2: "#fbbf24", accent3: "#f97316" },
-  dark:   { label: "Default (dark)", bg: "#0f1117", panel: "#1f1f34", panel2: "#2a2a45", border: "#383859", borderSoft: "#23233c", text: "#e8e8f2", muted: "#9c9cba", accent: "#4d7ef7", accent2: "#3b82f6", accent3: "#8b5cf6" },
-  pro:    { label: "Pro (blue)",     bg: "#0d1117", panel: "#161b22", panel2: "#1c232c", border: "#2a313c", borderSoft: "#21272f", text: "#e6edf3", muted: "#8b949e", accent: "#2f81f7", accent2: "#1f6feb", accent3: "#58a6ff" },
-  gamer:  { label: "Gamer (neon)",   bg: "#08080f", panel: "#11111d", panel2: "#191929", border: "#2b2b48", borderSoft: "#20203a", text: "#e9e9ff", muted: "#9a9ac4", accent: "#00e5ff", accent2: "#7c4dff", accent3: "#ff2bd6" },
-  modern: { label: "Modern (teal)",  bg: "#0f1417", panel: "#161c21", panel2: "#1e262c", border: "#2a333b", borderSoft: "#222a31", text: "#e8eef2", muted: "#90a0ad", accent: "#10b981", accent2: "#06b6d4", accent3: "#34d399" },
-  sunset: { label: "Sunset",         bg: "#15100f", panel: "#1f1715", panel2: "#2a1f1c", border: "#3c2c28", borderSoft: "#2f2320", text: "#f4ebe7", muted: "#c0a69d", accent: "#fb7185", accent2: "#f97316", accent3: "#fbbf24" },
-  light:  { label: "Light",          bg: "#f6f7fb", panel: "#ffffff", panel2: "#eceef5", border: "#d7dbe6", borderSoft: "#e6e8f0", text: "#1b1e28", muted: "#5c6478", accent: "#7c3aed", accent2: "#4f46e5", accent3: "#9333ea" },
+  dark:   { label: "Default (dark)",   bg: "#0f172a", panel: "#1e293b", panel2: "#334155", border: "#2e3c53", borderSoft: "#233146", text: "#f8fafc", muted: "#94a3b8", accent: "#2563eb", accent2: "#7c3aed", split: 0.4 },
+  hive:   { label: "Hivey (Brand)",    bg: "#0f1115", panel: "#1a1d24", panel2: "#242832", border: "#2c313c", borderSoft: "#20242d", text: "#f9fafb", muted: "#9ca3af", accent: "#d97706", accent2: "#f59e0b", split: 0.4 },
+  modern: { label: "Modern (Teal)",    bg: "#090d16", panel: "#121b2c", panel2: "#1b2840", border: "#243349", borderSoft: "#182338", text: "#f4f4f5", muted: "#8b9bb0", accent: "#0d9488", accent2: "#14b8a6", split: 0.4 },
+  neon:   { label: "Neon / Cyberpunk", bg: "#05050a", panel: "#0f0f1a", panel2: "#18182a", border: "#232342", borderSoft: "#1a1a30", text: "#ffffff", muted: "#9a9ac4", accent: "#06b6d4", accent2: "#d946ef", split: 0.0 },
+  sunset: { label: "Midnight Sunset",  bg: "#110e18", panel: "#1d1827", panel2: "#2a2236", border: "#382c44", borderSoft: "#261e30", text: "#fafafa", muted: "#b5a6b8", accent: "#e11d48", accent2: "#ea580c", split: 0.2 },
+  light:  { label: "Light (Premium)",  bg: "#f8fafc", panel: "#ffffff", panel2: "#eef1f6", border: "#d7dee8", borderSoft: "#e6eaf1", text: "#0f172a", muted: "#5c6b82", accent: "#3b82f6", accent2: "#6366f1", split: 0.4 },
 };
 
 // The colour keys a user can override (shown as pickers in Settings).
@@ -42,9 +46,11 @@ export function applyTheme(themeKey, custom) {
   set("--muted", c.muted);
   set("--accent", c.accent);
   set("--accent-2", c.accent2);
-  set("--accent-3", c.accent3);
-  set("--grad", `linear-gradient(135deg, ${c.accent2} 0%, ${c.accent} 50%, ${c.accent3} 100%)`);
-  set("--grad-soft", `linear-gradient(135deg, ${hexToRgba(c.accent2, 0.16)}, ${hexToRgba(c.accent3, 0.16)})`);
-  set("--user", `linear-gradient(135deg, ${c.accent2}, ${c.accent})`);
+  set("--accent-3", c.accent2); // compat: legacy 3-stop gradients use accent-3 as the end touch
+  // Brand gradient: accent is the base majority, accent2 only the end touch.
+  const split = Math.round(((typeof c.split === "number") ? c.split : 0.4) * 100);
+  set("--grad", `linear-gradient(135deg, ${c.accent} 0%, ${c.accent} ${split}%, ${c.accent2} 100%)`);
+  set("--grad-soft", `linear-gradient(135deg, ${hexToRgba(c.accent, 0.16)}, ${hexToRgba(c.accent2, 0.16)})`);
+  set("--user", `linear-gradient(135deg, ${c.accent}, ${c.accent2})`);
   if (document.body) document.body.classList.toggle("theme-light", themeKey === "light" && !(custom && custom.bg));
 }
