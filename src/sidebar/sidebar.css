@@ -70,6 +70,9 @@ body.rail-collapsed #rail { display: none; }
   color: var(--muted); transition: 0.15s;
 }
 .icon:hover { background: var(--panel-2); color: var(--text); border-color: var(--border); }
+/* Tabs-panel close (X): a touch larger than the other icon buttons. */
+.tabs-close { width: 34px; height: 34px; }
+.tabs-close svg { display: block; }
 .icon.spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

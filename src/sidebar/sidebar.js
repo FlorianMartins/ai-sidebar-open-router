@@ -67,7 +67,7 @@ const els = {
   tabsBtn: $("tabsBtn"),
   tabsPanel: $("tabsPanel"),
   tabsList: $("tabsList"),
-  tabsRefresh: $("tabsRefresh"),
+  tabsClose: $("tabsClose"),
   messages: $("messages"),
   empty: $("empty"),
   emptyOnboard: $("emptyOnboard"),
@@ -2017,8 +2017,27 @@ function wire() {
     if (capturing) return cancelCapture();
     ensurePagePermission().then((ok) => (ok ? captureRegion() : addMessage("error", t("region.perm"))));
   });
-  els.tabsRefresh.addEventListener("click", (e) => { e.stopPropagation(); buildTabsList(); });
+  els.tabsClose.addEventListener("click", (e) => { e.stopPropagation(); els.tabsPanel.classList.add("hidden"); });
   els.tabsList.addEventListener("change", persistSelectedTabs);
+
+  // Live-refresh the multi-tab picker while it's open: open/close/finished-loading
+  // a tab and the list updates instantly (debounced, ticked tabs preserved via
+  // settings.selectedTabs). No manual refresh needed.
+  let tabsRefreshTimer = null;
+  const refreshTabsIfOpen = () => {
+    if (els.tabsPanel.classList.contains("hidden")) return;
+    clearTimeout(tabsRefreshTimer);
+    tabsRefreshTimer = setTimeout(() => buildTabsList(), 180);
+  };
+  if (browser.tabs) {
+    browser.tabs.onCreated.addListener(refreshTabsIfOpen);
+    browser.tabs.onRemoved.addListener(refreshTabsIfOpen);
+    if (browser.tabs.onUpdated) {
+      browser.tabs.onUpdated.addListener((id, info) => {
+        if (info && (info.title || info.url || info.status === "complete")) refreshTabsIfOpen();
+      });
+    }
+  }
 
   // No Send button — Enter sends (Shift+Enter = newline).
   els.input.addEventListener("keydown", (e) => {
