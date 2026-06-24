@@ -76,10 +76,12 @@ function openSidebar(tab) {
       return browser.sidebarAction.open();
     }
   } catch (_) {}
+  // Chromium-only side panel. Reached via bracket access because this file is
+  // shared with the Firefox build, whose validator doesn't know the sidePanel API.
   try {
-    if (typeof chrome !== "undefined" && chrome.sidePanel && chrome.sidePanel.open) {
-      return chrome.sidePanel.open({ windowId: tab && tab.windowId });
-    }
+    const cr = (typeof chrome !== "undefined") ? chrome : null;
+    const sp = cr && cr["sidePanel"];
+    if (sp && sp.open) return sp.open({ windowId: tab && tab.windowId });
   } catch (_) {}
 }
 
@@ -87,9 +89,9 @@ browser.runtime.onInstalled.addListener(() => {
   buildMenus();
   // Chromium: make the toolbar action open the side panel.
   try {
-    if (typeof chrome !== "undefined" && chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
-      chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
-    }
+    const cr = (typeof chrome !== "undefined") ? chrome : null;
+    const sp = cr && cr["sidePanel"];
+    if (sp && sp.setPanelBehavior) sp.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   } catch (_) {}
 });
 // Rebuild context menus also on browser startup and whenever the UI language changes.

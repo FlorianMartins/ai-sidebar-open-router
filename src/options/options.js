@@ -269,7 +269,11 @@ function buildCard(id) {
     if (meta.keysUrl) {
       const p = el("p", "muted");
       const tag = FREE_TIER.has(id) ? t("opt.key.getFree") : t("opt.key.console");
-      p.innerHTML = `${tag}<a href="${meta.keysUrl}" target="_blank" rel="noreferrer">${meta.keysUrl.replace(/^https?:\/\//, "")}</a>`;
+      p.textContent = tag;
+      const a = document.createElement("a");
+      a.href = meta.keysUrl; a.target = "_blank"; a.rel = "noreferrer";
+      a.textContent = meta.keysUrl.replace(/^https?:\/\//, "");
+      p.appendChild(a);
       sec.appendChild(p);
     }
   }
