@@ -51,6 +51,7 @@ const EN = {
   "region.imgName": "Page capture",
   "region.added": "✓ Captured the area — ask your question below.",
   "region.reload": "Extension updated — refresh this web page once, then try the capture again.",
+  "region.perm": "Screen-capture permission is needed — please allow access when prompted, then try again.",
 
   "mic.title": "Dictate (voice to text)",
   "mic.listening": "Listening… click to stop",
@@ -471,6 +472,7 @@ const FR = {
   "region.imgName": "Capture de page",
   "region.added": "✓ Zone capturée — posez votre question ci-dessous.",
   "region.reload": "Extension mise à jour — rafraîchissez cette page web une fois, puis relancez la capture.",
+  "region.perm": "La permission de capture d'écran est nécessaire — autorisez l'accès dans la fenêtre, puis réessayez.",
 
   "mic.title": "Dicter (voix vers texte)",
   "mic.listening": "Écoute… cliquez pour arrêter",

@@ -1012,6 +1012,18 @@ async function getActiveTabId() {
     return tabs && tabs[0] ? tabs[0].id : null;
   } catch (_) { return null; }
 }
+// captureVisibleTab needs the `<all_urls>` host permission to be GRANTED. In an
+// installed MV3 build that permission is optional and not granted at install (unlike
+// a temporary add-on), which is why the screenshot fails with "Missing activeTab
+// permission". We request it here — and this MUST run synchronously inside the click
+// gesture, so call it FIRST in the handler. Resolves true if already granted.
+function ensurePagePermission() {
+  try {
+    if (!browser.permissions || !browser.permissions.request) return Promise.resolve(true);
+    return browser.permissions.request({ origins: ["<all_urls>"] }).catch(() => false);
+  } catch (_) { return Promise.resolve(true); }
+}
+
 // Send a message to the tab's content script; if it isn't there yet (page opened
 // before the extension loaded), inject it on demand and retry. Throws if it still
 // can't be reached.
@@ -1859,8 +1871,16 @@ function wire() {
     if (show) await buildTabsList();
     els.tabsPanel.classList.toggle("hidden");
   });
-  els.pickEl.addEventListener("click", (e) => { e.stopPropagation(); picking ? cancelPicking() : pickElement(); });
-  els.captureRegion.addEventListener("click", (e) => { e.stopPropagation(); capturing ? cancelCapture() : captureRegion(); });
+  els.pickEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (picking) return cancelPicking();
+    ensurePagePermission().then((ok) => (ok ? pickElement() : addMessage("error", t("region.perm"))));
+  });
+  els.captureRegion.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (capturing) return cancelCapture();
+    ensurePagePermission().then((ok) => (ok ? captureRegion() : addMessage("error", t("region.perm"))));
+  });
   els.tabsRefresh.addEventListener("click", (e) => { e.stopPropagation(); buildTabsList(); });
   els.tabsList.addEventListener("change", persistSelectedTabs);
 

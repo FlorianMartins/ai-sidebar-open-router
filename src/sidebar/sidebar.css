@@ -54,7 +54,10 @@ body.rail-collapsed #rail { display: none; }
   background: var(--grad); -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.row { display: flex; align-items: center; gap: 4px; }
+/* Nudge the header icons right by half the width difference between the 34px accent
+   buttons and the 24px page-bar icons, so the ⚙ gear lines up vertically with the 📑
+   tabs-picker button below it. */
+.row { display: flex; align-items: center; gap: 4px; margin-right: -5px; }
 .icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; padding: 0; line-height: 1; font-size: 14px;
