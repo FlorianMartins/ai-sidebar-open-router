@@ -21,7 +21,7 @@ const MENU_ITEMS = [
 ];
 const MENU_TITLES = {
   en: {
-    "ai-open": "Open AI Sidebar",
+    "ai-open": "Open Hivey AI",
     "ai-summarize-page": "Summarize the page",
     "ai-translate-page": "Translate the page",
     "ai-summarize-sel": "Summarize the selection",
@@ -31,7 +31,7 @@ const MENU_TITLES = {
     "ai-reply": "Draft a reply to this text",
   },
   fr: {
-    "ai-open": "Ouvrir AI Sidebar",
+    "ai-open": "Ouvrir Hivey AI",
     "ai-summarize-page": "Résumer la page",
     "ai-translate-page": "Traduire la page",
     "ai-summarize-sel": "Résumer la sélection",

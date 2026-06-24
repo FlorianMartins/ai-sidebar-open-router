@@ -77,7 +77,7 @@ const EN = {
   "model.searchPh": "Search a model…",
 
   // ----- Onboarding / empty state -------------------------------------------
-  "onboard.title": "AI Sidebar — plug in your AI",
+  "onboard.title": "Hivey AI — plug in your AI",
   "onboard.lead": "The simplest and <b>free</b> option: sign in to <b>OpenRouter</b> (Google / GitHub / email account) — get <b>free models</b> (Llama, Gemini, DeepSeek…) with no key to manage.",
   "onboard.free": "🎁 Connect (OpenRouter — free)",
   "onboard.others": "⚙ Other providers / API key",
@@ -342,7 +342,7 @@ const EN = {
   "lang.Russian": "Russian",
 
   // ----- Options / Settings page --------------------------------------------
-  "opt.title": "AI Sidebar — Settings",
+  "opt.title": "Hivey AI — Settings",
   "opt.intro": "100% <b>BYOK</b>: your keys are stored <b>locally</b> in this browser (<code>storage.local</code>), never synced, and sent only to the API you choose. No key is bundled — bring your own, or point at a local model with no key.",
   "opt.quick.h": "⚡ Quick connect",
   "opt.quick.p": "Simplest: connect your <b>OpenRouter</b> account (Google / GitHub / email) in 1 click — the API key is created and saved below automatically, with access to <b>free models</b>.",
@@ -511,7 +511,7 @@ const FR = {
   "filter.tierRed": "Cher",
   "model.searchPh": "Rechercher un modèle…",
 
-  "onboard.title": "Sidebar IA — branchez votre IA",
+  "onboard.title": "Hivey AI — branchez votre IA",
   "onboard.lead": "Le plus simple et <b>gratuit</b> : connectez-vous à <b>OpenRouter</b> (compte Google / GitHub / email) — accès à des <b>modèles gratuits</b> (Llama, Gemini, DeepSeek…) sans gérer de clé.",
   "onboard.free": "🎁 Se connecter (OpenRouter — gratuit)",
   "onboard.others": "⚙ Autres fournisseurs / clé API",
@@ -762,7 +762,7 @@ const FR = {
   "lang.Russian": "Russe",
 
   // ----- Page Réglages -------------------------------------------------------
-  "opt.title": "AI Sidebar — Réglages",
+  "opt.title": "Hivey AI — Réglages",
   "opt.intro": "100% <b>BYOK</b> : vos clés sont stockées <b>localement</b> dans ce navigateur (<code>storage.local</code>), jamais synchronisées, et envoyées uniquement à l'API que vous choisissez. Aucune clé n'est fournie — renseignez la vôtre, ou pointez un modèle local sans clé.",
   "opt.quick.h": "⚡ Connexion rapide",
   "opt.quick.p": "Le plus simple : connectez votre compte <b>OpenRouter</b> (Google / GitHub / email) en 1 clic — la clé API est créée et enregistrée automatiquement ci-dessous, avec accès à des <b>modèles gratuits</b>.",

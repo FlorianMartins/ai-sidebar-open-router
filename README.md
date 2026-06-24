@@ -1,4 +1,4 @@
-# AI Sidebar — IA multi-fournisseurs pour Firefox & Chromium
+# Hivey AI — IA multi-fournisseurs pour Firefox & Chromium
 
 Une extension Firefox **open-source** qui ajoute une **sidebar IA** à la manière de
 [sider.ai](https://sider.ai), mais où **vous branchez votre propre IA** (BYOK) et

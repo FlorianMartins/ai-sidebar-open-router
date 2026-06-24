@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "AI Sidebar — IA multi-fournisseurs",
-  "version": "1.22.5",
+  "name": "Hivey AI — IA multi-fournisseurs",
+  "version": "1.23.0",
   "description": "Sidebar IA (BYOK) : chat, lecture page/élément, traduction, résumé, images, agent. Claude, OpenAI, Gemini, OpenRouter, etc.",
   "author": "Florian Martins",
   "content_security_policy": {
@@ -33,7 +33,7 @@
     "service_worker": "src/background/sw-chrome.js"
   },
   "action": {
-    "default_title": "AI Sidebar",
+    "default_title": "Hivey AI",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

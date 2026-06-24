@@ -5,6 +5,8 @@
 // theme AND override individual colours on top of it (stored in settings.themeColors).
 
 export const THEMES = {
+  hive:   { label: "Hivey (yellow/orange)", bg: "#15120b", panel: "#1e1a10", panel2: "#292116", border: "#3a3018", borderSoft: "#2a2212", text: "#f5efe2", muted: "#bcaa86", accent: "#f59e0b", accent2: "#fbbf24", accent3: "#f97316" },
+  violet: { label: "Violet (blue/purple)",  bg: "#0f1117", panel: "#161922", panel2: "#1c2030", border: "#272c3b", borderSoft: "#1f2330", text: "#e7e8ef", muted: "#9aa0b4", accent: "#8b5cf6", accent2: "#6366f1", accent3: "#a855f7" },
   dark:   { label: "Default (dark)", bg: "#0f1117", panel: "#161922", panel2: "#1c2030", border: "#272c3b", borderSoft: "#1f2330", text: "#e7e8ef", muted: "#9aa0b4", accent: "#8b5cf6", accent2: "#6366f1", accent3: "#a855f7" },
   pro:    { label: "Pro (blue)",     bg: "#0d1117", panel: "#161b22", panel2: "#1c232c", border: "#2a313c", borderSoft: "#21272f", text: "#e6edf3", muted: "#8b949e", accent: "#2f81f7", accent2: "#1f6feb", accent3: "#58a6ff" },
   gamer:  { label: "Gamer (neon)",   bg: "#08080f", panel: "#11111d", panel2: "#191929", border: "#2b2b48", borderSoft: "#20203a", text: "#e9e9ff", muted: "#9a9ac4", accent: "#00e5ff", accent2: "#7c4dff", accent3: "#ff2bd6" },

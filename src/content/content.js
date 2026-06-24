@@ -241,7 +241,7 @@
   function addSelected(el) {
     if (!el || pickSelected.includes(el)) return;
     pickSelected.push(el);
-    const b = mkBox("#8b5cf6", "rgba(139,92,246,.22)", 2147483646);
+    const b = mkBox("#f59e0b", "rgba(245,158,11,.22)", 2147483646);
     placeBox(b, el.getBoundingClientRect());
     pickBoxes.push(b);
   }
@@ -292,7 +292,7 @@
     if (pickResolve) endPick(true); // restart cleanly
     return new Promise((resolve) => {
       pickResolve = resolve; pickSelected = []; pickBoxes = []; pickPainting = false; pickHover = null;
-      pickHoverBox = mkBox("#a855f7", "rgba(168,85,247,.14)", 2147483647);
+      pickHoverBox = mkBox("#f97316", "rgba(249,115,22,.14)", 2147483647);
       document.documentElement.style.cursor = "crosshair";
       document.addEventListener("mousemove", pickMove, true);
       document.addEventListener("mousedown", pickDown, true);
@@ -347,7 +347,7 @@
     if (regResolve) endRegion(true);
     return new Promise((resolve) => {
       regResolve = resolve; regDragging = false; regStart = null;
-      regBox = mkBox("#a855f7", "rgba(168,85,247,.14)", 2147483647);
+      regBox = mkBox("#f97316", "rgba(249,115,22,.14)", 2147483647);
       document.documentElement.style.cursor = "crosshair";
       document.addEventListener("mousedown", regDown, true);
       document.addEventListener("mousemove", regMove, true);
@@ -368,7 +368,7 @@
         const st = document.createElement("style");
         st.id = "__ai_agent_glow_style";
         st.textContent =
-          "@keyframes aiAgentGlow{0%,100%{box-shadow:inset 0 0 16px 3px rgba(139,92,246,.55),inset 0 0 4px 1px rgba(168,85,247,.85)}50%{box-shadow:inset 0 0 36px 9px rgba(99,102,241,.8),inset 0 0 9px 2px rgba(168,85,247,1)}}" +
+          "@keyframes aiAgentGlow{0%,100%{box-shadow:inset 0 0 16px 3px rgba(245,158,11,.55),inset 0 0 4px 1px rgba(249,115,22,.85)}50%{box-shadow:inset 0 0 36px 9px rgba(251,191,36,.8),inset 0 0 9px 2px rgba(249,115,22,1)}}" +
           "#__ai_agent_glow{position:fixed;inset:0;z-index:2147483646;pointer-events:none;border-radius:2px;animation:aiAgentGlow 1.8s ease-in-out infinite}";
         (document.head || document.documentElement).appendChild(st);
       }

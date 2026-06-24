@@ -182,7 +182,7 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkin
   // OpenRouter attribution headers (ignored by other providers). They carry no
   // user data — just the app name/repo — and are sent only to the chosen endpoint.
   headers["HTTP-Referer"] = "https://github.com/FlorianMartins/firefox-ai-sidebar";
-  headers["X-Title"] = "AI Sidebar";
+  headers["X-Title"] = "Hivey AI";
 
   return {
     id: "openai",
@@ -460,7 +460,7 @@ async function generateImageViaChat({ baseUrl, apiKey, providerId, model, prompt
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
   if (providerId === "openrouter") {
     headers["HTTP-Referer"] = "https://github.com/FlorianMartins/firefox-ai-sidebar";
-    headers["X-Title"] = "AI Sidebar";
+    headers["X-Title"] = "Hivey AI";
   }
   const sizeHint = size ? ` Target size/aspect: ${size} pixels.` : "";
   const body = {

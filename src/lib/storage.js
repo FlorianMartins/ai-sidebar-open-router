@@ -48,7 +48,7 @@ const DEFAULTS = {
                      // Inaccessible models are auto-removed on error + a data-policy link is shown.
   improvePreset: "improve", // default writing preset for the "improve" mode
   uiLang: "en", // sidebar interface language: "en" (default) | "fr". Changed from Settings.
-  theme: "dark", // colour theme key (see src/lib/theme.js): dark | pro | gamer | modern | sunset | light
+  theme: "hive", // colour theme key (see src/lib/theme.js): hive (default) | violet | dark | pro | gamer | modern | sunset | light
   themeColors: {}, // optional per-colour overrides applied ON TOP of the theme { accent, accent2, bg, panel, text }
   railSide: "left", // workspace tab rail position INSIDE the sidebar: "left" (default) | "right".
                     // (The sidebar's own browser-side position is not controllable by extensions.)

@@ -994,7 +994,7 @@ function buildUserContent(text, imgs, providerId) {
   return parts;
 }
 
-// Clicking the brand (logo / "AI Sidebar") shows/hides the workspace tabs rail.
+// Clicking the brand (logo / "Hivey AI") shows/hides the workspace tabs rail.
 function toggleRail() {
   settings.railHidden = !settings.railHidden;
   document.body.classList.toggle("rail-collapsed", settings.railHidden);
