@@ -198,10 +198,44 @@ function placeholderFor(m) { return t("ph." + m) || t("ph.chat"); }
 // what turns on tool-use. The page-context chips (Réflexion/Web/Page) stay available.
 function agentActive() { return mode === "agent"; }
 
+// Re-render the toolbar / sidebar action icon in the current theme's accent
+// colours so the browser button and sidebar header follow the chosen theme.
+// (Static manifest icons can't react to a runtime setting, but setIcon() can.)
+async function updateActionIcon() {
+  try {
+    const cs = getComputedStyle(document.documentElement);
+    const a2 = (cs.getPropertyValue("--accent-2") || "#fbbf24").trim();
+    const a1 = (cs.getPropertyValue("--accent") || "#f59e0b").trim();
+    const a3 = (cs.getPropertyValue("--accent-3") || "#f97316").trim();
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">' +
+      '<defs><linearGradient id="g" x1="12" y1="10" x2="84" y2="86" gradientUnits="userSpaceOnUse">' +
+      '<stop offset="0" stop-color="' + a2 + '"/><stop offset="0.5" stop-color="' + a1 + '"/><stop offset="1" stop-color="' + a3 + '"/>' +
+      '</linearGradient></defs><g fill="url(#g)">' +
+      '<rect x="20" y="13" width="56" height="13" rx="6.5"/>' +
+      '<rect x="12" y="32" width="72" height="13" rx="6.5"/>' +
+      '<rect x="16" y="51" width="64" height="13" rx="6.5"/>' +
+      '<rect x="26" y="70" width="44" height="13" rx="6.5"/></g></svg>';
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = "data:image/svg+xml;base64," + btoa(svg); });
+    const imageData = {};
+    for (const s of [16, 32]) {
+      const cv = document.createElement("canvas"); cv.width = s; cv.height = s;
+      const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, s, s); ctx.drawImage(img, 0, 0, s, s);
+      imageData[s] = ctx.getImageData(0, 0, s, s);
+    }
+    try { if (browser.sidebarAction && browser.sidebarAction.setIcon) await browser.sidebarAction.setIcon({ imageData }); } catch (_) {}
+    const actionApi = (browser.action && browser.action.setIcon) ? browser.action
+                    : (typeof chrome !== "undefined" && chrome.action && chrome.action.setIcon) ? chrome.action : null;
+    try { if (actionApi) await actionApi.setIcon({ imageData }); } catch (_) {}
+  } catch (_) {}
+}
+
 async function init() {
   configureMarkdown();
   settings = await getSettings();
   applyTheme(settings.theme || "dark", settings.themeColors); // colour theme + custom overrides
+  updateActionIcon();                  // tint the toolbar/sidebar icon to match the theme
   setLang(settings.uiLang || "en");   // English by default; other languages chosen in Settings
   applyDom(document);                  // fill all data-i18n static markup
   document.documentElement.lang = settings.uiLang || "en";
@@ -1980,6 +2014,7 @@ function wire() {
     if (changes.theme || changes.themeColors) {
       const s2 = await getSettings();
       applyTheme(s2.theme || "dark", s2.themeColors);
+      updateActionIcon();              // keep the browser icon in sync with the theme
     }
     const connChanged = !!(changes.keys || changes.baseUrls || changes.localEnabled);
     if (!connChanged && !changes.modelLists && !changes.orModels && !changes.codeAppUrl && !changes.orFreeOnly) return;

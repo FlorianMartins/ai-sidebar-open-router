@@ -10,9 +10,9 @@
        widest on top tapering to the smallest at the bottom.
        Yellow→orange gradient, no background, legible down to favicon size. -->
   <g fill="url(#hive)">
-    <rect x="20" y="12" width="56" height="15" rx="7.5"/>
-    <rect x="12" y="31" width="72" height="15" rx="7.5"/>
-    <rect x="16" y="50" width="64" height="15" rx="7.5"/>
-    <rect x="26" y="69" width="44" height="15" rx="7.5"/>
+    <rect x="20" y="13" width="56" height="13" rx="6.5"/>
+    <rect x="12" y="32" width="72" height="13" rx="6.5"/>
+    <rect x="16" y="51" width="64" height="13" rx="6.5"/>
+    <rect x="26" y="70" width="44" height="13" rx="6.5"/>
   </g>
 </svg>
