@@ -390,8 +390,131 @@
     }
   }
 
+  // ---- On-page action bubble -----------------------------------------------
+  // A floating result bubble rendered IN THE PAGE (Shadow DOM, isolated from the
+  // site's CSS) at the right-click position. The sidebar runs the model and relays
+  // the text here via messages; the bubble is independent of the sidebar UI.
+  let lastCtxPos = { x: 80, y: 80 };
+  document.addEventListener("contextmenu", (e) => { lastCtxPos = { x: e.clientX, y: e.clientY }; }, true);
+  let pageBubble = null;
+  function closePageBubble() {
+    if (!pageBubble) return;
+    try { pageBubble.cleanup(); } catch (_) {}
+    try { pageBubble.host.remove(); } catch (_) {}
+    pageBubble = null;
+  }
+  function buildPageBubble(opts) {
+    closePageBubble();
+    const A = (opts && opts.accent) || ACCENT;
+    const host = document.createElement("div");
+    host.style.cssText = "all:initial;position:fixed;top:0;left:0;z-index:2147483647;";
+    const shadow = host.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent =
+      ".card{position:fixed;width:380px;max-width:92vw;max-height:62vh;display:flex;flex-direction:column;" +
+      "font:13px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#e8e8f2;background:#1a1d2c;border:1px solid #30334d;" +
+      "border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.55);overflow:hidden}" +
+      ".head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #2a2d44;cursor:move;user-select:none}" +
+      ".title{font-weight:600;color:#fff;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".acts{margin-left:auto;display:flex;align-items:center;gap:5px;flex:0 0 auto}" +
+      "select{font:inherit;font-size:12px;padding:3px 6px;border-radius:7px;background:#262a40;color:#e8e8f2;border:1px solid #30334d}" +
+      "button{all:unset;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;cursor:pointer;color:#9b9db5}" +
+      "button:hover{background:#262a40;color:#fff}" +
+      ".src{font-size:11px;color:#9b9db5;padding:7px 10px;border-bottom:1px solid #2a2d44;max-height:64px;overflow:auto;white-space:pre-wrap;background:#14151c}" +
+      ".body{padding:10px 12px;overflow:auto;flex:1;min-height:46px;white-space:pre-wrap}" +
+      ".body.done{white-space:normal}" +
+      ".body.loading{color:#9b9db5}" +
+      ".note{font-size:10px;color:#9b9db5;padding:5px 10px;border-top:1px solid #2a2d44;text-align:center}" +
+      ".body a{color:" + A + "}.body h1,.body h2,.body h3{color:" + A + ";margin:10px 0 5px}.body strong,.body b{color:" + A + "}" +
+      ".body ul,.body ol{padding-left:20px;margin:7px 0}.body p{margin:8px 0}.body pre{white-space:pre-wrap;background:#14151c;padding:8px;border-radius:8px;overflow:auto}" +
+      "svg{display:block}";
+    shadow.appendChild(style);
+    const card = document.createElement("div"); card.className = "card";
+    const head = document.createElement("div"); head.className = "head";
+    const title = document.createElement("span"); title.className = "title"; title.textContent = (opts && opts.title) || "";
+    const acts = document.createElement("div"); acts.className = "acts";
+    let langSel = null, presetSel = null;
+    const sendRerun = () => browser.runtime.sendMessage({ type: "bubble_rerun", lang: langSel ? langSel.value : null, preset: presetSel ? presetSel.value : null });
+    if (opts && opts.langs && opts.langs.length) {
+      langSel = document.createElement("select");
+      for (const l of opts.langs) { const o = document.createElement("option"); o.value = l.value; o.textContent = l.label; langSel.appendChild(o); }
+      langSel.value = opts.currentLang || opts.langs[0].value;
+      langSel.addEventListener("change", sendRerun);
+      acts.appendChild(langSel);
+    }
+    if (opts && opts.presets && opts.presets.length) {
+      presetSel = document.createElement("select");
+      for (const p of opts.presets) { const o = document.createElement("option"); o.value = p.value; o.textContent = p.label; presetSel.appendChild(o); }
+      presetSel.value = opts.currentPreset || opts.presets[0].value;
+      presetSel.addEventListener("change", sendRerun);
+      acts.appendChild(presetSel);
+    }
+    const copyBtn = document.createElement("button"); copyBtn.title = (opts && opts.copyLabel) || "Copy";
+    copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copyBtn.addEventListener("click", () => { try { navigator.clipboard.writeText(pageBubble ? pageBubble.raw : ""); } catch (_) {} });
+    const closeBtn = document.createElement("button"); closeBtn.title = (opts && opts.closeLabel) || "Close";
+    closeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    closeBtn.addEventListener("click", closePageBubble);
+    acts.appendChild(copyBtn); acts.appendChild(closeBtn);
+    head.appendChild(title); head.appendChild(acts);
+    const src = document.createElement("div"); src.className = "src"; src.textContent = (opts && opts.source) || "";
+    const body = document.createElement("div"); body.className = "body loading"; body.textContent = "…";
+    const note = document.createElement("div"); note.className = "note"; note.textContent = (opts && opts.note) || "";
+    card.appendChild(head); card.appendChild(src); card.appendChild(body); card.appendChild(note);
+    shadow.appendChild(card);
+    (document.body || document.documentElement).appendChild(host);
+    // Position at the right-click point (clamped to the viewport).
+    const cw = 380;
+    const x = Math.min(Math.max(8, lastCtxPos.x), Math.max(8, window.innerWidth - cw - 8));
+    const y = Math.min(Math.max(8, lastCtxPos.y + 10), Math.max(8, window.innerHeight - 90));
+    card.style.left = x + "px"; card.style.top = y + "px";
+    // Drag by the header.
+    let ox = 0, oy = 0;
+    const onMove = (e) => {
+      let nx = e.clientX - ox, ny = e.clientY - oy;
+      nx = Math.max(2, Math.min(window.innerWidth - 60, nx));
+      ny = Math.max(2, Math.min(window.innerHeight - 30, ny));
+      card.style.left = nx + "px"; card.style.top = ny + "px";
+    };
+    const stop = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", stop); };
+    head.addEventListener("mousedown", (e) => {
+      if (e.target.closest("button, select")) return;
+      const r = card.getBoundingClientRect();
+      ox = e.clientX - r.left; oy = e.clientY - r.top; e.preventDefault();
+      document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", stop);
+    });
+    // Close on outside click / Esc.
+    const onDocDown = (e) => { if (!host.contains(e.target)) closePageBubble(); };
+    const onKey = (e) => { if (e.key === "Escape") closePageBubble(); };
+    setTimeout(() => document.addEventListener("mousedown", onDocDown, true), 0);
+    document.addEventListener("keydown", onKey, true);
+    pageBubble = {
+      host, body, raw: "",
+      cleanup: () => { document.removeEventListener("mousedown", onDocDown, true); document.removeEventListener("keydown", onKey, true); stop(); },
+    };
+  }
+
   browser.runtime.onMessage.addListener((msg) => {
     switch (msg && msg.type) {
+      case "bubble_open":
+        setAccents(msg);
+        buildPageBubble(msg);
+        return Promise.resolve({ ok: true });
+      case "bubble_reset":
+        if (pageBubble) { pageBubble.raw = ""; pageBubble.body.className = "body loading"; pageBubble.body.textContent = "…"; }
+        return Promise.resolve({ ok: true });
+      case "bubble_delta":
+        if (pageBubble) { pageBubble.raw += msg.text || ""; pageBubble.body.className = "body"; pageBubble.body.textContent = pageBubble.raw; pageBubble.body.scrollTop = pageBubble.body.scrollHeight; }
+        return Promise.resolve({ ok: true });
+      case "bubble_done":
+        if (pageBubble) { pageBubble.raw = msg.raw || pageBubble.raw; pageBubble.body.className = "body done"; pageBubble.body.innerHTML = msg.html || pageBubble.raw; }
+        return Promise.resolve({ ok: true });
+      case "bubble_error":
+        if (pageBubble) { pageBubble.body.className = "body"; pageBubble.body.textContent = msg.error || "Error"; }
+        return Promise.resolve({ ok: true });
+      case "bubble_close":
+        closePageBubble();
+        return Promise.resolve({ ok: true });
       case "agent_glow":
         setAccents(msg);
         setAgentGlow(!!msg.on);

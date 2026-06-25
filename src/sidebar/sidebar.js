@@ -1863,7 +1863,7 @@ async function consumePendingAction() {
   // A right-click on a SELECTION opens an isolated, non-historised bubble (it
   // doesn't touch the conversation). Page-level actions keep the normal chat flow.
   if (BUBBLE_ACTIONS.has(pendingAction.action) && (pendingAction.text || "").trim()) {
-    openActionBubble(pendingAction.action, pendingAction.text);
+    runOnPageBubble(pendingAction.action, pendingAction.text);
     return;
   }
   // Switch to the matching workspace so the action lands on the right tab.
@@ -1880,6 +1880,70 @@ async function consumePendingAction() {
 const BUBBLE_ACTIONS = new Set(["translate", "improve", "summarize-selection", "explain", "reply"]);
 let actionBubbleEl = null;
 let bubbleAbort = null;
+let bubbleCtx = null; // { tabId, action, text } for the on-page bubble
+
+// Run a quick action as a bubble RENDERED IN THE PAGE at the right-click position.
+// The sidebar runs the model (it holds the keys/providers) and streams the text to
+// the page's content script. Falls back to the in-sidebar bubble on restricted pages
+// or if the content script can't be reached.
+async function runOnPageBubble(action, providedText) {
+  const text = (providedText || "").trim();
+  if (!text) return;
+  const tab = await getActiveTab();
+  if (!tab || isRestrictedUrl(tab.url)) { openActionBubble(action, providedText); return; }
+  bubbleCtx = { tabId: tab.id, action, text };
+  const reqInit = actionRequest(action, text, settings.targetLang || "French", settings.improvePreset);
+  const langs = reqInit && reqInit.translate
+    ? Array.from(els.translateLang.options).map((o) => ({ value: o.value, label: o.textContent }))
+    : null;
+  const presets = reqInit && reqInit.improve
+    ? WRITING_PRESETS.map(([id]) => ({ value: id, label: t("preset." + id) }))
+    : null;
+  try {
+    await sendToTab(tab.id, {
+      type: "bubble_open", title: reqInit ? reqInit.label : "", source: text, note: t("bubble.note"),
+      copyLabel: t("bubble.copy"), closeLabel: t("close.title"),
+      langs, presets, currentLang: settings.targetLang || "French", currentPreset: settings.improvePreset || "improve",
+      ...themeAccents(),
+    });
+  } catch (_) { openActionBubble(action, providedText); return; } // can't inject → in-sidebar fallback
+  runBubbleModel();
+}
+
+async function runBubbleModel() {
+  if (!bubbleCtx) return;
+  const { tabId, action, text } = bubbleCtx;
+  const send = (m) => { try { browser.tabs.sendMessage(tabId, m); } catch (_) {} };
+  const lang = settings.targetLang || "French";
+  const req = actionRequest(action, text, lang, settings.improvePreset);
+  if (!req) return;
+  const sel = currentSelection();
+  if (currentKeyMissing(sel.providerId)) { send({ type: "bubble_error", error: t("err.noKeyModel") }); return; }
+  if (bubbleAbort) { try { bubbleAbort.abort(); } catch (_) {} }
+  bubbleAbort = new AbortController();
+  send({ type: "bubble_reset" });
+  let raw = "";
+  try {
+    const provider = makeProvider(settings, { thinking: false, webSearch: false });
+    const system = buildSystemPrompt({ agentMode: false, targetLang: lang, responseLang: settings.responseLang, mode: action === "translate" ? "translate" : action === "improve" ? "improve" : "chat", blockPayments: settings.blockPayments });
+    await runConversation({
+      provider, system, history: [{ role: "user", content: req.content }], tools: [],
+      onText: (d) => { raw += d; send({ type: "bubble_delta", text: d }); },
+      onThink: () => {}, signal: bubbleAbort.signal,
+    });
+    send({ type: "bubble_done", raw, html: renderMarkdown(raw) });
+  } catch (e) {
+    if (!(e && e.name === "AbortError")) send({ type: "bubble_error", error: (e && e.message) ? e.message : String(e) });
+  }
+}
+
+// The page bubble asks for a re-run when the user changes its language / style.
+browser.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.type !== "bubble_rerun" || !bubbleCtx) return;
+  if (msg.lang) { settings.targetLang = msg.lang; setSettings({ targetLang: msg.lang }); }
+  if (msg.preset) { settings.improvePreset = msg.preset; setSettings({ improvePreset: msg.preset }); }
+  runBubbleModel();
+});
 
 function closeActionBubble() {
   if (bubbleAbort) { try { bubbleAbort.abort(); } catch (_) {} bubbleAbort = null; }
