@@ -396,6 +396,44 @@
   // the text here via messages; the bubble is independent of the sidebar UI.
   let lastCtxPos = { x: 80, y: 80 };
   document.addEventListener("contextmenu", (e) => { lastCtxPos = { x: e.clientX, y: e.clientY }; }, true);
+
+  // Minimal, XSS-safe Markdown -> HTML for the on-page bubble's final render.
+  // The text is escaped first, then a small whitelist of formatting is layered
+  // back in. Used when the background (which has no DOM) streams raw markdown.
+  function miniMarkdown(src) {
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const inline = (s) => {
+      let r = esc(s);
+      r = r.replace(/`([^`]+)`/g, (_m, c) => "<code>" + c + "</code>");
+      r = r.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      r = r.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+      r = r.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
+      r = r.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+        (_m, txt, url) => '<a href="' + url.replace(/"/g, "%22") + '" target="_blank" rel="noopener noreferrer">' + txt + "</a>");
+      return r;
+    };
+    const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
+    let out = "", listOpen = false, inCode = false, codeBuf = "";
+    const closeList = () => { if (listOpen) { out += "</ul>"; listOpen = false; } };
+    for (const line of lines) {
+      if (/^```/.test(line)) {
+        if (inCode) { out += "<pre><code>" + esc(codeBuf) + "</code></pre>"; codeBuf = ""; inCode = false; }
+        else { closeList(); inCode = true; }
+        continue;
+      }
+      if (inCode) { codeBuf += (codeBuf ? "\n" : "") + line; continue; }
+      const h = line.match(/^(#{1,3})\s+(.*)$/);
+      if (h) { closeList(); const n = h[1].length; out += "<h" + n + ">" + inline(h[2]) + "</h" + n + ">"; continue; }
+      const li = line.match(/^\s*[-*]\s+(.*)$/);
+      if (li) { if (!listOpen) { out += "<ul>"; listOpen = true; } out += "<li>" + inline(li[1]) + "</li>"; continue; }
+      if (!line.trim()) { closeList(); continue; }
+      closeList();
+      out += "<p>" + inline(line) + "</p>";
+    }
+    if (inCode) out += "<pre><code>" + esc(codeBuf) + "</code></pre>";
+    closeList();
+    return out;
+  }
   let pageBubble = null;
   function closePageBubble() {
     if (!pageBubble) return;
@@ -507,7 +545,14 @@
         if (pageBubble) { pageBubble.raw += msg.text || ""; pageBubble.body.className = "body"; pageBubble.body.textContent = pageBubble.raw; pageBubble.body.scrollTop = pageBubble.body.scrollHeight; }
         return Promise.resolve({ ok: true });
       case "bubble_done":
-        if (pageBubble) { pageBubble.raw = msg.raw || pageBubble.raw; pageBubble.body.className = "body done"; pageBubble.body.innerHTML = msg.html || pageBubble.raw; }
+        if (pageBubble) {
+          pageBubble.raw = msg.raw || pageBubble.raw;
+          pageBubble.body.className = "body done";
+          // Prefer a pre-rendered html if one is supplied; otherwise render the
+          // markdown safely here (the background service worker has no DOM).
+          if (msg.html) { pageBubble.body.innerHTML = msg.html; }
+          else { pageBubble.body.innerHTML = miniMarkdown(pageBubble.raw); }
+        }
         return Promise.resolve({ ok: true });
       case "bubble_error":
         if (pageBubble) { pageBubble.body.className = "body"; pageBubble.body.textContent = msg.error || "Error"; }
