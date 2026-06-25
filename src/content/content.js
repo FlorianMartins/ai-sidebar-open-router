@@ -1,6 +1,6 @@
 // Content script: reads the page and performs the DOM actions requested by the
 // agent. Injected on every page (document_idle) and re-injected on demand by
-// tools.js. Also adds an opt-in "AI reply" helper button on known webmail sites.
+// tools.js. Also powers the page element picker and region screenshot capture.
 (function () {
   if (window.__aiSidebarInjected) return;
   window.__aiSidebarInjected = true;
@@ -54,6 +54,34 @@
         (el.getAttribute("aria-label") || "")
       )) || "";
     return CARD_FIELD.test(hay);
+  }
+
+  // --- Very sensitive (non-payment) actions: ALWAYS confirmed, even in "Allow" mode.
+  // Downloading, reserving/booking, deleting, transferring, signing up, installing… The
+  // agent must get the user's OK before doing these. Payments stay hard-blocked above.
+  const SENSITIVE_WORDS = [
+    "download", "télécharger", "telecharger",
+    "reserve", "reservation", "réserver", "reserver", "réservation",
+    "book now", "book ticket", "booking",
+    "delete", "supprimer", "remove account", "delete account", "supprimer le compte",
+    "transfer", "transférer", "transferer", "virement", "wire ",
+    "sign up", "signup", "register", "create account", "s'inscrire", "inscrire", "créer un compte", "creer un compte",
+    "apply now", "postuler", "submit application",
+    "install", "installer",
+    "send email", "send message", "envoyer le message", "envoyer un message",
+    "unsubscribe", "se désabonner", "se desabonner",
+    "publish", "publier", "post publicly",
+  ];
+  function looksLikeSensitiveControl(el) {
+    // A real download link/button (download attribute or a file href).
+    if (el.tagName === "A" &&
+        ((el.hasAttribute && el.hasAttribute("download")) ||
+         /\.(zip|exe|dmg|msi|pkg|apk|iso|deb|rpm|7z|rar|tar|gz|jar|bin|app|csv|xlsx?)(\?|#|$)/i.test((el.getAttribute && el.getAttribute("href")) || ""))) {
+      return "download";
+    }
+    const hay = textOf(el);
+    for (const w of SENSITIVE_WORDS) if (hay.includes(w)) return w.trim();
+    return null;
   }
 
   function isVisible(el) {
@@ -127,22 +155,32 @@
     return { count: out.length, elements: out };
   }
 
-  function clickElement(ref, guard) {
+  function clickElement(ref, guard, confirmed) {
     const el = refMap.get(ref);
     if (!el) return { error: `ref not found: ${ref} (re-run find_elements)` };
     if (guard && guard.blockPayments && looksLikePaymentControl(el)) {
       return { error: "Blocked by safety guardrail: payment/checkout action is not allowed.", blocked: true };
+    }
+    // Very sensitive action → ask the user to confirm (even in "Allow" mode).
+    if (!confirmed) {
+      const reason = looksLikeSensitiveControl(el);
+      if (reason) return { confirm: true, action: reason, label: labelOf(el) };
     }
     el.scrollIntoView({ block: "center" });
     el.click();
     return { ok: true, clicked: labelOf(el) };
   }
 
-  function fillInput(ref, value, submit, guard) {
+  function fillInput(ref, value, submit, guard, confirmed) {
     const el = refMap.get(ref);
     if (!el) return { error: `ref not found: ${ref} (re-run find_elements)` };
     if (guard && guard.blockPayments && looksLikeCardField(el)) {
       return { error: "Blocked by safety guardrail: card/payment field is not allowed.", blocked: true };
+    }
+    // If submitting a form that triggers a very sensitive action, confirm first.
+    if (submit && !confirmed) {
+      const reason = (el.form && looksLikeSensitiveControl(el.form)) || looksLikeSensitiveControl(el);
+      if (reason) return { confirm: true, action: reason, label: labelOf(el) };
     }
     el.focus();
     const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value");
@@ -183,6 +221,17 @@
   // holding the left button and dragging across several elements selects them all
   // (each captured). Esc, or a pick_cancel message from the sidebar, aborts cleanly.
   let pickResolve = null;
+  // Theme accent colours — passed from the sidebar so the capture/pick overlays and
+  // the agent glow match the user's selected theme instead of a fixed colour.
+  let ACCENT = "#8b5cf6", ACCENT2 = "#6366f1";
+  function rgba(hex, a) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec((hex || "").trim());
+    return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : hex;
+  }
+  function setAccents(msg) {
+    if (msg && msg.accent) ACCENT = msg.accent;
+    if (msg && msg.accent2) ACCENT2 = msg.accent2;
+  }
   let pickHoverBox = null;
   let pickHover = null;
   let pickPainting = false;
@@ -203,7 +252,7 @@
   function addSelected(el) {
     if (!el || pickSelected.includes(el)) return;
     pickSelected.push(el);
-    const b = mkBox("#8b5cf6", "rgba(139,92,246,.22)", 2147483646);
+    const b = mkBox(ACCENT, rgba(ACCENT, 0.22), 2147483646);
     placeBox(b, el.getBoundingClientRect());
     pickBoxes.push(b);
   }
@@ -254,7 +303,7 @@
     if (pickResolve) endPick(true); // restart cleanly
     return new Promise((resolve) => {
       pickResolve = resolve; pickSelected = []; pickBoxes = []; pickPainting = false; pickHover = null;
-      pickHoverBox = mkBox("#a855f7", "rgba(168,85,247,.14)", 2147483647);
+      pickHoverBox = mkBox(ACCENT2, rgba(ACCENT2, 0.14), 2147483647);
       document.documentElement.style.cursor = "crosshair";
       document.addEventListener("mousemove", pickMove, true);
       document.addEventListener("mousedown", pickDown, true);
@@ -264,23 +313,234 @@
     });
   }
 
+  // --- Region capture (screenshot tool) -----------------------------------
+  // Lets the user draw a free rectangle over the page (like a screenshot selection);
+  // we return the rect so the sidebar can crop the visible-tab screenshot and attach
+  // that IMAGE to the context. Esc or right-click cancels.
+  let regResolve = null, regBox = null, regStart = null, regDragging = false;
+  function regRect(e) {
+    const left = Math.min(e.clientX, regStart.x), top = Math.min(e.clientY, regStart.y);
+    return { x: left, y: top, w: Math.abs(e.clientX - regStart.x), h: Math.abs(e.clientY - regStart.y) };
+  }
+  function regDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    regDragging = true; regStart = { x: e.clientX, y: e.clientY };
+    placeBox(regBox, { left: e.clientX, top: e.clientY, width: 0, height: 0 });
+  }
+  function regMove(e) {
+    if (!regDragging || !regStart) return;
+    const r = regRect(e);
+    placeBox(regBox, { left: r.x, top: r.y, width: r.w, height: r.h });
+  }
+  function regUp(e) {
+    if (!regDragging) return;
+    e.preventDefault(); e.stopPropagation();
+    endRegion(false, regRect(e));
+  }
+  function regSwallow(e) { e.preventDefault(); e.stopPropagation(); }
+  function regKey(e) { if (e.key === "Escape") { e.preventDefault(); endRegion(true); } }
+  function endRegion(cancelled, rect) {
+    document.removeEventListener("mousedown", regDown, true);
+    document.removeEventListener("mousemove", regMove, true);
+    document.removeEventListener("mouseup", regUp, true);
+    document.removeEventListener("click", regSwallow, true);
+    document.removeEventListener("keydown", regKey, true);
+    document.documentElement.style.cursor = "";
+    if (regBox) { regBox.remove(); regBox = null; }
+    regDragging = false; regStart = null;
+    const r = regResolve; regResolve = null;
+    if (!r) return;
+    if (cancelled || !rect || rect.w < 5 || rect.h < 5) { r({ cancelled: true }); return; }
+    r({ rect, dpr: window.devicePixelRatio || 1, url: location.href, title: document.title });
+  }
+  function startRegion() {
+    if (regResolve) endRegion(true);
+    return new Promise((resolve) => {
+      regResolve = resolve; regDragging = false; regStart = null;
+      regBox = mkBox(ACCENT2, rgba(ACCENT2, 0.14), 2147483647);
+      document.documentElement.style.cursor = "crosshair";
+      document.addEventListener("mousedown", regDown, true);
+      document.addEventListener("mousemove", regMove, true);
+      document.addEventListener("mouseup", regUp, true);
+      document.addEventListener("click", regSwallow, true);
+      document.addEventListener("keydown", regKey, true);
+    });
+  }
+
+  // --- Agent activity glow -------------------------------------------------
+  // A soft pulsing border around the viewport (à la Perplexity) shown while the agent
+  // is acting on this page. pointer-events:none so it never blocks the page.
+  let glowEl = null;
+  function setAgentGlow(on) {
+    if (on) {
+      if (glowEl && document.documentElement.contains(glowEl)) return;
+      // Rebuild the style each time so the glow tracks the current theme accent.
+      let st = document.getElementById("__ai_agent_glow_style");
+      if (!st) { st = document.createElement("style"); st.id = "__ai_agent_glow_style"; (document.head || document.documentElement).appendChild(st); }
+      st.textContent =
+        `@keyframes aiAgentGlow{0%,100%{box-shadow:inset 0 0 16px 3px ${rgba(ACCENT, 0.55)},inset 0 0 4px 1px ${rgba(ACCENT2, 0.85)}}50%{box-shadow:inset 0 0 36px 9px ${rgba(ACCENT, 0.85)},inset 0 0 9px 2px ${rgba(ACCENT2, 1)}}}` +
+        "#__ai_agent_glow{position:fixed;inset:0;z-index:2147483646;pointer-events:none;border-radius:2px;animation:aiAgentGlow 1.8s ease-in-out infinite}";
+      glowEl = document.createElement("div");
+      glowEl.id = "__ai_agent_glow";
+      document.documentElement.appendChild(glowEl);
+    } else if (glowEl) {
+      glowEl.remove();
+      glowEl = null;
+    }
+  }
+
+  // ---- On-page action bubble -----------------------------------------------
+  // A floating result bubble rendered IN THE PAGE (Shadow DOM, isolated from the
+  // site's CSS) at the right-click position. The sidebar runs the model and relays
+  // the text here via messages; the bubble is independent of the sidebar UI.
+  let lastCtxPos = { x: 80, y: 80 };
+  document.addEventListener("contextmenu", (e) => { lastCtxPos = { x: e.clientX, y: e.clientY }; }, true);
+  let pageBubble = null;
+  function closePageBubble() {
+    if (!pageBubble) return;
+    try { pageBubble.cleanup(); } catch (_) {}
+    try { pageBubble.host.remove(); } catch (_) {}
+    pageBubble = null;
+  }
+  function buildPageBubble(opts) {
+    closePageBubble();
+    const A = (opts && opts.accent) || ACCENT;
+    const host = document.createElement("div");
+    host.style.cssText = "all:initial;position:fixed;top:0;left:0;z-index:2147483647;";
+    const shadow = host.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent =
+      ".card{position:fixed;width:380px;max-width:92vw;max-height:62vh;display:flex;flex-direction:column;" +
+      "font:13px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#e8e8f2;background:#1a1d2c;border:1px solid #30334d;" +
+      "border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.55);overflow:hidden}" +
+      ".head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #2a2d44;cursor:move;user-select:none}" +
+      ".title{font-weight:600;color:#fff;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".acts{margin-left:auto;display:flex;align-items:center;gap:5px;flex:0 0 auto}" +
+      "select{font:inherit;font-size:12px;padding:3px 6px;border-radius:7px;background:#262a40;color:#e8e8f2;border:1px solid #30334d}" +
+      "button{all:unset;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;cursor:pointer;color:#9b9db5}" +
+      "button:hover{background:#262a40;color:#fff}" +
+      ".src{font-size:11px;color:#9b9db5;padding:7px 10px;border-bottom:1px solid #2a2d44;max-height:64px;overflow:auto;white-space:pre-wrap;background:#14151c}" +
+      ".body{padding:10px 12px;overflow:auto;flex:1;min-height:46px;white-space:pre-wrap}" +
+      ".body.done{white-space:normal}" +
+      ".body.loading{color:#9b9db5}" +
+      ".note{font-size:10px;color:#9b9db5;padding:5px 10px;border-top:1px solid #2a2d44;text-align:center}" +
+      ".body a{color:" + A + "}.body h1,.body h2,.body h3{color:" + A + ";margin:10px 0 5px}.body strong,.body b{color:" + A + "}" +
+      ".body ul,.body ol{padding-left:20px;margin:7px 0}.body p{margin:8px 0}.body pre{white-space:pre-wrap;background:#14151c;padding:8px;border-radius:8px;overflow:auto}" +
+      "svg{display:block}";
+    shadow.appendChild(style);
+    const card = document.createElement("div"); card.className = "card";
+    const head = document.createElement("div"); head.className = "head";
+    const title = document.createElement("span"); title.className = "title"; title.textContent = (opts && opts.title) || "";
+    const acts = document.createElement("div"); acts.className = "acts";
+    let langSel = null, presetSel = null;
+    const sendRerun = () => browser.runtime.sendMessage({ type: "bubble_rerun", lang: langSel ? langSel.value : null, preset: presetSel ? presetSel.value : null });
+    if (opts && opts.langs && opts.langs.length) {
+      langSel = document.createElement("select");
+      for (const l of opts.langs) { const o = document.createElement("option"); o.value = l.value; o.textContent = l.label; langSel.appendChild(o); }
+      langSel.value = opts.currentLang || opts.langs[0].value;
+      langSel.addEventListener("change", sendRerun);
+      acts.appendChild(langSel);
+    }
+    if (opts && opts.presets && opts.presets.length) {
+      presetSel = document.createElement("select");
+      for (const p of opts.presets) { const o = document.createElement("option"); o.value = p.value; o.textContent = p.label; presetSel.appendChild(o); }
+      presetSel.value = opts.currentPreset || opts.presets[0].value;
+      presetSel.addEventListener("change", sendRerun);
+      acts.appendChild(presetSel);
+    }
+    const copyBtn = document.createElement("button"); copyBtn.title = (opts && opts.copyLabel) || "Copy";
+    copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copyBtn.addEventListener("click", () => { try { navigator.clipboard.writeText(pageBubble ? pageBubble.raw : ""); } catch (_) {} });
+    const closeBtn = document.createElement("button"); closeBtn.title = (opts && opts.closeLabel) || "Close";
+    closeBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    closeBtn.addEventListener("click", closePageBubble);
+    acts.appendChild(copyBtn); acts.appendChild(closeBtn);
+    head.appendChild(title); head.appendChild(acts);
+    const src = document.createElement("div"); src.className = "src"; src.textContent = (opts && opts.source) || "";
+    const body = document.createElement("div"); body.className = "body loading"; body.textContent = "…";
+    const note = document.createElement("div"); note.className = "note"; note.textContent = (opts && opts.note) || "";
+    card.appendChild(head); card.appendChild(src); card.appendChild(body); card.appendChild(note);
+    shadow.appendChild(card);
+    (document.body || document.documentElement).appendChild(host);
+    // Position at the right-click point (clamped to the viewport).
+    const cw = 380;
+    const x = Math.min(Math.max(8, lastCtxPos.x), Math.max(8, window.innerWidth - cw - 8));
+    const y = Math.min(Math.max(8, lastCtxPos.y + 10), Math.max(8, window.innerHeight - 90));
+    card.style.left = x + "px"; card.style.top = y + "px";
+    // Drag by the header.
+    let ox = 0, oy = 0;
+    const onMove = (e) => {
+      let nx = e.clientX - ox, ny = e.clientY - oy;
+      nx = Math.max(2, Math.min(window.innerWidth - 60, nx));
+      ny = Math.max(2, Math.min(window.innerHeight - 30, ny));
+      card.style.left = nx + "px"; card.style.top = ny + "px";
+    };
+    const stop = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", stop); };
+    head.addEventListener("mousedown", (e) => {
+      if (e.target.closest("button, select")) return;
+      const r = card.getBoundingClientRect();
+      ox = e.clientX - r.left; oy = e.clientY - r.top; e.preventDefault();
+      document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", stop);
+    });
+    // Close on outside click / Esc.
+    const onDocDown = (e) => { if (!host.contains(e.target)) closePageBubble(); };
+    const onKey = (e) => { if (e.key === "Escape") closePageBubble(); };
+    setTimeout(() => document.addEventListener("mousedown", onDocDown, true), 0);
+    document.addEventListener("keydown", onKey, true);
+    pageBubble = {
+      host, body, raw: "",
+      cleanup: () => { document.removeEventListener("mousedown", onDocDown, true); document.removeEventListener("keydown", onKey, true); stop(); },
+    };
+  }
+
   browser.runtime.onMessage.addListener((msg) => {
     switch (msg && msg.type) {
+      case "bubble_open":
+        setAccents(msg);
+        buildPageBubble(msg);
+        return Promise.resolve({ ok: true });
+      case "bubble_reset":
+        if (pageBubble) { pageBubble.raw = ""; pageBubble.body.className = "body loading"; pageBubble.body.textContent = "…"; }
+        return Promise.resolve({ ok: true });
+      case "bubble_delta":
+        if (pageBubble) { pageBubble.raw += msg.text || ""; pageBubble.body.className = "body"; pageBubble.body.textContent = pageBubble.raw; pageBubble.body.scrollTop = pageBubble.body.scrollHeight; }
+        return Promise.resolve({ ok: true });
+      case "bubble_done":
+        if (pageBubble) { pageBubble.raw = msg.raw || pageBubble.raw; pageBubble.body.className = "body done"; pageBubble.body.innerHTML = msg.html || pageBubble.raw; }
+        return Promise.resolve({ ok: true });
+      case "bubble_error":
+        if (pageBubble) { pageBubble.body.className = "body"; pageBubble.body.textContent = msg.error || "Error"; }
+        return Promise.resolve({ ok: true });
+      case "bubble_close":
+        closePageBubble();
+        return Promise.resolve({ ok: true });
+      case "agent_glow":
+        setAccents(msg);
+        setAgentGlow(!!msg.on);
+        return Promise.resolve({ ok: true });
       case "read_page":
         return Promise.resolve(readPage());
       case "read_selection":
         return Promise.resolve(readSelection());
       case "pick_element":
+        setAccents(msg);
         return startPick();
       case "pick_cancel":
         if (pickResolve) endPick(true);
         return Promise.resolve({ ok: true });
+      case "capture_region":
+        setAccents(msg);
+        return startRegion();
+      case "region_cancel":
+        if (regResolve) endRegion(true);
+        return Promise.resolve({ ok: true });
       case "find_elements":
         return Promise.resolve(findElements(msg.query));
       case "click_element":
-        return Promise.resolve(clickElement(msg.ref, msg.guard));
+        return Promise.resolve(clickElement(msg.ref, msg.guard, msg.confirmed));
       case "fill_input":
-        return Promise.resolve(fillInput(msg.ref, msg.value, msg.submit, msg.guard));
+        return Promise.resolve(fillInput(msg.ref, msg.value, msg.submit, msg.guard, msg.confirmed));
       case "scroll_page":
         return Promise.resolve(scrollPage(msg.direction));
       case "ping":
@@ -311,121 +571,4 @@
   }
   window.addEventListener("popstate", () => setTimeout(notifyNav, 50));
 
-  // --- Webmail "AI reply" helper -------------------------------------------
-  // On known webmail hosts, add a small floating button that grabs the visible
-  // email thread and asks the sidebar to draft a reply. It NEVER sends anything:
-  // the user reviews the draft in the sidebar and copies it back. Opt-out via the
-  // `webmailAssist` setting.
-  const WEBMAIL_HOSTS = [
-    "mail.google.com", "outlook.live.com", "outlook.office.com",
-    "outlook.office365.com", "mail.proton.me", "mail.yahoo.com",
-  ];
-  function isWebmail() {
-    return WEBMAIL_HOSTS.some((h) => location.hostname.endsWith(h));
-  }
-
-  function readThread() {
-    // Grab the largest readable region as the conversation text. Good enough
-    // across webmails without brittle per-provider selectors.
-    const main = document.querySelector("[role=main], main") || document.body;
-    return (main.innerText || "").replace(/\n{3,}/g, "\n\n").slice(0, 12000);
-  }
-
-  // Webmail button labels — English by default, French when uiLang="fr".
-  const WEBMAIL_I18N = {
-    en: { reply: "✨ Reply with AI", aria: "Draft an AI-assisted reply", opening: "✓ Opening the sidebar…" },
-    fr: { reply: "✨ Répondre avec l'IA", aria: "Rédiger une réponse assistée par IA", opening: "✓ Ouvre la sidebar…" },
-  };
-  let WM = WEBMAIL_I18N.en;
-
-  const IS_GMAIL = location.hostname.endsWith("mail.google.com");
-  function onReplyClick(btn) {
-    const thread = readThread();
-    browser.runtime.sendMessage({ type: "draft_reply", thread, url: location.href });
-    const prev = btn.textContent;
-    btn.textContent = WM.opening;
-    setTimeout(() => (btn.textContent = prev), 2500);
-  }
-
-  // Floating fallback button (used on non-Gmail webmails, or if the inline slot
-  // can't be found on Gmail).
-  function injectWebmailButton() {
-    if (document.getElementById("__ai_reply_fab")) return;
-    const btn = document.createElement("button");
-    btn.id = "__ai_reply_fab";
-    btn.type = "button";
-    btn.textContent = WM.reply;
-    btn.setAttribute("aria-label", WM.aria);
-    Object.assign(btn.style, {
-      position: "fixed", right: "18px", bottom: "18px", zIndex: 2147483647,
-      padding: "10px 14px", borderRadius: "999px", border: "0",
-      background: "linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%)",
-      color: "#fff", font: "600 13px system-ui, sans-serif",
-      boxShadow: "0 4px 14px rgba(124,58,237,.35)", cursor: "pointer",
-    });
-    btn.addEventListener("click", () => onReplyClick(btn));
-    document.documentElement.appendChild(btn);
-  }
-
-  // Gmail: place the button INLINE in the bottom action row of an open email, right
-  // after Reply / Forward / the emoji-reaction buttons (instead of a corner FAB).
-  function findGmailActionRow() {
-    const wants = ["reply", "reply all", "forward", "répondre", "repondre", "répondre à tous", "transférer", "transferer"];
-    for (const b of document.querySelectorAll('[role="button"]')) {
-      const label = ((b.innerText || "") + " " + (b.getAttribute("aria-label") || "") + " " + (b.getAttribute("data-tooltip") || "")).trim().toLowerCase();
-      if (!label) continue;
-      if (wants.some((w) => label === w || label.startsWith(w))) {
-        const row = b.parentElement;
-        // Sanity: the bottom action row groups several buttons together.
-        if (row && row.querySelectorAll('[role="button"]').length >= 2 && row.offsetParent) return row;
-      }
-    }
-    return null;
-  }
-  function injectGmailInline() {
-    const existing = document.getElementById("__ai_reply_inline");
-    if (existing && document.body.contains(existing) && existing.offsetParent) return true;
-    const row = findGmailActionRow();
-    if (!row) return false;
-    const btn = document.createElement("button");
-    btn.id = "__ai_reply_inline";
-    btn.type = "button";
-    btn.textContent = WM.reply;
-    btn.setAttribute("aria-label", WM.aria);
-    Object.assign(btn.style, {
-      marginLeft: "8px", padding: "8px 14px", borderRadius: "18px", border: "0",
-      background: "linear-gradient(135deg,#6366f1,#8b5cf6 55%,#a855f7)", color: "#fff",
-      font: "500 14px 'Google Sans', Roboto, system-ui, sans-serif", cursor: "pointer",
-      verticalAlign: "middle", lineHeight: "1",
-    });
-    btn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); onReplyClick(btn); });
-    row.appendChild(btn);
-    const fab = document.getElementById("__ai_reply_fab"); // drop the corner fallback
-    if (fab) fab.remove();
-    return true;
-  }
-  let gmailObserver = null;
-  function setupGmail() {
-    injectGmailInline();
-    if (gmailObserver) return;
-    gmailObserver = new MutationObserver(() => {
-      clearTimeout(gmailObserver._t);
-      gmailObserver._t = setTimeout(injectGmailInline, 350);
-    });
-    gmailObserver.observe(document.body, { childList: true, subtree: true });
-    // If we never find the inline slot, fall back to the corner button.
-    setTimeout(() => { if (!document.getElementById("__ai_reply_inline")) injectWebmailButton(); }, 4000);
-  }
-
-  function maybeSetupWebmail() {
-    if (!isWebmail()) return;
-    const go = (s) => {
-      if (s && s.webmailAssist === false) return;
-      WM = WEBMAIL_I18N[(s && s.uiLang) === "fr" ? "fr" : "en"];
-      if (IS_GMAIL) setupGmail();
-      else injectWebmailButton();
-    };
-    try { browser.storage.local.get(["webmailAssist", "uiLang"]).then(go); } catch (_) { go({}); }
-  }
-  maybeSetupWebmail();
 })();

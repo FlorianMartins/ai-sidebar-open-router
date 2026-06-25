@@ -1,16 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "AI Sidebar — IA multi-fournisseurs",
-  "version": "1.21.4",
-  "description": "Sidebar IA open-source type Sider : branchez votre IA (Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek, xAI, Perplexity, Together, Fireworks, OpenRouter, Ollama/LM Studio local…). Liste les modèles réellement dispo selon votre clé/compte. Lit page et onglets, résume, traduit, améliore (presets), compare un modèle à un autre, artifacts interactifs, images, répond aux mails, agent (sans achat). Historique local, 100% BYOK.",
+  "name": "Hivey AI — IA multi-fournisseurs",
+  "version": "1.33.0",
+  "description": "Sidebar IA open-source type Sider : branchez votre IA (Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek, xAI, Perplexity, Together, Fireworks, OpenRouter, Ollama/LM Studio local…). Liste les modèles réellement dispo selon votre clé/compte. Lit page et onglets, résume, traduit, améliore (presets), compare un modèle à un autre, artifacts interactifs, images, capture de zone, thèmes, agent (avec garde-fous). Historique local, 100% BYOK.",
   "author": "Florian Martins",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "ai-sidebar@behivey.com",
-      "strict_min_version": "121.0"
+      "id": "ai-sidebar-open-router@github",
+      "strict_min_version": "121.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   },
   "icons": {
@@ -36,6 +39,9 @@
     "https://api.deepseek.com/*",
     "<all_urls>"
   ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "scripts": [
       "vendor/browser-polyfill.min.js",
@@ -43,7 +49,7 @@
     ]
   },
   "sidebar_action": {
-    "default_title": "AI Sidebar",
+    "default_title": "Hivey AI",
     "default_panel": "src/sidebar/sidebar.html",
     "default_icon": {
       "48": "icons/icon.svg",

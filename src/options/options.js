@@ -3,9 +3,128 @@ import { PROVIDERS, PROVIDER_ORDER, IMAGE_SIZES, WRITING_PRESETS, isConnected } 
 import { connectOpenRouter } from "../lib/auth.js";
 import { listModels } from "../lib/providers.js";
 import { clearConversations } from "../lib/history.js";
+import { THEMES, CUSTOM_KEYS, applyTheme, effectivePalette } from "../lib/theme.js";
 import { t, setLang, applyDom } from "../lib/i18n.js";
 
 const $ = (id) => document.getElementById(id);
+
+// ----- Theme + custom colours -----------------------------------------------
+let curTheme = "dark";
+let curColors = {}; // overrides applied on top of the theme
+const COL_IDS = { accent: "col_accent", accent2: "col_accent2", bg: "col_bg", panel: "col_panel", text: "col_text" };
+function syncColorPickers() {
+  const pal = effectivePalette(curTheme, curColors);
+  for (const k of CUSTOM_KEYS) { const el = $(COL_IDS[k]); if (el) el.value = pal[k]; }
+}
+function applyThemeLive() { applyTheme(curTheme, curColors); }
+
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+// Real eyedropper for browsers without the EyeDropper API (Firefox): capture the
+// screen, freeze a snapshot, and let the user click the exact colour to pick — works
+// for any app on screen (Discord, etc.). Returns a #hex string, or null if cancelled.
+async function screenEyedropper() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return null;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  } catch (_) { return null; } // user cancelled the share prompt
+  const video = document.createElement("video");
+  video.muted = true;
+  video.srcObject = stream;
+  try { await video.play(); } catch (_) {}
+  await new Promise((r) => setTimeout(r, 220)); // let a frame paint
+  const w = video.videoWidth || 1, h = video.videoHeight || 1;
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0, w, h);
+  stream.getTracks().forEach((tk) => tk.stop());
+
+  return await new Promise((resolve) => {
+    const scale = Math.min(window.innerWidth / w, window.innerHeight / h);
+    const dw = Math.round(w * scale), dh = Math.round(h * scale);
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#000;cursor:crosshair";
+    const img = document.createElement("img");
+    img.src = canvas.toDataURL();
+    img.draggable = false;
+    img.style.cssText = "width:" + dw + "px;height:" + dh + "px;display:block";
+    overlay.appendChild(img);
+    const badge = document.createElement("div");
+    badge.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:100000;display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:10px;background:#161922;color:#fff;font:13px/1 system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.55)";
+    const sw = document.createElement("span");
+    sw.style.cssText = "width:22px;height:22px;border-radius:5px;border:1px solid rgba(255,255,255,.25);background:#000";
+    const lbl = document.createElement("span");
+    lbl.textContent = t("opt.theme.pickHint");
+    badge.appendChild(sw); badge.appendChild(lbl);
+    overlay.appendChild(badge);
+    const colorAt = (e) => {
+      const r = img.getBoundingClientRect();
+      const x = Math.floor((e.clientX - r.left) / scale), y = Math.floor((e.clientY - r.top) / scale);
+      if (x < 0 || y < 0 || x >= w || y >= h) return null;
+      const d = ctx.getImageData(x, y, 1, 1).data;
+      return rgbToHex(d[0], d[1], d[2]);
+    };
+    const cleanup = () => { overlay.remove(); document.removeEventListener("keydown", onKey, true); };
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); cleanup(); resolve(null); } };
+    overlay.addEventListener("mousemove", (e) => { const hx = colorAt(e); if (hx) { sw.style.background = hx; lbl.textContent = hx; } });
+    overlay.addEventListener("click", (e) => { const hx = colorAt(e); cleanup(); resolve(hx); });
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+  });
+}
+
+function buildThemeControls() {
+  const sel = $("theme");
+  if (sel) {
+    sel.innerHTML = "";
+    for (const [key, th] of Object.entries(THEMES)) {
+      const o = document.createElement("option");
+      o.value = key; o.textContent = th.label;
+      sel.appendChild(o);
+    }
+    sel.value = curTheme;
+    sel.addEventListener("change", () => {
+      curTheme = sel.value;
+      curColors = {}; // a fresh theme starts from its own palette
+      syncColorPickers(); applyThemeLive();
+    });
+  }
+  const hasEyeDropper = typeof window !== "undefined" && "EyeDropper" in window;
+  for (const k of CUSTOM_KEYS) {
+    const el = $(COL_IDS[k]);
+    if (!el) continue;
+    el.addEventListener("input", () => { curColors = { ...curColors, [k]: el.value }; applyThemeLive(); });
+    // Eyedropper button: pick ANY colour on screen (e.g. Discord's). On Chromium it
+    // uses the native EyeDropper API (one-click pick anywhere). On Firefox (no EyeDropper
+    // API) it captures the screen and lets you click the colour on a frozen snapshot.
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.className = "eyedrop";
+    drop.title = t("opt.theme.pick");
+    drop.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>';
+    drop.addEventListener("click", async () => {
+      let hex = null;
+      if (hasEyeDropper) {
+        try { const res = await new window.EyeDropper().open(); hex = res && res.sRGBHex; } catch (_) { /* cancelled */ }
+      } else {
+        hex = await screenEyedropper();
+      }
+      if (hex) {
+        el.value = hex;
+        curColors = { ...curColors, [k]: hex };
+        applyThemeLive();
+        scheduleAutoSave();
+      }
+    });
+    el.insertAdjacentElement("afterend", drop);
+  }
+  const reset = $("themeReset");
+  if (reset) reset.addEventListener("click", () => { curColors = {}; syncColorPickers(); applyThemeLive(); });
+  syncColorPickers();
+}
 
 // Most-spoken languages for the AI response language (English first / default).
 const LANGUAGES = [
@@ -150,7 +269,11 @@ function buildCard(id) {
     if (meta.keysUrl) {
       const p = el("p", "muted");
       const tag = FREE_TIER.has(id) ? t("opt.key.getFree") : t("opt.key.console");
-      p.innerHTML = `${tag}<a href="${meta.keysUrl}" target="_blank" rel="noreferrer">${meta.keysUrl.replace(/^https?:\/\//, "")}</a>`;
+      p.textContent = tag;
+      const a = document.createElement("a");
+      a.href = meta.keysUrl; a.target = "_blank"; a.rel = "noreferrer";
+      a.textContent = meta.keysUrl.replace(/^https?:\/\//, "");
+      p.appendChild(a);
       sec.appendChild(p);
     }
   }
@@ -167,13 +290,9 @@ function buildCard(id) {
     sec.appendChild(lab);
   }
 
-  // Default model — dropdown of currently available models.
-  const lab = el("label", null, t("opt.model.default"));
-  const sel = el("select");
-  sel.id = `model_${id}`;
-  lab.appendChild(sel);
-  sec.appendChild(lab);
-  fillModelSelect(sel, id);
+  // No per-provider "default model" here: the model is chosen in the sidebar's own
+  // picker and the LAST-USED one is remembered automatically (per provider). Forcing a
+  // default here would override that, so it has been removed on purpose.
 
   return sec;
 }
@@ -205,7 +324,8 @@ function fillSelect(sel, items, value) {
 function buildImageProvider() {
   const imgProviders = PROVIDER_ORDER.filter((id) => PROVIDERS[id].supportsImages).map((id) => [id, PROVIDERS[id].label]);
   fillSelect($("imageProvider"), imgProviders, settings.imageProvider || "openai");
-  fillSelect($("imageSize"), IMAGE_SIZES, settings.imageSize || "1024x1024");
+  // "—" (empty) = no fixed size; the model uses the dimensions described in the prompt.
+  fillSelect($("imageSize"), [["", t("size.none")], ...IMAGE_SIZES], settings.imageSize || "");
 }
 
 // Agent-model picker: "Auto" + the catalogue models of every CONNECTED provider.
@@ -260,6 +380,32 @@ function buildSearchModelSelect() {
   sel.value = settings.searchModel || "";
 }
 
+// Utility (housekeeping) model picker: "Auto" + the catalogue models of every
+// CONNECTED provider. Used for summaries / history compaction when smart routing
+// is on, so the premium model is reserved for the actual answers.
+function buildUtilityModelSelect() {
+  const sel = $("utilityModel");
+  if (!sel) return;
+  sel.innerHTML = "";
+  const auto = el("option", null, t("opt.eff.utilityAuto"));
+  auto.value = "";
+  sel.appendChild(auto);
+  for (const id of PROVIDER_ORDER) {
+    if (!isConnected(id, settings)) continue;
+    const meta = PROVIDERS[id];
+    if (!meta.models || !meta.models.length) continue;
+    const group = document.createElement("optgroup");
+    group.label = meta.label;
+    for (const [mid, mlabel] of meta.models) {
+      const o = el("option", null, mlabel);
+      o.value = id + "|" + mid;
+      group.appendChild(o);
+    }
+    sel.appendChild(group);
+  }
+  sel.value = settings.utilityModel || "";
+}
+
 // Fetch live model lists for connected providers, then refresh the dropdowns.
 async function refreshModelLists() {
   const ids = PROVIDER_ORDER.filter((id) => isConnected(id, settings));
@@ -271,10 +417,6 @@ async function refreshModelLists() {
       } catch (_) {}
     })
   );
-  for (const id of ids) {
-    const sel = $(`model_${id}`);
-    if (sel) fillModelSelect(sel, id);
-  }
   await setSettings({ modelLists: { ...(settings.modelLists || {}), ...modelLists } });
 }
 
@@ -292,6 +434,22 @@ function updateQuickConnect(connectedNow) {
   }
 }
 
+// Monochrome line icons (Lucide-style) for each settings section, mirroring the
+// sidebar rail. Keyed by the section's id.
+const SECTION_ICONS = {
+  "sec-quick": '<svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>',
+  "sec-providers": '<svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg>',
+  "sec-agent": '<svg viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M9 13v2"/><path d="M15 13v2"/></svg>',
+  "sec-web": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg>',
+  "sec-image": '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>',
+  "sec-code": '<svg viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>',
+  "sec-lang": '<svg viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>',
+  "sec-appearance": '<svg viewBox="0 0 24 24"><path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/></svg>',
+  "sec-security": '<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  "sec-behavior": '<svg viewBox="0 0 24 24"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/></svg>',
+  "sec-efficiency": '<svg viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>',
+};
+
 // Quick-navigation pins: one per settings section, with smooth scroll + a scroll-spy
 // that highlights the section currently in view. Built from <section id> + its <h2>.
 function buildQuickNav() {
@@ -303,7 +461,12 @@ function buildQuickNav() {
   document.querySelectorAll("main > section[id]").forEach((sec) => {
     const h = sec.querySelector("h2");
     if (!h) return;
-    const a = el("a", "qn-pin", h.textContent.trim());
+    const label = h.textContent.trim();
+    const a = el("a", "qn-pin");
+    const ic = el("span", "qn-ic");
+    if (SECTION_ICONS[sec.id]) ic.innerHTML = SECTION_ICONS[sec.id]; // trusted static SVG
+    a.appendChild(ic);
+    a.appendChild(el("span", "qn-text", label));
     a.href = "#" + sec.id;
     a.addEventListener("click", (e) => {
       e.preventDefault();
@@ -322,17 +485,39 @@ function buildQuickNav() {
   spy();
 }
 
+// Put the same monochrome line icon (from SECTION_ICONS) in front of each section
+// title, so the cards echo the quick-nav. Runs after applyDom so the icon isn't
+// wiped by the data-i18n text fill.
+function addSectionIcons() {
+  document.querySelectorAll("main > section[id]").forEach((sec) => {
+    const h = sec.querySelector("h2");
+    if (!h || h.querySelector(".h2-ic")) return;
+    const icon = SECTION_ICONS[sec.id];
+    if (!icon) return;
+    const ic = document.createElement("span");
+    ic.className = "h2-ic";
+    ic.innerHTML = icon; // trusted static SVG
+    h.insertBefore(ic, h.firstChild);
+  });
+}
+
 async function load() {
   settings = await getSettings();
-  setLang(settings.uiLang || "en");       // English default; French via the uiLang setting
+  curTheme = settings.theme || "dark";
+  curColors = { ...(settings.themeColors || {}) };
+  applyThemeLive();                        // theme the options page too
+  setLang(settings.uiLang || "en");       // English default; other languages via the uiLang setting
   applyDom(document);                      // fill all data-i18n static markup
-  document.documentElement.lang = settings.uiLang === "fr" ? "fr" : "en";
+  document.documentElement.lang = settings.uiLang || "en";
+  buildThemeControls();
   buildQuickNav();                         // jump pins to each section
+  addSectionIcons();                       // same line icons on each section title
   modelLists = { ...(settings.modelLists || {}) };
   buildProviderFields();
   buildImageProvider();
   buildSearchModelSelect();
   buildAgentModelSelect();
+  buildUtilityModelSelect();
   fillSelect($("responseLang"), [["Auto", t("opt.lang.respAuto")], ...LANGUAGES.map((l) => [l, l])], settings.responseLang || "Auto");
   fillSelect($("improvePreset"), WRITING_PRESETS.map((p) => [p[0], t("preset." + p[0])]), settings.improvePreset || "improve");
   updateQuickConnect(isConnected("openrouter", settings));
@@ -345,36 +530,40 @@ async function load() {
   $("agentPermission").value = settings.agentPermission || "manual";
   $("codeAppUrl").value = settings.codeAppUrl != null ? settings.codeAppUrl : "";
   $("blockPayments").checked = settings.blockPayments;
-  $("webmailAssist").checked = settings.webmailAssist;
   $("saveHistory").checked = settings.saveHistory;
   $("includePageContext").checked = settings.includePageContext;
   $("autoReadPage").checked = settings.autoReadPage;
   $("maxPageChars").value = settings.maxPageChars;
+  $("cleanContext").checked = settings.cleanContext !== false;
+  $("compressHistory").checked = settings.compressHistory !== false;
+  $("smartRouting").checked = settings.smartRouting !== false;
   refreshModelLists();
 }
 
-async function save() {
+// Read every control into a settings object. `models` is intentionally NOT written —
+// the sidebar remembers the last-used model per provider, and overwriting it here
+// would undo that.
+function collectSettings() {
   const keys = {};
   const baseUrls = {};
-  const models = {};
   const localEnabled = {};
   for (const id of PROVIDER_ORDER) {
     const k = $(`key_${id}`);
     if (k && k.value.trim()) keys[id] = k.value.trim();
     const u = $(`url_${id}`);
     if (u && u.value.trim()) baseUrls[id] = u.value.trim();
-    const m = $(`model_${id}`);
-    if (m && m.value) models[id] = m.value;
     const lc = $(`local_${id}`);
     if (lc && lc.checked) localEnabled[id] = true;
   }
-  await setSettings({
-    keys, baseUrls, models, localEnabled,
+  return {
+    keys, baseUrls, localEnabled,
     imageProvider: $("imageProvider").value,
     imageModel: $("imageModel").value.trim() || "gpt-image-1",
     imageSize: $("imageSize").value,
     improvePreset: $("improvePreset").value,
-    uiLang: $("uiLang").value === "fr" ? "fr" : "en",
+    uiLang: $("uiLang").value,
+    theme: curTheme,
+    themeColors: curColors,
     railSide: $("railSide").value === "right" ? "right" : "left",
     responseLang: $("responseLang").value,
     targetLang: $("targetLang").value.trim() || "French",
@@ -383,22 +572,39 @@ async function save() {
     searchModel: $("searchModel").value,
     agentModel: $("agentModel").value,
     agentPermission: $("agentPermission").value,
-    // Keep the legacy `confirmActions` flag in sync with the permission select so
-    // older code paths stay consistent (manual = confirm, auto = no confirm).
     confirmActions: $("agentPermission").value !== "auto",
     codeAppUrl: $("codeAppUrl").value.trim(),
     blockPayments: $("blockPayments").checked,
-    webmailAssist: $("webmailAssist").checked,
     saveHistory: $("saveHistory").checked,
     includePageContext: $("includePageContext").checked,
     autoReadPage: $("autoReadPage").checked,
     maxPageChars: parseInt($("maxPageChars").value, 10) || 12000,
-  });
+    cleanContext: $("cleanContext").checked,
+    compressHistory: $("compressHistory").checked,
+    smartRouting: $("smartRouting").checked,
+    utilityModel: $("utilityModel").value,
+  };
+}
+
+// Auto-save: persist on any change, debounced, WITHOUT the heavy rebuilds (so typing a
+// key isn't disrupted). The sidebar reacts live via its storage listener.
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    try { await setSettings(collectSettings()); flash($("status"), t("opt.savedAuto")); } catch (_) {}
+  }, 500);
+}
+
+// Explicit Save button: persist + refresh the model pickers + confirm.
+async function save() {
+  await setSettings(collectSettings());
   settings = await getSettings();
   modelLists = { ...(settings.modelLists || {}) };
   buildProviderFields();
   buildSearchModelSelect();
   buildAgentModelSelect();
+  buildUtilityModelSelect();
   refreshModelLists();
   flash($("status"), t("opt.saved"));
 }
@@ -437,7 +643,21 @@ async function connectAccount(id) {
   flash(status, t("opt.dyn.identify", { label: meta.label }));
 }
 
-$("save").addEventListener("click", save);
+// Switching the interface language: persist everything, then reload so the WHOLE page
+// (static markup, jump-nav pins and dynamic dropdowns) is rebuilt in the new language.
+$("uiLang").addEventListener("change", async () => {
+  try { await setSettings(collectSettings()); } catch (_) {}
+  location.reload();
+});
+// Auto-save: persist on any control change (debounced) so the user never has to click
+// a Save button (it has been removed — saving is automatic now).
+document.addEventListener("change", scheduleAutoSave);
+document.addEventListener("input", (e) => {
+  if (e.target && e.target.matches &&
+      e.target.matches('input[type="color"],input[type="text"],input[type="password"],input[type="number"],textarea')) {
+    scheduleAutoSave();
+  }
+});
 $("quickConnect").addEventListener("click", async () => {
   flash($("quickStatus"), t("opt.dyn.connecting"));
   await connectAccount("openrouter");
