@@ -1860,12 +1860,147 @@ async function consumePendingAction() {
   if (pendingAction.ts === lastPendingTs) return; // already handled
   lastPendingTs = pendingAction.ts;
   await browser.storage.local.remove("pendingAction");
-  // Switch to the matching workspace so the action lands on the right tab
-  // (Translate / Improve / Image), not just Chat.
+  // A right-click on a SELECTION opens an isolated, non-historised bubble (it
+  // doesn't touch the conversation). Page-level actions keep the normal chat flow.
+  if (BUBBLE_ACTIONS.has(pendingAction.action) && (pendingAction.text || "").trim()) {
+    openActionBubble(pendingAction.action, pendingAction.text);
+    return;
+  }
+  // Switch to the matching workspace so the action lands on the right tab.
   const ACTION_MODE = { translate: "translate", improve: "improve", image: "image" };
   const targetMode = ACTION_MODE[pendingAction.action] || "chat";
   if (mode !== "agent" && mode !== targetMode) setMode(targetMode);
   runQuickAction(pendingAction.action, pendingAction.text);
+}
+
+// ----- Isolated action bubble (right-click on a selection) ------------------
+// A floating, NON-historised popup that runs a quick action (translate, improve,
+// summarize, explain, reply) on the selected text. Closes on the ✕, a click
+// outside, or Esc. Nothing is saved to the conversation.
+const BUBBLE_ACTIONS = new Set(["translate", "improve", "summarize-selection", "explain", "reply"]);
+let actionBubbleEl = null;
+let bubbleAbort = null;
+
+function closeActionBubble() {
+  if (bubbleAbort) { try { bubbleAbort.abort(); } catch (_) {} bubbleAbort = null; }
+  if (actionBubbleEl) { actionBubbleEl.remove(); actionBubbleEl = null; }
+}
+
+function actionRequest(action, text, lang) {
+  switch (action) {
+    case "translate": return { label: t("rail.translate"), content: t("prompt.translate", { lang, text }), translate: true };
+    case "improve": return { label: t("rail.improve"), content: t("prompt.improve", { text }) };
+    case "summarize-selection": return { label: t("label.summarizeSel"), content: t("prompt.summarizeSel", { text }) };
+    case "explain": return { label: t("label.explain"), content: t("prompt.explain", { text }) };
+    case "reply": return { label: t("label.reply"), content: t("prompt.reply", { lang, text }) };
+    default: return null;
+  }
+}
+
+function abIcon(svg, cls, title, onClick) {
+  const b = document.createElement("button");
+  b.className = "icon " + (cls || "");
+  if (title) b.title = title;
+  b.innerHTML = svg;
+  b.addEventListener("click", (e) => { e.stopPropagation(); onClick(e); });
+  return b;
+}
+
+async function openActionBubble(action, providedText) {
+  const text = (providedText || "").trim();
+  if (!text) return;
+  closeActionBubble();
+
+  const ov = document.createElement("div");
+  ov.className = "action-bubble-overlay";
+  ov.addEventListener("click", closeActionBubble);
+  const card = document.createElement("div");
+  card.className = "action-bubble";
+  card.addEventListener("click", (e) => e.stopPropagation());
+
+  // Header: title + (translate language) + copy + close.
+  const head = document.createElement("div");
+  head.className = "ab-head";
+  const title = document.createElement("span");
+  title.className = "ab-title";
+  const reqInit = actionRequest(action, text, settings.targetLang || "French");
+  title.textContent = reqInit ? reqInit.label : "";
+  const headActions = document.createElement("div");
+  headActions.className = "ab-actions";
+
+  let langSel = null;
+  if (reqInit && reqInit.translate) {
+    langSel = document.createElement("select");
+    langSel.className = "ab-lang";
+    for (const o of els.translateLang.options) langSel.appendChild(o.cloneNode(true));
+    langSel.value = settings.targetLang || "French";
+    langSel.addEventListener("change", () => run());
+    headActions.appendChild(langSel);
+  }
+
+  const copyBtn = abIcon(
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    "", t("bubble.copy"),
+    () => { navigator.clipboard.writeText(card._raw || "").then(() => { copyBtn.classList.add("ok"); setTimeout(() => copyBtn.classList.remove("ok"), 1200); }); },
+  );
+  const closeBtn = abIcon(
+    '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+    "", t("close.title"), closeActionBubble,
+  );
+  headActions.appendChild(copyBtn);
+  headActions.appendChild(closeBtn);
+  head.appendChild(title);
+  head.appendChild(headActions);
+
+  const src = document.createElement("div");
+  src.className = "ab-src";
+  src.textContent = text;
+
+  const body = document.createElement("div");
+  body.className = "ab-body";
+
+  const note = document.createElement("div");
+  note.className = "ab-note";
+  note.textContent = t("bubble.note");
+
+  card.appendChild(head);
+  card.appendChild(src);
+  card.appendChild(body);
+  card.appendChild(note);
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+  actionBubbleEl = ov;
+
+  async function run() {
+    const lang = langSel ? langSel.value : settings.targetLang || "French";
+    const req = actionRequest(action, text, lang);
+    if (!req) return;
+    const sel = currentSelection();
+    if (currentKeyMissing(sel.providerId)) { body.textContent = t("err.noKeyModel"); return; }
+    if (bubbleAbort) { try { bubbleAbort.abort(); } catch (_) {} }
+    bubbleAbort = new AbortController();
+    body.className = "ab-body ab-loading";
+    body.textContent = "…";
+    let raw = "";
+    try {
+      const provider = makeProvider(settings, { thinking: false, webSearch: false });
+      const system = buildSystemPrompt({ agentMode: false, targetLang: lang, responseLang: settings.responseLang, mode: action === "translate" ? "translate" : action === "improve" ? "improve" : "chat", blockPayments: settings.blockPayments });
+      await runConversation({
+        provider, system, history: [{ role: "user", content: req.content }], tools: [],
+        onText: (delta) => { raw += delta; body.textContent = raw; body.scrollTop = body.scrollHeight; },
+        onThink: () => {}, signal: bubbleAbort.signal,
+      });
+      card._raw = raw;
+      body.className = "ab-body";
+      body.innerHTML = renderMarkdown(raw);
+      enhanceArtifacts(body);
+    } catch (e) {
+      body.className = "ab-body";
+      if (!(e && e.name === "AbortError")) body.textContent = (e && e.message) ? e.message : String(e);
+    }
+  }
+
+  run();
 }
 
 // ----- Wiring ---------------------------------------------------------------
@@ -2061,6 +2196,7 @@ function wire() {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
     const a = document.activeElement;
+    if (actionBubbleEl) return;                        // the isolated bubble owns the focus
     if (!a || a === els.input) return;                 // composer handles its own Enter
     if (a.isContentEditable) return;
     const tag = a.tagName;
@@ -2070,8 +2206,12 @@ function wire() {
     e.preventDefault();
     onSend();
   });
-  // Esc closes the image lightbox.
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && lightboxEl) closeLightbox(); });
+  // Esc closes the image lightbox or the action bubble.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (lightboxEl) closeLightbox();
+    else if (actionBubbleEl) closeActionBubble();
+  });
   // Click a generated / PDF-page image to open it enlarged in a lightbox.
   els.messages.addEventListener("click", (e) => {
     const img = e.target.closest && e.target.closest("img.gen-image");
