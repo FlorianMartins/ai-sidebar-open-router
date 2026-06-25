@@ -14,7 +14,7 @@ import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts } from "../lib/markdown.js";
 import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
-import { applyTheme } from "../lib/theme.js";
+import { applyTheme, effectivePalette } from "../lib/theme.js";
 import { t, setLang, applyDom } from "../lib/i18n.js";
 import {
   listConversations, getConversation, saveConversation, deleteConversation,
@@ -1351,9 +1351,26 @@ function updateCodeLauncher() {
 function codeAppLaunchUrl() {
   const url = (settings.codeAppUrl || "").trim();
   if (!url) return "";
+
+  const params = [];
+
   const orKey = (settings.keys && settings.keys.openrouter) || "";
-  if (!orKey) return url; // no key to share yet — open it blank
-  return url + (url.includes("#") ? "&" : "#") + "sk=" + encodeURIComponent(orKey);
+  if (orKey) params.push("sk=" + encodeURIComponent(orKey));
+
+  // Hand Program Generator the user's ACTIVE theme palette so its UI matches the
+  // sidebar's chosen colours (it applies these as CSS overrides and remembers them).
+  try {
+    const p = effectivePalette(settings.theme || "dark", settings.themeColors);
+    const slim = {
+      accent: p.accent, accent2: p.accent2, bg: p.bg, panel: p.panel,
+      panel2: p.panel2, border: p.border, text: p.text, muted: p.muted,
+    };
+    params.push("pg_theme=" + encodeURIComponent(JSON.stringify(slim)));
+  } catch (_) {}
+
+  if (!params.length) return url; // nothing to share yet — open it blank
+
+  return url + (url.includes("#") ? "&" : "#") + params.join("&");
 }
 async function openCodeApp() {
   if (!(settings.codeAppUrl || "").trim()) return browser.runtime.openOptionsPage();
