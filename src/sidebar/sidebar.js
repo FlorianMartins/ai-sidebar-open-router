@@ -115,9 +115,9 @@ let mode = "chat";
 // reset on reload — so after fixing the account they all come back.
 const orUnavailable = new Set();
 
-// PDF workspace state: the loaded document + its extracted text (used as context).
-let pdfDoc = null;
-let pdf = { name: "", text: "", pages: 0 };
+// PDF workspace state: a LIST of loaded documents (multi-PDF context). Each entry
+// is { name, text, pages, doc }. The user can add more PDFs at any time.
+let pdfs = [];
 let pdfWorkerSet = false;
 const PDF_BUDGET = 24000; // chars of PDF text passed to the model as supporting context
 // Last primary turn (to re-run on another model for the "compare" button).
@@ -1932,7 +1932,7 @@ function wire() {
     const files = e.dataTransfer.files;
     if (!files || !files.length) return;
     if (mode === "code") setMode("chat");          // Code/Image have no attachment context
-    if (mode === "pdf" && files[0] && /\.pdf$/i.test(files[0].name)) { loadPdfFile(files[0]); return; }
+    if (mode === "pdf" && Array.from(files).some((f) => /\.pdf$/i.test(f.name))) { loadPdfFiles(files); return; }
     if (mode === "image") setMode("chat");
     await addAttachmentFiles(files);
     els.input.focus();
@@ -1965,8 +1965,7 @@ function wire() {
   // PDF workspace controls
   els.pdfLoad.addEventListener("click", () => els.pdfFile.click());
   els.pdfFile.addEventListener("change", (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (f) loadPdfFile(f);
+    loadPdfFiles(e.target.files); // one or several PDFs at once
     e.target.value = ""; // allow re-loading the same file
   });
   els.pdfSummarize.addEventListener("click", pdfSummarizeAction);
@@ -2070,6 +2069,13 @@ function wire() {
     if (!["chat", "agent", "translate", "improve", "image", "pdf"].includes(mode)) return;
     e.preventDefault();
     onSend();
+  });
+  // Esc closes the image lightbox.
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && lightboxEl) closeLightbox(); });
+  // Click a generated / PDF-page image to open it enlarged in a lightbox.
+  els.messages.addEventListener("click", (e) => {
+    const img = e.target.closest && e.target.closest("img.gen-image");
+    if (img) openLightbox(img.src, img.alt || "image.png");
   });
   els.input.addEventListener("input", autoGrow);
   els.stop.addEventListener("click", () => abortController && abortController.abort());
@@ -2816,7 +2822,87 @@ function attachImageCompareBar(el) {
   bar.appendChild(lbl);
   bar.appendChild(sel);
   bar.appendChild(btn);
+  // Reuse the generated image as context (attach it + switch to chat) so the user
+  // can iterate on it with a vision model instead of starting from scratch.
+  const genImg = el.querySelector("img.gen-image");
+  if (genImg) {
+    const useBtn = document.createElement("button");
+    useBtn.className = "cmp-iconbtn";
+    useBtn.title = t("img.useCtx");
+    useBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    useBtn.addEventListener("click", () => reuseImageAsContext(genImg.src));
+    bar.appendChild(useBtn);
+  }
   el.appendChild(bar);
+}
+
+// Attach a generated image as an image attachment and switch to chat, so a vision
+// model can see it for the next prompt (iterative editing / photo edits).
+async function reuseImageAsContext(src) {
+  try {
+    let dataUrl = src;
+    let mediaType = "image/png";
+    if (src.startsWith("data:")) {
+      const m = /^data:([^;]+)/.exec(src);
+      if (m) mediaType = m[1];
+    } else {
+      const blob = await (await fetch(src)).blob();
+      mediaType = blob.type || "image/png";
+      dataUrl = await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = rej;
+        fr.readAsDataURL(blob);
+      });
+    }
+    attachments.push({ type: "image", name: t("img.reusedName"), dataUrl, mediaType });
+    if (mode !== "chat") setMode("chat");
+    renderAttachStrip();
+    addMessage("tool", t("img.reused"));
+    els.input.focus();
+  } catch (e) {
+    addMessage("error", t("err.image", { msg: e && e.message ? e.message : String(e) }));
+  }
+}
+
+// ----- Image lightbox (click a generated image to enlarge) ------------------
+let lightboxEl = null;
+function closeLightbox() {
+  if (lightboxEl) { lightboxEl.remove(); lightboxEl = null; }
+}
+function openLightbox(src, name) {
+  closeLightbox();
+  const ov = document.createElement("div");
+  ov.className = "lightbox";
+  ov.addEventListener("click", closeLightbox);
+  const tb = document.createElement("div");
+  tb.className = "lb-toolbar";
+  const dl = document.createElement("a");
+  dl.className = "lb-btn";
+  dl.href = src;
+  dl.download = name || "image.png";
+  dl.title = t("lb.download");
+  dl.addEventListener("click", (e) => e.stopPropagation());
+  dl.innerHTML =
+    '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>';
+  const cl = document.createElement("button");
+  cl.className = "lb-btn";
+  cl.title = t("close.title");
+  cl.addEventListener("click", closeLightbox);
+  cl.innerHTML =
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  tb.appendChild(dl);
+  tb.appendChild(cl);
+  const img = document.createElement("img");
+  img.className = "lb-img";
+  img.src = src;
+  img.alt = name || "";
+  img.addEventListener("click", (e) => e.stopPropagation());
+  ov.appendChild(tb);
+  ov.appendChild(img);
+  document.body.appendChild(ov);
+  lightboxEl = ov;
 }
 
 async function compareImage(second, btn) {
@@ -2859,78 +2945,92 @@ async function compareImage(second, btn) {
 
 // ----- PDF workspace --------------------------------------------------------
 function pdfContextBlock() {
-  if (!pdf.text) return "";
-  return `[PDF: ${pdf.name} (${pdf.pages} pages)]\n${pdf.text.slice(0, PDF_BUDGET)}\n\n`;
+  if (!pdfs.length) return "";
+  // Share the context budget across all loaded PDFs.
+  const budget = Math.max(2000, Math.floor(PDF_BUDGET / pdfs.length));
+  return pdfs.map((p) => `[PDF: ${p.name} (${p.pages} pages)]\n${p.text.slice(0, budget)}\n\n`).join("");
 }
-async function loadPdfFile(file) {
-  if (!file) return;
+function updatePdfInfo() {
+  if (!pdfs.length) { els.pdfInfo.textContent = ""; return; }
+  const totalPages = pdfs.reduce((n, p) => n + p.pages, 0);
+  els.pdfInfo.textContent = t("pdf.count", { n: pdfs.length, pages: totalPages }) + " — " + pdfs.map((p) => p.name).join(", ");
+  els.pdfSummarize.classList.remove("hidden");
+  els.pdfImages.classList.remove("hidden");
+  els.pdfText.classList.remove("hidden");
+}
+// Load one or several PDFs and ADD them to the current context (multi-PDF).
+async function loadPdfFiles(fileList) {
+  const files = Array.from(fileList || []).filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
+  if (!files.length) return;
   if (!window.pdfjsLib) { addMessage("error", t("err.pdf", { msg: "pdf.js not loaded" })); return; }
   els.pdfInfo.textContent = t("pdf.loading");
-  try {
-    if (!pdfWorkerSet) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = browser.runtime.getURL("vendor/pdf.worker.min.js");
-      pdfWorkerSet = true;
-    }
-    const buf = await file.arrayBuffer();
-    const doc = await window.pdfjsLib.getDocument({ data: buf }).promise;
-    let text = "";
-    for (let i = 1; i <= doc.numPages; i++) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      text += content.items.map((it) => (it.str || "")).join(" ") + "\n\n";
-    }
-    pdfDoc = doc;
-    pdf = { name: file.name, text: text.trim(), pages: doc.numPages };
-    els.pdfInfo.textContent = t("pdf.info", { name: file.name, pages: doc.numPages });
-    els.pdfSummarize.classList.remove("hidden");
-    els.pdfImages.classList.remove("hidden");
-    els.pdfText.classList.remove("hidden");
-    addMessage("tool", t("pdf.loaded", { name: file.name, pages: doc.numPages }));
-    els.input.focus();
-  } catch (e) {
-    els.pdfInfo.textContent = "";
-    addMessage("error", t("err.pdf", { msg: e && e.message ? e.message : String(e) }));
+  if (!pdfWorkerSet) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = browser.runtime.getURL("vendor/pdf.worker.min.js");
+    pdfWorkerSet = true;
   }
+  for (const file of files) {
+    try {
+      const buf = await file.arrayBuffer();
+      const doc = await window.pdfjsLib.getDocument({ data: buf }).promise;
+      let text = "";
+      for (let i = 1; i <= doc.numPages; i++) {
+        const page = await doc.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map((it) => (it.str || "")).join(" ") + "\n\n";
+      }
+      pdfs.push({ name: file.name, text: text.trim(), pages: doc.numPages, doc });
+      addMessage("tool", t("pdf.loaded", { name: file.name, pages: doc.numPages }));
+    } catch (e) {
+      addMessage("error", t("err.pdf", { msg: e && e.message ? e.message : String(e) }));
+    }
+  }
+  updatePdfInfo();
+  els.input.focus();
 }
+// Back-compat single-file entry (drag & drop one PDF).
+function loadPdfFile(file) { return loadPdfFiles(file ? [file] : []); }
 async function onPdfSend() {
   const text = els.input.value.trim();
   if (!text) return;
-  if (!pdf.text) return addMessage("error", t("pdf.none"));
+  if (!pdfs.length) return addMessage("error", t("pdf.none"));
   els.input.value = "";
   await sendToModel(text, pdfContextBlock() + `[Question]\n${text}`, { runMode: "chat" });
 }
 async function pdfSummarizeAction() {
-  if (!pdf.text) return addMessage("error", t("pdf.none"));
+  if (!pdfs.length) return addMessage("error", t("pdf.none"));
   await sendToModel(t("pdf.summLabel"), pdfContextBlock() + "[Task]\n" + t("pdf.summPrompt"), { runMode: "chat" });
 }
 function pdfExtractTextAction() {
-  if (!pdf.text) return addMessage("error", t("pdf.none"));
+  if (!pdfs.length) return addMessage("error", t("pdf.none"));
   addMessage("user", t("pdf.textLabel"));
   const el = addMessage("assistant", "");
-  el.innerHTML = renderMarkdown("```text\n" + pdf.text.slice(0, 100000) + "\n```");
+  const all = pdfs.map((p) => `### ${p.name}\n\n${p.text}`).join("\n\n");
+  el.innerHTML = renderMarkdown("```text\n" + all.slice(0, 100000) + "\n```");
   enhanceArtifacts(el);
 }
 async function pdfExtractImages() {
-  if (!pdfDoc) return addMessage("error", t("pdf.none"));
+  if (!pdfs.length) return addMessage("error", t("pdf.none"));
   if (busy) return;
   addMessage("user", t("pdf.imagesLabel"));
   const status = addMessage("tool", t("pdf.extracting"));
   startBusy();
   try {
     const wrap = addMessage("assistant", "");
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const viewport = page.getViewport({ scale: 1.5 });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-      const img = document.createElement("img");
-      img.src = canvas.toDataURL("image/png");
-      img.alt = `page ${i}`;
-      img.className = "gen-image";
-      wrap.appendChild(img);
-      els.messages.scrollTop = els.messages.scrollHeight;
+    for (const p of pdfs) {
+      for (let i = 1; i <= p.doc.numPages; i++) {
+        const page = await p.doc.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+        const img = document.createElement("img");
+        img.src = canvas.toDataURL("image/png");
+        img.alt = `${p.name} — page ${i}`;
+        img.className = "gen-image";
+        wrap.appendChild(img);
+        els.messages.scrollTop = els.messages.scrollHeight;
+      }
     }
     status.remove();
   } catch (e) {
