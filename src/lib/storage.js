@@ -25,6 +25,9 @@ const DEFAULTS = {
   mode: "chat", // active workspace tab: chat | agent | translate | improve | image | terminal | code
   thinking: false, // surface the model's reasoning (supported models only)
   webSearch: false, // web search: Anthropic native, OpenRouter "web" plugin, Perplexity Sonar
+  artifacts: true, // Artifact mode: encourage the model to build runnable artifacts (interactive
+                   // HTML/JS apps & games, React components, SVG, Mermaid diagrams) and render them
+                   // live in a sandboxed frame. Off = code stays as plain copyable blocks.
   searchModel: "", // "providerId|modelId" used in web-search mode ("" = auto-pick a free/online model)
   agentMode: false, // allow the model to act inside the browser
   agentModel: "", // "providerId|modelId" forced for agent mode ("" = use the selected model). Many free

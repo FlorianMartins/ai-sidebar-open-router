@@ -656,6 +656,36 @@ body.mode-code #confirmBar { display: none !important; }
 .cmp-btn:hover { border-color: var(--accent); }
 .cmp-btn:disabled { opacity: 0.5; cursor: default; }
 
+/* ----- Per-message hover actions (copy / resend / edit · copy answer) ------- */
+.msg { position: relative; }
+.mact-bar { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity .12s ease; }
+.msg:hover > .mact-bar, .mact-bar:focus-within { opacity: 1; }
+.mact-bar.user { justify-content: flex-end; }
+.mact {
+  width: 24px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; line-height: 1; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+  transition: color .12s, border-color .12s, background .12s;
+}
+.mact:hover { color: var(--text); border-color: var(--accent); }
+.mact.ok { color: #fff; background: var(--accent); border-color: var(--accent); }
+.mact-bar.user .mact { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); color: #fff; }
+.mact-bar.user .mact:hover { background: rgba(255,255,255,.3); border-color: rgba(255,255,255,.5); }
+
+/* ----- Cross-conversation search results ----------------------------------- */
+.search-results {
+  list-style: none; margin: 0; padding: 6px; max-height: 42vh; overflow-y: auto;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.sr-head { font-size: 10.5px; color: var(--muted); padding: 3px 6px 5px; text-transform: uppercase; letter-spacing: .05em; }
+.sr-item { padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.sr-item:hover { background: var(--panel-2); }
+.sr-item.current { background: var(--grad-soft); }
+.sr-top { display: flex; align-items: center; gap: 8px; }
+.sr-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text); font-weight: 600; }
+.sr-count { flex: 0 0 auto; font-size: 11px; min-width: 18px; text-align: center; padding: 1px 6px; border-radius: 9px; background: var(--accent); color: #fff; }
+.sr-snippet { font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ----- Thinking / waiting indicator (shown until the first token) ---------- */
 .pending-msg .typing { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); }
 .typing-dots { display: inline-flex; gap: 4px; }

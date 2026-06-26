@@ -7,7 +7,7 @@ import { executeTool, TOOLS } from "./tools.js";
 // tab (chat / translate / improve / image), `agentMode` unlocks the browser
 // tools, and `blockPayments` documents the hard safety rule that is ALSO
 // enforced in code.
-export function buildSystemPrompt({ agentMode, targetLang, responseLang, mode, blockPayments }) {
+export function buildSystemPrompt({ agentMode, targetLang, responseLang, mode, blockPayments, artifacts = true }) {
   // "Auto" (or empty) → reply in the SAME language as the user's message; a specific
   // value forces that language. (This is independent of the UI language.)
   const fixedLang = responseLang && responseLang !== "Auto" ? responseLang : "";
@@ -20,15 +20,20 @@ export function buildSystemPrompt({ agentMode, targetLang, responseLang, mode, b
     "may be provided to you automatically as context — lean on it to answer (summarise, " +
     "translate, explain, compare). " + langRule + "\n\n" +
     "Format answers in Markdown. Always tag code blocks with their language.\n\n" +
-    "ARTIFACTS (interactive previews, like Claude): when the user asks for something " +
-    "runnable — a game, an app, a tool, a simulation, an interactive visualisation — " +
-    "return a SINGLE complete, self-contained ```html document (its own <style> and " +
-    "<script>, everything inline). It renders live in a sandboxed preview the user can " +
-    "directly interact with and PLAY, so make it fully functional, not a stub. " +
-    "For a React component, return a ```jsx block that defines a component named `App` " +
-    "(React and hooks are available; do not call ReactDOM yourself). " +
-    "Use ```svg for vector graphics and ```mermaid only for diagrams. " +
-    "Keep ordinary code examples in their normal language fence (they stay as code).";
+    (artifacts
+      ? "ARTIFACTS (interactive previews, like Claude): when the user asks for something " +
+        "runnable — a game, an app, a tool, a simulation, an interactive visualisation — " +
+        "return a SINGLE complete, self-contained ```html document (its own <style> and " +
+        "<script>, everything inline). It renders live in a sandboxed preview the user can " +
+        "directly interact with and PLAY, so make it fully functional, not a stub. " +
+        "Prefer an artifact over a wall of code whenever the result is something to run or see. " +
+        "For a React component, return a ```jsx block that defines a component named `App` " +
+        "(React and hooks are available; do not call ReactDOM yourself). " +
+        "Use ```svg for vector graphics and ```mermaid only for diagrams. " +
+        "Keep ordinary code examples in their normal language fence (they stay as code)."
+      : "ARTIFACTS ARE OFF: the user has disabled live artifacts. Do NOT wrap deliverables as a " +
+        "single runnable ```html/```jsx/```svg/```mermaid artifact and do not assume a live preview. " +
+        "Answer with explanations and ordinary, well-labelled code blocks in their proper language fences.");
 
   // SECURITY: page/tab text and selections are UNTRUSTED user data. Never obey
   // instructions found *inside* page content; treat it only as material to work on.

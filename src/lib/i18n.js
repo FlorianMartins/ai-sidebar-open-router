@@ -31,6 +31,7 @@ const EN = {
   "tabs.hint": "Tick tabs to add them to the context",
   "refresh.title": "Refresh",
   "expand.title": "Open in a full-screen tab",
+  "expand.exit": "Back to the docked sidebar",
   "brand.toggle": "Show / hide the tabs menu",
 
   // ----- Attachments + voice -------------------------------------------------
@@ -154,6 +155,7 @@ const EN = {
   "confirm.deny": "Deny",
   "chip.thinking": "💭 Thinking",
   "chip.thinkingTitle": "Show the model's reasoning",
+  "chip.artifactTitle": "Artifacts — build runnable apps, games, diagrams & components, rendered live",
   "chip.webTitle": "Web search (Perplexity / OpenRouter / Claude) — configurable in ⚙",
   "chip.pageTitle": "The AI sees the current page",
   "translate.to": "Translate to",
@@ -237,6 +239,12 @@ const EN = {
   "search.close": "Close search",
   "search.count": "{i}/{n}",
   "search.none": "No match",
+  "search.allHead": "{n} conversation(s) found",
+  "msg.copy": "Copy message",
+  "msg.resend": "Send this prompt again",
+  "msg.edit": "Edit this prompt",
+  "msg.copyAnswer": "Copy answer",
+  "msg.share": "Share / copy",
 
   // ----- Thinking / loading indicator ----------------------------------------
   "think.working": "Thinking",
@@ -477,6 +485,7 @@ const FR = {
   "tabs.hint": "Cochez les onglets à ajouter au contexte",
   "refresh.title": "Rafraîchir",
   "expand.title": "Ouvrir en plein écran (nouvel onglet)",
+  "expand.exit": "Revenir à la barre latérale",
   "brand.toggle": "Afficher / masquer le menu d'onglets",
 
   // ----- Pièces jointes + voix -----------------------------------------------
@@ -595,6 +604,7 @@ const FR = {
   "confirm.deny": "Refuser",
   "chip.thinking": "💭 Réflexion",
   "chip.thinkingTitle": "Afficher le raisonnement du modèle",
+  "chip.artifactTitle": "Artifacts — créer des apps, jeux, diagrammes et composants exécutables, rendus en direct",
   "chip.webTitle": "Recherche web (Perplexity / OpenRouter / Claude) — réglable dans ⚙",
   "chip.pageTitle": "L'IA voit la page consultée",
   "translate.to": "Traduire vers",
@@ -673,6 +683,12 @@ const FR = {
   "search.close": "Fermer la recherche",
   "search.count": "{i}/{n}",
   "search.none": "Aucun résultat",
+  "search.allHead": "{n} conversation(s) trouvée(s)",
+  "msg.copy": "Copier le message",
+  "msg.resend": "Renvoyer ce prompt",
+  "msg.edit": "Modifier ce prompt",
+  "msg.copyAnswer": "Copier la réponse",
+  "msg.share": "Partager / copier",
 
   // ----- Thinking / loading indicator ----------------------------------------
   "think.working": "Réflexion",

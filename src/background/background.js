@@ -164,6 +164,18 @@ function isRestrictedUrl(url) {
   return /^(about:|chrome:|edge:|moz-extension:|chrome-extension:|view-source:|data:|https:\/\/addons\.mozilla\.org|https:\/\/chromewebstore\.google\.com|https:\/\/chrome\.google\.com\/webstore)/i.test(url);
 }
 
+// Firefox MV3 grants NO host permission at install — host_permissions are opt-in.
+// Until the user grants page access, the declarative content script never runs and
+// we cannot inject/reach the page, so the bubble fell back to the sidebar EVERY time.
+// A right-click (contextMenus.onClicked) is a user gesture, so we may request it here.
+// permissions.request() resolves true instantly (no prompt) when already granted.
+async function ensureHostPermission() {
+  try {
+    if (!browser.permissions || !browser.permissions.request) return true;
+    return await browser.permissions.request({ origins: ["<all_urls>"] });
+  } catch (_) { return false; }
+}
+
 // Make sure the content script (which draws the bubble) is present in the tab.
 async function ensureContent(tabId) {
   try { await browser.tabs.sendMessage(tabId, { type: "ping" }); return true; } catch (_) {}
@@ -210,6 +222,10 @@ function actionRequest(action, text, lang, presetId) {
 // on pages we cannot overlay (browser pages, store pages, …).
 async function runBubble(tab, action, text) {
   if (!tab || isRestrictedUrl(tab.url)) { fallbackToSidebar(tab, action, text); return; }
+  // Ask for page access FIRST (this call must stay before any other await so the
+  // user-gesture from the right-click is preserved). Without it the bubble can never
+  // reach the page on Firefox. If the user declines, gracefully use the sidebar.
+  if (!(await ensureHostPermission())) { fallbackToSidebar(tab, action, text); return; }
   if (!(await ensureContent(tab.id))) { fallbackToSidebar(tab, action, text); return; }
 
   lastBubble = { tabId: tab.id, action, text };
@@ -267,6 +283,7 @@ async function runBubbleModel() {
       responseLang: settings.responseLang,
       mode: action === "translate" ? "translate" : action === "improve" ? "improve" : "chat",
       blockPayments: settings.blockPayments,
+      artifacts: false, // the on-page bubble shows plain text, not a live artifact frame
     });
     await runConversation({
       provider, system,

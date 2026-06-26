@@ -76,6 +76,9 @@
       <button id="searchNext" class="icon" data-i18n-title="search.next" title="Next match">▼</button>
       <button id="searchClose" class="icon" data-i18n-title="search.close" title="Close search">✕</button>
     </div>
+    <!-- Cross-conversation results: every saved discussion in this workspace that
+         contains the searched term, most matches first. Click one to open it. -->
+    <ul id="searchResults" class="search-results hidden"></ul>
 
     <main id="messages" class="messages">
       <div class="empty" id="empty">
@@ -239,6 +242,7 @@
           <div class="tools-right">
             <div class="chat-toggles" id="chatControls">
               <label class="ctoggle" data-i18n-title="chip.thinkingTitle" title="Thinking — show the model's reasoning"><input type="checkbox" id="thinking" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></label>
+              <label class="ctoggle" data-i18n-title="chip.artifactTitle" title="Artifacts — build runnable apps, games & diagrams"><input type="checkbox" id="artifactMode" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5"/><path d="M12 12v9"/><path d="M12 12L4 7.5"/></svg></label>
               <label class="ctoggle" data-i18n-title="chip.webTitle" title="Web search (Perplexity / OpenRouter / Claude)"><input type="checkbox" id="webSearch" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/></svg></label>
               <label class="ctoggle" data-i18n-title="chip.pageTitle" title="Page — the AI sees the current page"><input type="checkbox" id="pageCtx" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg></label>
             </div>

@@ -7,6 +7,10 @@
 
 let afCounter = 0;
 let mermaidLibPromise = null;
+// Artifact mode (toggled in the composer). When OFF, code is shown as plain copyable
+// blocks instead of being auto-rendered as a live interactive preview.
+let artifactsLive = true;
+export function setArtifactsLive(on) { artifactsLive = on !== false; }
 
 function getMermaidLib() {
   if (!mermaidLibPromise) {
@@ -70,7 +74,18 @@ function makeFrame(srcdoc, { sandbox, initialHeight }) {
   // pointer lock and popups so they behave like real apps.
   f.setAttribute("sandbox", sandbox || "");
   f.style.height = (initialHeight || 160) + "px";
-  f.srcdoc = srcdoc;
+  // IMPORTANT: load from a blob: URL, NOT srcdoc. A `srcdoc` document INHERITS the
+  // embedder's Content-Security-Policy — and the extension page CSP is `script-src
+  // 'self'`, which silently blocks every <script> inside the generated artifact. That
+  // is why artifacts rendered as a lifeless "presentation page": the markup showed but
+  // nothing ran. A blob: navigation is a separate response with no CSP of its own, so
+  // the artifact's scripts execute while the sandbox still keeps it on an opaque origin.
+  const blob = new Blob([srcdoc], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  f.src = url;
+  // Revoke once loaded (the document is fully parsed by then); keep a short grace
+  // delay so slow first paints still have the source.
+  f.addEventListener("load", () => setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 2000));
   return f;
 }
 
@@ -189,8 +204,10 @@ export function enhanceArtifacts(container) {
     pre.dataset.enhanced = "1";
 
     const lang = ([...code.classList].find((c) => c.startsWith("language-")) || "").slice(9);
-    const isPreviewable = INTERACTIVE.includes(lang) || lang === "svg";
-    const isArtifact = isPreviewable || lang === "mermaid";
+    // Artifact mode OFF → no live preview; everything stays a plain copyable code block.
+    const isPreviewable = artifactsLive && (INTERACTIVE.includes(lang) || lang === "svg");
+    const isMermaid = artifactsLive && lang === "mermaid";
+    const isArtifact = isPreviewable || isMermaid;
 
     const wrap = document.createElement("div");
     wrap.className = isArtifact ? "code-wrap artifact" : "code-wrap";
@@ -231,7 +248,7 @@ export function enhanceArtifacts(container) {
     wrap.appendChild(pre);
     wrap.appendChild(slot);
 
-    if (lang === "mermaid") {
+    if (isMermaid) {
       pre.style.display = "none";
       renderMermaid(slot, code.textContent);
     }

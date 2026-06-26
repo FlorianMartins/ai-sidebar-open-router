@@ -11,7 +11,7 @@ import { getSettings, setSettings, onSettingsChanged } from "../lib/storage.js";
 import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../lib/providers.js";
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
-import { configureMarkdown, renderMarkdown, enhanceArtifacts } from "../lib/markdown.js";
+import { configureMarkdown, renderMarkdown, enhanceArtifacts, setArtifactsLive } from "../lib/markdown.js";
 import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
 import { applyTheme, effectivePalette } from "../lib/theme.js";
@@ -45,6 +45,7 @@ const els = {
   searchPrev: $("searchPrev"),
   searchNext: $("searchNext"),
   searchClose: $("searchClose"),
+  searchResults: $("searchResults"),
   modelFilterBtn: $("modelFilterBtn"),
   modelFilterPanel: $("modelFilterPanel"),
   filterProviders: $("filterProviders"),
@@ -91,6 +92,7 @@ const els = {
   pdfImages: $("pdfImages"),
   pdfText: $("pdfText"),
   thinking: $("thinking"),
+  artifactMode: $("artifactMode"),
   webSearch: $("webSearch"),
   pageCtx: $("pageCtx"),
   translateLang: $("translateLang"),
@@ -242,6 +244,8 @@ async function init() {
   populateModelSelector();
   populateImprovePresets();
   els.thinking.checked = settings.thinking;
+  els.artifactMode.checked = settings.artifacts !== false; // default ON
+  setArtifactsLive(els.artifactMode.checked);
   els.webSearch.checked = settings.webSearch;
   els.pageCtx.checked = settings.includePageContext;
   els.translateLang.value = settings.targetLang || "French";
@@ -251,7 +255,13 @@ async function init() {
   syncToggleVisibility();
   updateImageNote();
   wire();
-  setMode(settings.mode || "chat");
+  // Full-screen tab: open ON the conversation/workspace the sidebar handed us
+  // (?mode= & ?conv=), so "Agrandir" feels like the same view enlarged.
+  const _params = new URLSearchParams(location.search);
+  const _urlMode = _params.get("mode");
+  const _urlConv = _params.get("conv");
+  setMode(IS_TAB && CHAT_MODES.includes(_urlMode) ? _urlMode : (settings.mode || "chat"));
+  if (IS_TAB && _urlConv) { try { await loadConversation(_urlConv); } catch (_) {} }
   setupPageAwareness();
   autoListConnected();           // refresh available models in the background
   // Run a queued context-menu action whenever it appears — even if the sidebar was
@@ -1072,11 +1082,32 @@ function toggleRail() {
 }
 
 // ----- Open in a full-screen tab --------------------------------------------
-function openInTab() {
-  const url = browser.runtime.getURL("src/sidebar/sidebar.html") + "?tab=1";
-  try { browser.tabs.create({ url }); } catch (_) { window.open(url, "_blank", "noopener"); }
+// Open the sidebar full-screen ON the conversation/workspace the user is currently
+// looking at (the tab loads it from storage via ?mode= & ?conv=).
+async function openInTab() {
+  try { await saveCurrent(); } catch (_) {} // make sure the current thread is on disk first
+  let url = browser.runtime.getURL("src/sidebar/sidebar.html") + "?tab=1";
+  if (mode) url += "&mode=" + encodeURIComponent(mode);
+  if (convId) url += "&conv=" + encodeURIComponent(convId);
+  try { await browser.tabs.create({ url }); } catch (_) { window.open(url, "_blank", "noopener"); }
   // Close the docked sidebar so we don't show the same UI twice (Firefox only API).
   try { if (browser.sidebarAction && browser.sidebarAction.close) browser.sidebarAction.close(); } catch (_) {}
+}
+// Reverse of openInTab: re-open the docked sidebar and close this full-screen tab,
+// so the same "Agrandir" button toggles back. sidebarAction.open() must run inside
+// the click gesture (it's called first), so we await it before removing the tab.
+async function exitTab() {
+  try { await saveCurrent(); } catch (_) {}
+  try { if (browser.sidebarAction && browser.sidebarAction.open) await browser.sidebarAction.open(); } catch (_) {}
+  try {
+    const cr = (typeof chrome !== "undefined") ? chrome : null;
+    const sp = cr && cr["sidePanel"];
+    if (sp && sp.open) { const w = await browser.windows.getCurrent(); await sp.open({ windowId: w && w.id }); }
+  } catch (_) {}
+  try {
+    const tb = await browser.tabs.getCurrent();
+    if (tb) await browser.tabs.remove(tb.id);
+  } catch (_) { try { window.close(); } catch (_) {} }
 }
 
 // ----- Element picker -------------------------------------------------------
@@ -1763,6 +1794,7 @@ function renderTranscriptItem(item) {
   } else if (item.role === "user") {
     const d = addMessage("user", item.text);
     if (item.atts) renderUserAttachments(d, item.atts);
+    attachUserActions(d, item.text);
     return d;
   } else if (item.kind === "image") {
     const wrap = addMessage("assistant", "");
@@ -1781,6 +1813,8 @@ function renderTranscriptItem(item) {
     const el = addMessage("assistant", "");
     el.innerHTML = renderMarkdown(item.text || "");
     enhanceArtifacts(el);
+    el._raw = item.text || "";
+    attachAssistantActions(el, () => el._raw);
     return el;
   }
 }
@@ -1813,6 +1847,13 @@ function startFreshChat() {
   getSession(mode).customTitle = "";
   getSession(mode).importedSources = [];
   syncSessionFromGlobals(mode); // the fresh arrays are this tab's live session
+  // A new conversation starts with NO tab held in context — otherwise a tab the user
+  // ticked for a previous discussion would silently leak into the fresh one.
+  if ((settings.selectedTabs || []).length) {
+    settings.selectedTabs = [];
+    setSettings({ selectedTabs: [] });
+    if (els.tabsPanel && !els.tabsPanel.classList.contains("hidden")) buildTabsList();
+  }
   clearMessages();
   els.empty.classList.remove("hidden");
   updateEmptyState();
@@ -1893,15 +1934,100 @@ function gotoHit(delta) {
 function openSearch() {
   els.searchBar.classList.remove("hidden");
   els.searchInput.focus(); els.searchInput.select();
-  if (els.searchInput.value.trim()) runSearch(els.searchInput.value);
+  if (els.searchInput.value.trim()) { runSearch(els.searchInput.value); scheduleGlobalSearch(els.searchInput.value); }
 }
 function closeSearch() {
   els.searchBar.classList.add("hidden");
   clearSearchHighlights();
   updateSearchCount();
+  clearGlobalResults();
 }
 function toggleSearch() {
   if (els.searchBar.classList.contains("hidden")) openSearch(); else closeSearch();
+}
+
+// ----- Cross-conversation search --------------------------------------------
+// Search EVERY saved conversation in the current workspace for the term and list
+// the ones that contain it (most matches first), with a snippet. Clicking a result
+// opens that conversation and highlights the term inside it.
+let globalSearchTimer = null;
+function scheduleGlobalSearch(q) {
+  clearTimeout(globalSearchTimer);
+  globalSearchTimer = setTimeout(() => searchAllConversations(q), 200);
+}
+function clearGlobalResults() {
+  if (!els.searchResults) return;
+  els.searchResults.innerHTML = "";
+  els.searchResults.classList.add("hidden");
+}
+function countOccurrences(hay, needle) {
+  let n = 0, i = hay.indexOf(needle);
+  while (i >= 0) { n++; i = hay.indexOf(needle, i + needle.length); }
+  return n;
+}
+async function searchAllConversations(q) {
+  if (!els.searchResults) return;
+  const needle = (q || "").trim().toLowerCase();
+  if (needle.length < 2) { clearGlobalResults(); return; }
+  const all = await listConversations();
+  const inMode = all.filter((c) => (c.mode || "chat") === mode);
+  const results = [];
+  for (const c of inMode) {
+    let count = 0, snippet = "";
+    for (const m of c.transcript || []) {
+      const raw = m.text || "";
+      if (!raw) continue;
+      const low = raw.toLowerCase();
+      const hits = countOccurrences(low, needle);
+      if (!hits) continue;
+      count += hits;
+      if (!snippet) {
+        const i = low.indexOf(needle);
+        const start = Math.max(0, i - 32);
+        snippet = (start > 0 ? "…" : "") + raw.slice(start, i + needle.length + 48).replace(/\s+/g, " ").trim() + "…";
+      }
+    }
+    if (count > 0) results.push({ c, count, snippet });
+  }
+  results.sort((a, b) => b.count - a.count || (b.c.updatedAt || 0) - (a.c.updatedAt || 0));
+
+  els.searchResults.innerHTML = "";
+  if (!results.length) { els.searchResults.classList.add("hidden"); return; }
+  els.searchResults.classList.remove("hidden");
+  const head = document.createElement("li");
+  head.className = "sr-head";
+  head.textContent = t("search.allHead", { n: results.length });
+  els.searchResults.appendChild(head);
+  for (const r of results) {
+    const li = document.createElement("li");
+    li.className = "sr-item";
+    if (r.c.id === convId) li.classList.add("current");
+    const top = document.createElement("div");
+    top.className = "sr-top";
+    const title = document.createElement("span");
+    title.className = "sr-title";
+    title.textContent = displayTitleFor(r.c);
+    const badge = document.createElement("span");
+    badge.className = "sr-count";
+    badge.textContent = String(r.count);
+    top.appendChild(title); top.appendChild(badge);
+    li.appendChild(top);
+    if (r.snippet) {
+      const sn = document.createElement("div");
+      sn.className = "sr-snippet";
+      sn.textContent = r.snippet;
+      li.appendChild(sn);
+    }
+    li.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (r.c.id !== convId) await loadConversation(r.c.id);
+      runSearch(els.searchInput.value); // re-highlight inside the opened conversation
+      // Keep the bar open; mark which result is now current.
+      els.searchResults.querySelectorAll(".sr-item.current").forEach((n) => n.classList.remove("current"));
+      li.classList.add("current");
+    });
+    els.searchResults.appendChild(li);
+  }
 }
 
 // ----- Pending actions (from the right-click context menu) ------------------
@@ -2190,9 +2316,15 @@ function wire() {
   // Esc cancels element-pick / region-capture mode even when focus is in the sidebar.
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (picking) cancelPicking(); if (capturing) cancelCapture(); } });
 
-  // Open the sidebar as a full-screen browser tab (hidden when already in a tab).
-  if (IS_TAB) els.expandTab.hidden = true;
-  else els.expandTab.addEventListener("click", openInTab);
+  // "Agrandir" toggles between docked sidebar and full-screen tab. In a normal
+  // sidebar it opens the full-screen tab on the current conversation; in the
+  // full-screen tab the SAME button returns to the docked sidebar and closes the tab.
+  if (IS_TAB) {
+    els.expandTab.title = t("expand.exit");
+    els.expandTab.addEventListener("click", exitTab);
+  } else {
+    els.expandTab.addEventListener("click", openInTab);
+  }
 
   // Click the brand/logo to show or hide the workspace tabs rail.
   els.brand.addEventListener("click", toggleRail);
@@ -2260,6 +2392,7 @@ function wire() {
       if (after) after();
     });
   bindToggle(els.thinking, "thinking");
+  bindToggle(els.artifactMode, "artifacts", () => setArtifactsLive(els.artifactMode.checked));
   bindToggle(els.webSearch, "webSearch");
   bindToggle(els.pageCtx, "includePageContext", updatePageBar);
 
@@ -2291,7 +2424,7 @@ function wire() {
 
   // In-conversation search (🔍 in the top bar).
   els.searchBtn.addEventListener("click", toggleSearch);
-  els.searchInput.addEventListener("input", () => runSearch(els.searchInput.value));
+  els.searchInput.addEventListener("input", () => { runSearch(els.searchInput.value); scheduleGlobalSearch(els.searchInput.value); });
   els.searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); gotoHit(e.shiftKey ? -1 : 1); }
     else if (e.key === "Escape") { e.preventDefault(); closeSearch(); }
@@ -2386,13 +2519,18 @@ function wire() {
     const img = e.target.closest && e.target.closest("img.gen-image");
     if (img) openLightbox(img.src, img.alt || "image.png");
   });
-  // Clicking anywhere outside the Search bar or History panel closes them.
+  // Clicking outside the History panel or the tab-picker closes them. The Search bar
+  // is deliberately NOT closed here — it stays open until ✕ or the 🔍 button, so the
+  // user can click a cross-conversation result without it vanishing.
   document.addEventListener("click", (e) => {
-    if (els.searchBar && !els.searchBar.classList.contains("hidden") &&
-        !els.searchBar.contains(e.target) && !els.searchBtn.contains(e.target)) closeSearch();
     if (els.historyPanel && !els.historyPanel.classList.contains("hidden") &&
         !els.historyPanel.contains(e.target) && !els.historyBtn.contains(e.target)) els.historyPanel.classList.add("hidden");
+    if (els.tabsPanel && !els.tabsPanel.classList.contains("hidden") &&
+        !els.tabsPanel.contains(e.target) && !els.pageBar.contains(e.target)) els.tabsPanel.classList.add("hidden");
   });
+  // Clicking on the WEB PAGE (or any other window) blurs the sidebar — close the
+  // tab-picker then too, so it never lingers over the page the user moved to.
+  window.addEventListener("blur", () => { if (els.tabsPanel) els.tabsPanel.classList.add("hidden"); });
   els.input.addEventListener("input", autoGrow);
   els.stop.addEventListener("click", () => abortController && abortController.abort());
   els.newChat.addEventListener("click", newChat);
@@ -2456,6 +2594,80 @@ function renderUserAttachments(div, meta) {
     }
   }
   div.appendChild(box);
+}
+
+// ----- Per-message actions (copy / resend / edit · copy answer) -------------
+function flashBtn(btn) {
+  if (!btn) return;
+  btn.classList.add("ok");
+  setTimeout(() => btn.classList.remove("ok"), 1100);
+}
+async function copyToClipboard(text, btn) {
+  try { await navigator.clipboard.writeText(text || ""); flashBtn(btn); }
+  catch (_) {
+    // Fallback for contexts where the async clipboard API is blocked.
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text || ""; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+      flashBtn(btn);
+    } catch (_) {}
+  }
+}
+// Drop a previous prompt back into the composer (switching to a chat workspace if
+// the user is on Code/Image, which have no composer).
+function fillComposer(text) {
+  if (!CHAT_MODES.includes(mode)) setMode("chat");
+  els.input.value = text || "";
+  autoGrow();
+  els.input.focus();
+  try { els.input.setSelectionRange(els.input.value.length, els.input.value.length); } catch (_) {}
+}
+function resendPrompt(text) { if (busy) return; fillComposer(text); onSend(); }
+function editPrompt(text) { fillComposer(text); }
+
+// Hover actions on a USER bubble: copy the message, resend it as-is, or load it
+// back into the composer to edit. Double-click or right-click also opens it to edit.
+function makeActBtn(cls, glyph, title, fn) {
+  const b = document.createElement("button");
+  b.className = "mact " + cls;
+  b.type = "button";
+  b.innerHTML = glyph;
+  b.title = title;
+  b.addEventListener("click", (e) => { e.stopPropagation(); fn(b); });
+  return b;
+}
+function attachUserActions(div, rawText) {
+  if (!div || div._actsBound) return;
+  div._actsBound = true;
+  div._raw = rawText || "";
+  const bar = document.createElement("div");
+  bar.className = "mact-bar user";
+  bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copy"), (b) => copyToClipboard(div._raw, b)));
+  bar.appendChild(makeActBtn("mresend", "↻", t("msg.resend"), () => resendPrompt(div._raw)));
+  bar.appendChild(makeActBtn("medit", "✎", t("msg.edit"), () => editPrompt(div._raw)));
+  div.appendChild(bar);
+  div.addEventListener("dblclick", () => editPrompt(div._raw));
+  div.addEventListener("contextmenu", (e) => { e.preventDefault(); editPrompt(div._raw); });
+}
+// Hover actions on an ASSISTANT bubble: copy the answer (raw markdown) or share it.
+function attachAssistantActions(el, getRaw) {
+  if (!el || el._actsBound) return;
+  el._actsBound = true;
+  const bar = document.createElement("div");
+  bar.className = "mact-bar assistant";
+  bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copyAnswer"), (b) => copyToClipboard((getRaw && getRaw()) || el._raw || "", b)));
+  bar.appendChild(makeActBtn("mshare", "↗", t("msg.share"), (b) => shareText((getRaw && getRaw()) || el._raw || "", b)));
+  el.appendChild(bar);
+}
+// Share an answer: use the native share sheet when available, else copy to clipboard.
+async function shareText(text, btn) {
+  const payload = (text || "").trim();
+  if (!payload) return;
+  if (navigator.share) {
+    try { await navigator.share({ text: payload }); return; } catch (_) {}
+  }
+  copyToClipboard(payload, btn);
 }
 function addThinkBlock() {
   els.empty.classList.add("hidden");
@@ -2817,7 +3029,7 @@ async function compareLast(second, btn) {
       { ...settings, provider: second.providerId, models: { ...settings.models, [second.providerId]: second.modelId } },
       { thinking: els.thinking.checked, webSearch: els.webSearch.checked || lastForceWeb }
     );
-    const system = buildSystemPrompt({ agentMode: false, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: lastRunMode, blockPayments: settings.blockPayments });
+    const system = buildSystemPrompt({ agentMode: false, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: lastRunMode, blockPayments: settings.blockPayments, artifacts: els.artifactMode.checked });
     cmpPending = addPendingIndicator();
     const sink = makeSink(badge, els.thinking.checked, cmpPending);
     await runConversation({ provider, system, history: [{ role: "user", content: lastUserContent }], tools: [], onText: sink.onText, onThink: sink.onThink, signal: abortController.signal });
@@ -2858,6 +3070,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   const sessMode = mode;
   const userDiv = addMessage("user", displayText);
   if (attMeta && attMeta.length) renderUserAttachments(userDiv, attMeta);
+  attachUserActions(userDiv, displayText);
   sess.transcript.push({ role: "user", text: displayText, atts: attMeta && attMeta.length ? attMeta : undefined });
   lastUserContent = modelContent;
   lastRunMode = runMode;
@@ -2916,7 +3129,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     { ...settings, provider: turnSel.providerId, models: { ...settings.models, [turnSel.providerId]: turnSel.modelId } },
     { thinking: els.thinking.checked, webSearch: wantWeb }
   );
-  const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: runMode, blockPayments: settings.blockPayments });
+  const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: runMode, blockPayments: settings.blockPayments, artifacts: els.artifactMode.checked });
   const tools = activeTools({ agentMode });
   const pending = addPendingIndicator();
   const sink = makeSink(badge, els.thinking.checked, pending);
@@ -2939,7 +3152,9 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     sink.finalize();
     if (sink.getRaw()) {
       sess.transcript.push({ role: "assistant", text: sink.getRaw() });
-      if (mode === sessMode) attachCompareBar(sink.getEl()); // compare bar only if still on this tab
+      const aEl = sink.getEl();
+      if (aEl) { aEl._raw = sink.getRaw(); attachAssistantActions(aEl, sink.getRaw); }
+      if (mode === sessMode) attachCompareBar(aEl); // compare bar only if still on this tab
     }
   } catch (e) {
     removePending(pending);
