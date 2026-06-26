@@ -12,7 +12,7 @@ import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts, setArtifactsLive, setJudge0Config } from "../lib/markdown.js";
-import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS } from "../lib/models.js";
+import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS, HIVEY_AUTO, HIVEY_TIERS, hiveyTierFor, isHivey } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
 import { applyTheme, effectivePalette } from "../lib/theme.js";
 import { t, setLang, applyDom } from "../lib/i18n.js";
@@ -575,6 +575,11 @@ function chatComboItems() {
   const out = [];
   for (const pid of providersToShow()) {
     if (pid === "openrouter" && settings.orModels && settings.orModels.length) {
+      // 🐝 Hivey smart auto-routing, pinned at the very top.
+      out.push({
+        value: "openrouter|" + HIVEY_AUTO, label: "🐝 Hivey — smart auto-routing (best model per task)",
+        provider: "openrouter", subprovider: "hivey", tier: "free", color: "var(--accent)", group: "🐝 Hivey (recommended)",
+      });
       const byVendor = {};
       for (const m of settings.orModels) {
         if (orUnavailable.has(m.id)) continue;
@@ -642,6 +647,18 @@ function parseSel(value) {
 }
 function currentSelection() {
   return parseSel(mainValue);
+}
+// When "Hivey" is the chosen model, resolve it to the actual best model for THIS task
+// (mode + a quick complexity heuristic). Anything else passes through unchanged.
+function resolveHivey(sel, runMode, text) {
+  if (!sel || !isHivey(sel.modelId)) return sel;
+  return parseSel(hiveyTierFor(runMode || mode, text || ""));
+}
+// True when Hivey is the user's chosen text model. Also checks the persisted selection so
+// it stays true on the Image tab (which has its own picker) — Hivey routes EVERY tab.
+function hiveyActive() {
+  if (isHivey(currentSelection().modelId)) return true;
+  return !!(settings.models && settings.models.openrouter === HIVEY_AUTO);
 }
 
 function syncToggleVisibility() {
@@ -2317,7 +2334,9 @@ async function runBubbleModel() {
   const lang = settings.targetLang || "French";
   const req = actionRequest(action, text, lang, settings.improvePreset);
   if (!req) return;
-  const sel = currentSelection();
+  // 🐝 Hivey: route the quick action by its kind (translate/improve = light; else by complexity).
+  const bubbleMode = action === "translate" ? "translate" : action === "improve" ? "improve" : "chat";
+  const sel = resolveHivey(currentSelection(), bubbleMode, text);
   if (currentKeyMissing(sel.providerId)) { send({ type: "bubble_error", error: t("err.noKeyModel") }); return; }
   if (bubbleAbort) { try { bubbleAbort.abort(); } catch (_) {} }
   bubbleAbort = new AbortController();
@@ -2488,7 +2507,8 @@ async function openActionBubble(action, providedText) {
     const lang = langSel ? langSel.value : settings.targetLang || "French";
     const req = actionRequest(action, text, lang, presetSel ? presetSel.value : settings.improvePreset);
     if (!req) return;
-    const sel = currentSelection();
+    const bubbleMode = action === "translate" ? "translate" : action === "improve" ? "improve" : "chat";
+    const sel = resolveHivey(currentSelection(), bubbleMode, text);
     if (currentKeyMissing(sel.providerId)) { body.textContent = t("err.noKeyModel"); return; }
     if (bubbleAbort) { try { bubbleAbort.abort(); } catch (_) {} }
     bubbleAbort = new AbortController();
@@ -3163,6 +3183,8 @@ function historyChars(h) {
 // settings.utilityModel pins one; "" = auto-pick the cheapest FREE connected model
 // (a free OpenRouter model, else the current selection as a last resort).
 function utilitySelection() {
+  // 🐝 Hivey routes housekeeping (titles, summaries, compaction) to its cheap utility tier.
+  if (hiveyActive() && !currentKeyMissing("openrouter")) return parseSel(HIVEY_TIERS.utility);
   if (settings.utilityModel) {
     const u = parseSel(settings.utilityModel);
     if (u.providerId && !currentKeyMissing(u.providerId)) return u;
@@ -3374,9 +3396,11 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   // When that model lives on a DIFFERENT provider we run it as an isolated single
   // turn, so two providers' native message formats never get mixed in the shared
   // history. (Skipped in agent mode, which keeps its tools on the chosen model.)
-  let turnSel = sel;
+  // 🐝 Hivey: route this turn to the best model for the task (cheap for simple chat,
+  // premium for hard reasoning, an affordable strong model for the agent, etc.).
+  let turnSel = resolveHivey(sel, mode, modelContent);
   let isolated = false;
-  let badge = null;
+  let badge = isHivey(sel.modelId) ? "🐝 " + prettifyORName(turnSel.modelId) : null;
   if (wantWeb && !agentMode) {
     const ss = parseSel(settings.searchModel || defaultSearchModel(settings));
     if (ss.providerId && !currentKeyMissing(ss.providerId) &&
@@ -3597,16 +3621,21 @@ async function runQuickAction(action, providedText) {
 
 // ----- Image generation -----------------------------------------------------
 async function runImage(prompt, initImage) {
-  if (currentKeyMissing(settings.imageProvider || "openai")) {
-    return addMessage("error", t("err.imageKeyMissing", { label: PROVIDERS[settings.imageProvider || "openai"].label }));
+  // 🐝 Hivey routes image generation to a premium image model (Nano Banana via OpenRouter).
+  const himg = parseSel(HIVEY_TIERS.image);
+  const imgSettings = hiveyActive()
+    ? { ...settings, imageProvider: himg.providerId, imageModel: himg.modelId }
+    : settings;
+  if (currentKeyMissing(imgSettings.imageProvider || "openai")) {
+    return addMessage("error", t("err.imageKeyMissing", { label: PROVIDERS[imgSettings.imageProvider || "openai"].label }));
   }
   addMessage("user", "🎨 " + prompt);
   transcript.push({ role: "user", text: "🎨 " + prompt });
   lastUserContent = prompt; // remember the prompt so we can regenerate on another model
-  const status = addMessage("tool", t("image.generating"));
+  const status = addMessage("tool", t("image.generating") + (hiveyActive() ? " (🐝 Nano Banana)" : ""));
   startBusy();
   try {
-    const urls = await generateImage(settings, { prompt, size: els.imageSize.value, signal: abortController.signal, initImage });
+    const urls = await generateImage(imgSettings, { prompt, size: els.imageSize.value, signal: abortController.signal, initImage });
     status.remove();
     const wrap = addMessage("assistant", "");
     for (const u of urls) {

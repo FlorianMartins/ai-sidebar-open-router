@@ -81,6 +81,7 @@ export const PROVIDERS = {
     // flagships). Regenerated daily by scripts/update-models.mjs from OpenRouter.
     // <models:openrouter:start>
     models: [
+      ["hivey/auto", "🐝 Hivey — smart auto-routing (best model per task)"],
       ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B Instruct — free (recommended)"],
       ["google/gemma-4-31b-it:free", "Gemma 4 31B — free"],
       ["openai/gpt-oss-120b:free", "gpt-oss-120b — free"],
@@ -363,6 +364,32 @@ export function baseUrlFor(providerId, settings) {
 }
 
 // Selected model for this provider (falls back to the first default).
+// ----- "Hivey" smart auto-routing ------------------------------------------
+// One selectable pseudo-model that routes EACH task to the best OpenRouter model for the
+// job — cheap models for housekeeping, an affordable strong model for chat/code, premium
+// for heavy reasoning and the agent, and a premium image model — so big models (Opus) are
+// only spent when they're actually needed. All via the user's OpenRouter key.
+export const HIVEY_AUTO = "hivey/auto";
+export const HIVEY_TIERS = {
+  utility: "openrouter|google/gemini-2.5-flash-lite",        // titles, summaries, compaction
+  chat: "openrouter|deepseek/deepseek-chat-v3.1",            // everyday chat + most coding (cheap, strong)
+  agent: "openrouter|anthropic/claude-sonnet-4.6",           // best affordable agent (tools + reliability)
+  reasoning: "openrouter|anthropic/claude-opus-4.8",         // deep reasoning / strategy / complex
+  image: "openrouter|google/gemini-2.5-flash-image",         // premium image (Nano Banana)
+};
+export function isHivey(modelId) { return modelId === HIVEY_AUTO; }
+// Heuristic: a chat turn escalates to the premium reasoning model only when it looks hard.
+// Word PREFIXES (so "raisonner", "stratégie", "optimiser"… all match) — no trailing \b.
+const HIVEY_PREMIUM_RE = /\b(raisonn|r[ée]fl[ée]ch|reason|think hard|think step|strat[ée]g|architect|d[ée]montr|prove|theorem|optimis|algorith|complex|complexe|approfondi|deep.?dive|trade.?off|\baudit|refactor|[ée]tape par [ée]tape|step by step|plan d[ée]taill|en profondeur|d[ée]bogu|debug|benchmark|s[ée]curit|security|scalab)/i;
+export function hiveyTierFor(mode, text) {
+  if (mode === "image") return HIVEY_TIERS.image;
+  if (mode === "translate" || mode === "improve") return HIVEY_TIERS.utility;
+  if (mode === "agent") return HIVEY_TIERS.agent;
+  const t = text || "";
+  if (t.length > 1200 || HIVEY_PREMIUM_RE.test(t)) return HIVEY_TIERS.reasoning;
+  return HIVEY_TIERS.chat;
+}
+
 export function modelFor(providerId, settings) {
   const chosen = settings && settings.models && settings.models[providerId];
   if (chosen) return chosen;
