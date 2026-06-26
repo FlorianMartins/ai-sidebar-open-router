@@ -180,6 +180,13 @@ export async function getSettings() {
     s.agentModelResetMigrated = true;
     try { await browser.storage.local.set({ agentModel: "", agentModelResetMigrated: true }); } catch (_) {}
   }
+  // One-time: ensure Artifact mode is ON by default. Flip a stored false → true ONCE; the
+  // user can still turn it off afterwards (the flag prevents re-flipping).
+  if (s.artifacts === false && !s.artifactsOnMigrated) {
+    s.artifacts = true;
+    s.artifactsOnMigrated = true;
+    try { await browser.storage.local.set({ artifacts: true, artifactsOnMigrated: true }); } catch (_) {}
+  }
   return s;
 }
 

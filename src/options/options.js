@@ -89,7 +89,7 @@ function buildThemeControls() {
     sel.addEventListener("change", () => {
       curTheme = sel.value;
       curColors = {}; // a fresh theme starts from its own palette
-      syncColorPickers(); applyThemeLive();
+      syncColorPickers(); applyThemeLive(); saveColorsNow();
     });
   }
   const hasEyeDropper = typeof window !== "undefined" && "EyeDropper" in window;
@@ -97,6 +97,10 @@ function buildThemeControls() {
     const el = $(COL_IDS[k]);
     if (!el) continue;
     el.addEventListener("input", () => { curColors = { ...curColors, [k]: el.value }; applyThemeLive(); });
+    // Persist the FINAL picked colour immediately (not just via the 500ms debounce) so it
+    // can't be lost if Settings is closed right after picking — that was the "colours not
+    // kept on reopen" bug.
+    el.addEventListener("change", () => { curColors = { ...curColors, [k]: el.value }; saveColorsNow(); });
     // Eyedropper button: pick ANY colour on screen (e.g. Discord's). On Chromium it
     // uses the native EyeDropper API (one-click pick anywhere). On Firefox (no EyeDropper
     // API) it captures the screen and lets you click the colour on a frozen snapshot.
@@ -116,13 +120,13 @@ function buildThemeControls() {
         el.value = hex;
         curColors = { ...curColors, [k]: hex };
         applyThemeLive();
-        scheduleAutoSave();
+        saveColorsNow(); // persist immediately — the screen-capture flow can blur/close the page
       }
     });
     el.insertAdjacentElement("afterend", drop);
   }
   const reset = $("themeReset");
-  if (reset) reset.addEventListener("click", () => { curColors = {}; syncColorPickers(); applyThemeLive(); });
+  if (reset) reset.addEventListener("click", () => { curColors = {}; syncColorPickers(); applyThemeLive(); saveColorsNow(); });
   syncColorPickers();
 }
 
@@ -604,6 +608,10 @@ function collectSettings() {
 
 // Auto-save: persist on any change, debounced, WITHOUT the heavy rebuilds (so typing a
 // key isn't disrupted). The sidebar reacts live via its storage listener.
+// Persist theme + custom colours IMMEDIATELY (merge write — doesn't touch other settings).
+async function saveColorsNow() {
+  try { await setSettings({ theme: curTheme, themeColors: curColors }); } catch (_) {}
+}
 let autoSaveTimer = null;
 function scheduleAutoSave() {
   clearTimeout(autoSaveTimer);
