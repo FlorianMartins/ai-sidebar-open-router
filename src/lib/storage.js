@@ -30,8 +30,11 @@ const DEFAULTS = {
                    // live in a sandboxed frame. Off = code stays as plain copyable blocks.
   searchModel: "", // "providerId|modelId" used in web-search mode ("" = auto-pick a free/online model)
   agentMode: false, // allow the model to act inside the browser
-  agentModel: "", // "providerId|modelId" forced for agent mode ("" = use the selected model). Many free
-                  // models (e.g. Llama) can't call tools — let the user pick a tool-capable model here.
+  // Default agent model = a FREE, tool-capable model (Qwen3 Coder): the chat default
+  // (Gemma 4) is fine for chat, but the agent needs reliable tool/function calling and
+  // gpt-oss errors 400. Applied only when the user has OpenRouter connected; the user can
+  // override it in Settings. "" would mean "use the selected chat model".
+  agentModel: "openrouter|qwen/qwen3-coder:free",
   agentPermission: "auto", // "auto" (default) = run actions automatically, BUT very sensitive ones
                            // (download / reserve / book / delete / transfer / sign-up / install…)
                            // still ask for confirmation; "manual" = confirm EVERY state-changing action.
