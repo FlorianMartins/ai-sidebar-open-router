@@ -166,7 +166,11 @@ function seedToggles() {
   };
 }
 function blankSession(m) {
-  return { history: [], transcript: [], convId: newConversationId(), lastUserContent: "", lastRunMode: m, lastForceWeb: false, nodes: null, pageCtxKeys: new Set(), customTitle: "", importedSources: [], toggles: seedToggles() };
+  const toggles = seedToggles();
+  // Thinking is a CHAT-ONLY feature — never seed it on for Agent/Translate/Improve/etc.,
+  // so enabling it in Chat can't leak into the other tabs.
+  if (m !== "chat") toggles.thinking = false;
+  return { history: [], transcript: [], convId: newConversationId(), lastUserContent: "", lastRunMode: m, lastForceWeb: false, nodes: null, pageCtxKeys: new Set(), customTitle: "", importedSources: [], toggles };
 }
 // Visual persistence per tab: instead of re-deriving the DOM from `transcript`
 // (which can drop streamed/enhanced content and the compare bars), we DETACH the
@@ -207,7 +211,8 @@ function loadSessionToGlobals(m) {
 // Reflect a tab's own toggle states onto the composer checkboxes (per-tab toggles).
 function applyModeToggles(m) {
   const tg = getSession(m).toggles || (getSession(m).toggles = seedToggles());
-  els.thinking.checked = tg.thinking;
+  // Thinking only ever applies on the Chat tab (bulletproofs against any stale state).
+  els.thinking.checked = m === "chat" ? tg.thinking : false;
   els.artifactMode.checked = tg.artifacts;
   els.webSearch.checked = tg.webSearch;
   els.pageCtx.checked = tg.includePageContext;
@@ -1067,9 +1072,27 @@ async function extractPdfText(buf) {
   }
   return { text: text.trim(), pages: doc.numPages };
 }
+function attachIcon(a) { return a.type === "image" ? "🖼" : a.isPdf ? "📄" : "📎"; }
 function renderAttachStrip() {
   els.attachStrip.innerHTML = "";
   els.attachStrip.classList.toggle("hidden", attachments.length === 0);
+  if (attachments.length === 0) { closeContextPanel(); return; }
+  // 1–2 files: show them as normal chips. 3+ : collapse into ONE foldable "Context"
+  // chip you can open to view / rename / select / delete each file.
+  if (attachments.length > 2) {
+    const chip = document.createElement("div");
+    chip.className = "attach-chip context-chip";
+    const ic = document.createElement("span"); ic.textContent = "🗂"; chip.appendChild(ic);
+    const name = document.createElement("span"); name.className = "acn"; name.textContent = t("attach.context", { n: attachments.length });
+    chip.appendChild(name);
+    const caret = document.createElement("span"); caret.className = "ctx-caret"; caret.textContent = "▾";
+    chip.appendChild(caret);
+    chip.addEventListener("click", (e) => { e.stopPropagation(); toggleContextPanel(); });
+    els.attachStrip.appendChild(chip);
+    if (contextPanelOpen) renderContextPanel();
+    return;
+  }
+  closeContextPanel();
   attachments.forEach((a, i) => {
     const chip = document.createElement("div");
     chip.className = "attach-chip";
@@ -1085,7 +1108,130 @@ function renderAttachStrip() {
     els.attachStrip.appendChild(chip);
   });
 }
-function clearAttachments() { attachments = []; renderAttachStrip(); }
+function clearAttachments() { attachments = []; closeContextPanel(); renderAttachStrip(); }
+
+// ----- "Context" panel: manage a large set of attachments ------------------
+// When 3+ files are attached they collapse into one "Context (N)" chip. Clicking it
+// opens this panel where each file can be viewed, renamed, ticked (for bulk delete) or
+// removed individually.
+let contextPanelEl = null;
+let contextPanelOpen = false;
+function ensureContextPanel() {
+  if (contextPanelEl) return contextPanelEl;
+  contextPanelEl = document.createElement("div");
+  contextPanelEl.className = "ctx-panel hidden";
+  contextPanelEl.addEventListener("click", (e) => e.stopPropagation());
+  document.body.appendChild(contextPanelEl);
+  return contextPanelEl;
+}
+function toggleContextPanel() {
+  contextPanelOpen = !contextPanelOpen;
+  if (contextPanelOpen) renderContextPanel();
+  else closeContextPanel();
+}
+function closeContextPanel() {
+  contextPanelOpen = false;
+  if (contextPanelEl) contextPanelEl.classList.add("hidden");
+}
+function positionContextPanel(p) {
+  // Float it just above the attach strip, spanning the sidebar width.
+  const r = els.attachStrip.getBoundingClientRect();
+  p.style.left = "8px";
+  p.style.right = "8px";
+  p.style.bottom = Math.max(8, window.innerHeight - r.top + 6) + "px";
+}
+function renderContextPanel() {
+  const p = ensureContextPanel();
+  p.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "ctx-head";
+  const title = document.createElement("span");
+  title.className = "ctx-title";
+  title.textContent = t("attach.context", { n: attachments.length });
+  head.appendChild(title);
+  const delSel = document.createElement("button");
+  delSel.className = "ctx-delsel hidden";
+  delSel.addEventListener("click", () => {
+    const keep = [];
+    p.querySelectorAll(".ctx-row").forEach((row, i) => { if (!row.querySelector(".ctx-cb").checked) keep.push(attachments[i]); });
+    attachments = keep;
+    renderAttachStrip();
+    if (attachments.length > 2) renderContextPanel(); else closeContextPanel();
+  });
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "ctx-clear";
+  clearBtn.textContent = t("attach.clearAll");
+  clearBtn.addEventListener("click", () => { clearAttachments(); });
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "ctx-x";
+  closeBtn.textContent = "✕";
+  closeBtn.title = t("close.title");
+  closeBtn.addEventListener("click", () => closeContextPanel());
+  head.appendChild(delSel);
+  head.appendChild(clearBtn);
+  head.appendChild(closeBtn);
+  p.appendChild(head);
+
+  const updateDelSel = () => {
+    const n = p.querySelectorAll(".ctx-cb:checked").length;
+    delSel.classList.toggle("hidden", n === 0);
+    delSel.textContent = t("attach.removeSel", { n });
+  };
+
+  const list = document.createElement("div");
+  list.className = "ctx-list";
+  attachments.forEach((a, i) => {
+    const row = document.createElement("div");
+    row.className = "ctx-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.className = "ctx-cb";
+    cb.addEventListener("change", updateDelSel);
+    row.appendChild(cb);
+    const ic = document.createElement("span"); ic.className = "ctx-ic"; ic.textContent = attachIcon(a);
+    row.appendChild(ic);
+    const name = document.createElement("span");
+    name.className = "ctx-name"; name.textContent = a.name; name.title = a.name;
+    name.addEventListener("dblclick", () => startCtxRename(a, name, row));
+    row.appendChild(name);
+    const ren = document.createElement("button");
+    ren.className = "ctx-act"; ren.textContent = "✎"; ren.title = t("attach.rename");
+    ren.addEventListener("click", () => startCtxRename(a, name, row));
+    row.appendChild(ren);
+    const del = document.createElement("button");
+    del.className = "ctx-act"; del.textContent = "✕"; del.title = t("attach.remove");
+    del.addEventListener("click", () => {
+      attachments.splice(i, 1);
+      renderAttachStrip();
+      if (attachments.length > 2) renderContextPanel(); else closeContextPanel();
+    });
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+  p.appendChild(list);
+  positionContextPanel(p);
+  p.classList.remove("hidden");
+}
+function startCtxRename(a, nameEl, row) {
+  const input = document.createElement("input");
+  input.className = "ctx-rename";
+  input.value = a.name;
+  row.replaceChild(input, nameEl);
+  input.focus(); input.select();
+  let done = false;
+  const commit = (save) => {
+    if (done) return; done = true;
+    const v = input.value.trim();
+    if (save && v) a.name = v;
+    renderAttachStrip();
+    if (attachments.length > 2) { contextPanelOpen = true; renderContextPanel(); }
+  };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); commit(true); }
+    else if (e.key === "Escape") { e.preventDefault(); commit(false); }
+  });
+  input.addEventListener("blur", () => commit(true));
+}
 // Split the pending attachments into the image list (for vision) + a folded text
 // block (for any model) + render metadata for the user bubble.
 function takeAttachments() {
@@ -2602,6 +2748,10 @@ function wire() {
         !els.historyPanel.contains(e.target) && !els.historyBtn.contains(e.target)) els.historyPanel.classList.add("hidden");
     if (els.tabsPanel && !els.tabsPanel.classList.contains("hidden") &&
         !els.tabsPanel.contains(e.target) && !els.pageBar.contains(e.target)) els.tabsPanel.classList.add("hidden");
+    // Close the "Context" attachments panel when clicking outside it (the chip toggles it
+    // itself and stops propagation, so a click that reaches here is "outside").
+    if (contextPanelOpen && contextPanelEl && !contextPanelEl.contains(e.target) &&
+        !(e.target.closest && e.target.closest(".context-chip"))) closeContextPanel();
   });
   // Clicking on the WEB PAGE (or any other window) blurs the sidebar — close the
   // tab-picker then too, so it never lingers over the page the user moved to.

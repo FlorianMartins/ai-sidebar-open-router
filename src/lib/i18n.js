@@ -39,6 +39,10 @@ const EN = {
   // ----- Attachments + voice -------------------------------------------------
   "attach.title": "Attach files or images (used as context)",
   "attach.remove": "Remove",
+  "attach.context": "Context ({n})",
+  "attach.clearAll": "Clear all",
+  "attach.rename": "Rename",
+  "attach.removeSel": "Remove selected ({n})",
   "attach.reading": "Reading {name}…",
   "attach.tooBig": "{name} is too large (max {mb} MB).",
   "attach.zipAdded": "✓ {n} file(s) extracted from {name} and attached as context.",
@@ -502,6 +506,10 @@ const FR = {
   // ----- Pièces jointes + voix -----------------------------------------------
   "attach.title": "Joindre des fichiers ou images (utilisés comme contexte)",
   "attach.remove": "Retirer",
+  "attach.context": "Contexte ({n})",
+  "attach.clearAll": "Tout vider",
+  "attach.rename": "Renommer",
+  "attach.removeSel": "Retirer la sélection ({n})",
   "attach.reading": "Lecture de {name}…",
   "attach.tooBig": "{name} est trop volumineux (max {mb} Mo).",
   "attach.zipAdded": "✓ {n} fichier(s) extrait(s) de {name} et joint(s) au contexte.",
