@@ -1325,7 +1325,7 @@ async function pickElement() {
 // ----- Region capture (screenshot tool) -------------------------------------
 // "Capture an area": the user draws a rectangle over the page; we crop that region
 // from a screenshot and stage it as an IMAGE attachment (vision), so the next message
-// can ask about exactly what's on screen — like the Program Generator capture tool.
+// can ask about exactly what's on screen — like the Hivey Code capture tool.
 let capturing = false;
 function finishCapture() { capturing = false; pickTabId = null; els.captureRegion.classList.remove("active"); }
 function cancelCapture() {
@@ -1416,7 +1416,7 @@ function setMode(next) {
 }
 
 // ----- Code workspace (AI app builder launcher) -----------------------------
-// The builder (Bolt.diy / Program Generator) runs WebContainers, which require cross-origin
+// The builder (Bolt.diy / Hivey Code) runs WebContainers, which require cross-origin
 // isolation (COOP/COEP) and therefore cannot live inside an extension iframe — we
 // open it in a dedicated browser tab where preview / terminal / Expo Go all work.
 function updateCodeLauncher() {
@@ -1431,9 +1431,9 @@ function updateCodeLauncher() {
     els.codeAppUrlLabel.textContent = t("code.setUrl");
   }
 }
-// Program Generator and the sidebar are ONE service: hand the builder this sidebar's
+// Hivey Code and the sidebar are ONE service: hand the builder this sidebar's
 // OpenRouter key via the URL fragment (#sk=). The fragment is never sent to the
-// server; Program Generator's bridge copies it into its own cookie then strips it.
+// server; Hivey Code's bridge copies it into its own cookie then strips it.
 function codeAppLaunchUrl() {
   const url = (settings.codeAppUrl || "").trim();
   if (!url) return "";
@@ -1443,7 +1443,7 @@ function codeAppLaunchUrl() {
   const orKey = (settings.keys && settings.keys.openrouter) || "";
   if (orKey) params.push("sk=" + encodeURIComponent(orKey));
 
-  // Hand Program Generator the user's ACTIVE theme palette so its UI matches the
+  // Hand Hivey Code the user's ACTIVE theme palette so its UI matches the
   // sidebar's chosen colours (it applies these as CSS overrides and remembers them).
   try {
     const p = effectivePalette(settings.theme || "dark", settings.themeColors);

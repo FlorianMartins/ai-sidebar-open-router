@@ -140,8 +140,8 @@ const EN = {
   "term.interrupted": "■ interrupted",
   "term.modelLine": "● Model: {model}",
 
-  // ----- Code workspace (Program Generator launcher) -------------------------
-  "code.title": "Program Generator",
+  // ----- Code workspace (Hivey Code launcher) -------------------------
+  "code.title": "Hivey Code",
   "code.sub": "Build web &amp; mobile apps with AI: code generation, <b>live preview</b>, a built-in terminal and <b>Expo Go</b> to test on mobile. Self-hosted, and it shares this sidebar's OpenRouter key — one and the same service.",
   "code.open": "🚀 Open the workshop in a new tab",
   "code.notConfigured": "Workshop URL not configured",
@@ -391,7 +391,7 @@ const EN = {
   "opt.img.size": "Default size",
   "opt.img.p": "Uses the OpenAI-compatible <code>/images/generations</code> endpoint (and chat-image models like Gemini/Nano Banana on OpenRouter). Sizes depend on the model. Native <b>4K/1440p</b> isn't produced by these models — generate in HD then upscale.",
   "opt.code.h": "Code workshop",
-  "opt.code.p": "The sidebar's <b>Code</b> tab opens <b>Program Generator</b>, a self-hosted AI app workshop (based on <b>Bolt.diy</b>) in a <b>new tab</b>: code generation, live preview, built-in terminal and <b>Expo Go</b>. It forms <b>one service</b> with the sidebar: your OpenRouter key is passed automatically, no re-entry. Enter your instance URL. Leave empty to hide the launcher.",
+  "opt.code.p": "The sidebar's <b>Code</b> tab opens <b>Hivey Code</b>, a self-hosted AI app workshop (based on <b>Bolt.diy</b>) in a <b>new tab</b>: code generation, live preview, built-in terminal and <b>Expo Go</b>. It forms <b>one service</b> with the sidebar: your OpenRouter key is passed automatically, no re-entry. Enter your instance URL. Leave empty to hide the launcher.",
   "opt.code.url": "Code workshop URL",
   "opt.judge0.h": "Judge0 — compile & run",
   "opt.judge0.p": "Lets the sidebar compile & run code blocks in compiled languages (C, C++, Rust, Go, Python, Java…) and show the output. Uses a Judge0 instance.",
@@ -600,7 +600,7 @@ const FR = {
   "term.interrupted": "■ interrompu",
   "term.modelLine": "● Modèle : {model}",
 
-  "code.title": "Program Generator",
+  "code.title": "Hivey Code",
   "code.sub": "Construisez des apps web &amp; mobiles avec l'IA : génération de code, <b>preview live</b>, terminal intégré et <b>Expo Go</b> pour tester sur mobile. Auto-hébergé, il partage la clé OpenRouter de cette sidebar — un seul et même service.",
   "code.open": "🚀 Ouvrir l'atelier dans un nouvel onglet",
   "code.notConfigured": "URL de l'atelier non configurée",
@@ -839,7 +839,7 @@ const FR = {
   "opt.img.size": "Taille par défaut",
   "opt.img.p": "Utilise l'endpoint compatible OpenAI <code>/images/generations</code> (et les modèles image-chat comme Gemini/Nano Banana sur OpenRouter). Les tailles dépendent du modèle. Le <b>4K/1440p natif</b> n'est pas produit par ces modèles — générez en HD puis agrandissez.",
   "opt.code.h": "Atelier de code",
-  "opt.code.p": "L'onglet <b>Code</b> de la sidebar ouvre <b>Program Generator</b>, un atelier d'app IA auto-hébergé (basé sur <b>Bolt.diy</b>) dans un <b>nouvel onglet</b> : génération de code, aperçu live, terminal intégré et <b>Expo Go</b>. Il forme <b>un seul service</b> avec la sidebar : votre clé OpenRouter lui est transmise automatiquement, sans la ressaisir. Renseignez l'URL de votre instance. Laissez vide pour masquer le lanceur.",
+  "opt.code.p": "L'onglet <b>Code</b> de la sidebar ouvre <b>Hivey Code</b>, un atelier d'app IA auto-hébergé (basé sur <b>Bolt.diy</b>) dans un <b>nouvel onglet</b> : génération de code, aperçu live, terminal intégré et <b>Expo Go</b>. Il forme <b>un seul service</b> avec la sidebar : votre clé OpenRouter lui est transmise automatiquement, sans la ressaisir. Renseignez l'URL de votre instance. Laissez vide pour masquer le lanceur.",
   "opt.code.url": "URL de l'atelier de code",
   "opt.judge0.h": "Judge0 — compiler & exécuter",
   "opt.judge0.p": "Permet à la sidebar de compiler & exécuter les blocs de code en langages compilés (C, C++, Rust, Go, Python, Java…) et d'afficher la sortie. Utilise une instance Judge0.",

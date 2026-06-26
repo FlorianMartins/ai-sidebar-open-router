@@ -67,7 +67,7 @@ const DEFAULTS = {
   modelFilter: { tiers: ["free", "green", "yellow", "orange", "red"], providers: [], subproviders: [] },
 
   // ----- Code workspace ------------------------------------------------------
-  // The "Code" tab launches a self-hosted AI app builder ("Program Generator",
+  // The "Code" tab launches a self-hosted AI app builder ("Hivey Code",
   // a Bolt.diy instance) in a NEW BROWSER TAB. WebContainers there require
   // cross-origin isolation (COOP/COEP) and can't run inside an extension iframe,
   // so a new tab is the only robust integration. The builder is keyless server-
