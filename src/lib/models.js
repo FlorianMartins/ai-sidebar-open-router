@@ -81,7 +81,8 @@ export const PROVIDERS = {
     // flagships). Regenerated daily by scripts/update-models.mjs from OpenRouter.
     // <models:openrouter:start>
     models: [
-      ["google/gemma-4-31b-it:free", "Gemma 4 31B — free (recommended)"],
+      ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B Instruct — free (recommended)"],
+      ["google/gemma-4-31b-it:free", "Gemma 4 31B — free"],
       ["openai/gpt-oss-120b:free", "gpt-oss-120b — free"],
       ["openai/gpt-oss-20b:free", "gpt-oss-20b — free"],
       ["qwen/qwen3-coder:free", "Qwen3 Coder 480B A35B — free"],
@@ -93,7 +94,6 @@ export const PROVIDERS = {
       ["nvidia/nemotron-nano-12b-v2-vl:free", "Nemotron Nano 12B 2 VL — free"],
       ["nvidia/nemotron-nano-9b-v2:free", "Nemotron Nano 9B V2 — free"],
       ["cognitivecomputations/dolphin-mistral-24b-venice-edition:free", "Uncensored — free"],
-      ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B Instruct — free"],
       ["cohere/north-mini-code:free", "North Mini Code — free"],
       ["google/gemma-4-26b-a4b-it:free", "Gemma 4 26B A4B — free"],
       ["liquid/lfm-2.5-1.2b-instruct:free", "LFM2.5-1.2B-Instruct — free"],

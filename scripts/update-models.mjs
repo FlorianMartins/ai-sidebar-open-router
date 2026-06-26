@@ -30,14 +30,16 @@ const CHECK_ONLY = process.argv.includes("--check");
 // Ranked preference for FREE models (most capable / dependable first). Anything
 // free not listed here is still included afterwards (alphabetically), up to the cap.
 const FREE_PREF = [
-  // Gemma 4 first: gpt-oss-120b kept returning HTTP 400, so it's no longer the default.
+  // Llama 3.3 70B first = the chat default (well-rounded, strong FR). gpt-oss kept
+  // returning HTTP 400 so it's demoted; Gemma 4 stays high (Program Generator default).
+  "llama-3.3-70b",
   "gemma-4-31b", "gemma-4",
   "gpt-oss-120b", "gpt-oss-20b",
   "deepseek-chat-v3", "deepseek-v3", "deepseek-r1",
   "llama-4-maverick", "llama-4-scout",
   "qwen3", "qwen-2.5", "qwen2.5",
   "nemotron", "gemini-2.0-flash", "gemma-3", "gemma-2",
-  "mistral", "llama-3.3-70b", "phi-4",
+  "mistral", "phi-4",
 ];
 // Notable PAID flagships to surface in the fallback (when present in the live list).
 const PAID_PREF = [
