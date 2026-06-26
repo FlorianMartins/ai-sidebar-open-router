@@ -28,10 +28,14 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
+// Which artifact frames have actually reported back (i.e. their scripts RAN). Used
+// to detect a CSP-blocked preview and offer the "open in a tab" fallback.
+const reportedArtifacts = new Set();
 // Resize artifact iframes that report their own height.
 window.addEventListener("message", (e) => {
   const d = e.data;
   if (d && d.__artifact) {
+    reportedArtifacts.add(d.id);
     const f = document.querySelector(`iframe[data-aid="${d.id}"]`);
     if (f) f.style.height = Math.min(d.h + 8, 900) + "px";
   }
@@ -143,7 +147,31 @@ function renderPreview(slot, code, lang) {
   const f = makeFrame(srcdoc, { sandbox, initialHeight });
   slot.textContent = "";
   slot.appendChild(f);
+  // SVG has no scripts (nothing to report). For interactive artifacts, if the frame
+  // never reports back within a moment, its scripts were blocked by the extension CSP
+  // (some Firefox builds enforce it on framed documents). In that case surface a big
+  // "Run in a new tab" action — a TOP-LEVEL data: document runs on its own opaque
+  // origin with NO inherited CSP, so the artifact is fully playable there.
+  if (lang !== "svg") {
+    setTimeout(() => {
+      if (reportedArtifacts.has(id)) return; // scripts ran — nothing to do
+      f.style.display = "none"; // the embedded frame is script-dead — replace it
+      const note = document.createElement("div");
+      note.className = "artifact-note";
+      note.textContent = RUN_HINT();
+      const run = document.createElement("button");
+      run.className = "artifact-run";
+      run.textContent = "▶ " + RUN_LABEL();
+      run.addEventListener("click", () => openArtifact(code, lang));
+      slot.appendChild(note);
+      slot.appendChild(run);
+    }, 2600);
+  }
 }
+// Localised labels for the fallback "run in a tab" button (en/fr, picked from <html lang>).
+function isFr() { try { return (document.documentElement.lang || "").toLowerCase().startsWith("fr"); } catch (_) { return false; } }
+function RUN_LABEL() { return isFr() ? "Lancer dans un onglet" : "Run in a new tab"; }
+function RUN_HINT() { return isFr() ? "L'aperçu intégré est bloqué par la sécurité du navigateur — ouvre l'artifact jouable dans un onglet." : "The inline preview is blocked by the browser's security policy — open the playable artifact in a tab."; }
 
 async function renderMermaid(slot, code) {
   slot.textContent = "Rendu du diagramme…";
@@ -174,12 +202,21 @@ function toolbarButton(label, onClick) {
   return b;
 }
 
-// Open an artifact full-size in a new tab (its own blob: origin, fully isolated).
+// Open an artifact full-size in its OWN browser tab. We navigate to a TOP-LEVEL
+// `data:` document: it gets a fresh opaque origin with NO inherited CSP, so the
+// artifact's scripts run and it's fully interactive — unlike an embedded frame, whose
+// document inherits the strict extension CSP. tabs.create is the reliable path for an
+// extension (content-initiated top-level data: navigations are blocked, ours are not).
 function openArtifact(code, lang) {
   const doc = buildArtifactDoc(code, lang, "open");
-  const url = URL.createObjectURL(new Blob([doc], { type: "text/html" }));
-  window.open(url, "_blank", "noopener");
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const url = "data:text/html;charset=utf-8," + encodeURIComponent(doc);
+  try {
+    if (typeof browser !== "undefined" && browser.tabs && browser.tabs.create) {
+      browser.tabs.create({ url });
+      return;
+    }
+  } catch (_) {}
+  try { window.open(url, "_blank", "noopener"); } catch (_) {}
 }
 
 function artifactLabel(lang) {

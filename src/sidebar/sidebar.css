@@ -499,6 +499,14 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .code-wrap pre code { background: none; padding: 0; }
 .artifact-slot:empty { display: none; }
 .artifact-frame { width: 100%; border: 0; background: #fff; resize: vertical; overflow: auto; display: block; }
+.artifact-run {
+  display: block; width: 100%; margin: 0; padding: 12px; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: #fff; border: 0; border-top: 1px solid var(--border);
+  background: var(--grad); background-size: 200% 100%; animation: artifact-run-sheen 3s ease infinite;
+}
+.artifact-run:hover { filter: brightness(1.08); }
+.artifact-note { padding: 10px 12px; font-size: 12px; color: var(--muted); background: var(--panel-2); border-top: 1px solid var(--border); }
+@keyframes artifact-run-sheen { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 
 /* ----- Thinking block ----- */
 .think {
