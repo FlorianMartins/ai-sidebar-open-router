@@ -81,7 +81,9 @@ export const PROVIDERS = {
     // flagships). Regenerated daily by scripts/update-models.mjs from OpenRouter.
     // <models:openrouter:start>
     models: [
-      ["hivey/auto", "🐝 Hivey — smart auto-routing (best model per task)"],
+      ["hivey/auto", "🐝 Hivey — smart routing (best value per task)"],
+      ["hivey/free", "🐝 Hivey Free — best free models, $0"],
+      ["hivey/premium", "🐝 Hivey Premium — top models, cost-aware"],
       ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B Instruct — free (recommended)"],
       ["google/gemma-4-31b-it:free", "Gemma 4 31B — free"],
       ["openai/gpt-oss-120b:free", "gpt-oss-120b — free"],
@@ -370,52 +372,90 @@ export function baseUrlFor(providerId, settings) {
 // for heavy reasoning and the agent, and a premium image model — so big models (Opus) are
 // only spent when they're actually needed. All via the user's OpenRouter key.
 export const HIVEY_AUTO = "hivey/auto";
-export const HIVEY_TIERS = {
-  utility: "openrouter|google/gemini-2.5-flash-lite",        // titles, summaries, compaction
-  chat: "openrouter|deepseek/deepseek-chat-v3.1",            // everyday chat + most coding (cheap, strong)
-  agent: "openrouter|anthropic/claude-sonnet-4.6",           // best affordable agent (tools + reliability)
-  reasoning: "openrouter|anthropic/claude-opus-4.8",         // deep reasoning / strategy / complex
-  image: "openrouter|google/gemini-2.5-flash-image",         // premium image (Nano Banana)
+// ── Hivey: three smart-routing pseudo-models ────────────────────────────────
+// Each routes EVERY task to the best model of its budget. The `utility` tier is
+// PLUMBING ONLY (the LLM router + titles/summaries/compaction) — it never answers
+// the user, so its low cost is all that matters. `chat`=everyday (cheap), `code`=real
+// programming, `reasoning`=deep/hardest, `agent`=tools, `image`=picture gen.
+//  • free    → 100% free OpenRouter models ($0).
+//  • auto     → best value: cheap for everyday, premium only for code/reasoning.
+//  • premium → top models, yet cost-aware: trivial stays cheap, code uses Opus 4.8.
+export const HIVEY_VARIANTS = {
+  "hivey/auto": {
+    label: "🐝 Hivey — smart routing (best value per task)",
+    tiers: {
+      utility: "openrouter|google/gemini-2.5-flash-lite",
+      chat: "openrouter|deepseek/deepseek-chat-v3.1",
+      code: "openrouter|anthropic/claude-sonnet-4.6",
+      reasoning: "openrouter|anthropic/claude-opus-4.8",
+      agent: "openrouter|anthropic/claude-sonnet-4.6",
+      image: "openrouter|google/gemini-2.5-flash-image",
+    },
+  },
+  "hivey/free": {
+    label: "🐝 Hivey Free — best free models, $0",
+    tiers: {
+      utility: "openrouter|meta-llama/llama-3.2-3b-instruct:free",   // tiny fast classifier
+      chat: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
+      code: "openrouter|qwen/qwen3-coder:free",
+      reasoning: "openrouter|nvidia/nemotron-3-super-120b-a12b:free",
+      agent: "openrouter|qwen/qwen3-coder:free",                     // tool-capable free model
+      image: "openrouter|google/gemini-2.5-flash-image",             // no free image gen on OpenRouter — cheapest
+    },
+  },
+  "hivey/premium": {
+    label: "🐝 Hivey Premium — top models, cost-aware",
+    tiers: {
+      utility: "openrouter|google/gemini-2.5-flash-lite",            // small tasks stay cheap even here
+      chat: "openrouter|google/gemini-2.5-flash",                    // everyday + search: cheap & strong
+      code: "openrouter|anthropic/claude-opus-4.8",                  // code with Opus 4.8
+      reasoning: "openrouter|anthropic/claude-opus-4.8",
+      agent: "openrouter|anthropic/claude-sonnet-4.6",               // reliable tool agent
+      image: "openrouter|google/gemini-3-pro-image",                 // Nano Banana Pro (top image)
+    },
+  },
 };
-export function isHivey(modelId) { return modelId === HIVEY_AUTO; }
-// Heuristic: a chat turn escalates to the premium reasoning model only when it looks hard.
-// Word PREFIXES (so "raisonner", "stratégie", "optimiser"… all match) — no trailing \b.
-const HIVEY_PREMIUM_RE = /\b(raisonn|r[ée]fl[ée]ch|reason|think hard|think step|strat[ée]g|architect|d[ée]montr|prove|theorem|optimis|algorith|complex|complexe|approfondi|deep.?dive|trade.?off|\baudit|refactor|[ée]tape par [ée]tape|step by step|plan d[ée]taill|en profondeur|d[ée]bogu|debug|benchmark|s[ée]curit|security|scalab)/i;
-export function hiveyTierFor(mode, text) {
-  if (mode === "image") return HIVEY_TIERS.image;
-  if (mode === "translate" || mode === "improve") return HIVEY_TIERS.utility;
-  if (mode === "agent") return HIVEY_TIERS.agent;
+export function isHivey(modelId) { return !!(modelId && HIVEY_VARIANTS[modelId]); }
+export function hiveyVariant(modelId) { return HIVEY_VARIANTS[modelId] || HIVEY_VARIANTS[HIVEY_AUTO]; }
+export function hiveyTiers(modelId) { return hiveyVariant(modelId).tiers; }
+// Heuristic fallback (used only if the LLM router fails/stalls). Word PREFIXES so
+// "raisonner", "stratégie", "optimiser"… all match. Order: deep reasoning → reasoning,
+// else real coding → code, else everyday → chat.
+const HIVEY_HARD_RE = /\b(raisonn|r[ée]fl[ée]ch|reason|think hard|think step|strat[ée]g|architect|d[ée]montr|prove|theorem|optimis|algorith|complex|complexe|approfondi|deep.?dive|trade.?off|audit|[ée]tape par [ée]tape|step by step|plan d[ée]taill|en profondeur|benchmark|s[ée]curit|security|scalab|math|prouv)/i;
+const HIVEY_CODE_RE = /\b(code|coder|cod(e|er|ing)|programm|fonction|function|classe|class|m[ée]thode|method|bug|debug|d[ée]bogu|refactor|compil|script|react|vue\b|angular|svelte|next\.?js|node|python|javascript|typescript|\bjava\b|kotlin|swift|rust|golang|\bgo\b|\bc\+\+|csharp|\bc#|\bphp\b|\bsql\b|regex|\bapi\b|endpoint|stack ?trace|exception|impl[ée]ment|d[ée]ploie|deploy|tailwind|\bcss\b|\bhtml\b|component|composant)/i;
+export function hiveyTierFor(modelId, mode, text) {
+  const T = hiveyTiers(modelId);
+  if (mode === "image") return T.image;
+  if (mode === "translate" || mode === "improve") return T.utility;
+  if (mode === "agent") return T.agent;
   const t = text || "";
-  if (t.length > 1200 || HIVEY_PREMIUM_RE.test(t)) return HIVEY_TIERS.reasoning;
-  return HIVEY_TIERS.chat;
+  if (t.length > 1800 || HIVEY_HARD_RE.test(t)) return T.reasoning;
+  if (HIVEY_CODE_RE.test(t)) return T.code;
+  return T.chat;
 }
 
 // ── Hivey LLM router ────────────────────────────────────────────────────────
-// Instead of (or before) the regex, a single CHEAP model call classifies the
-// request difficulty, so each request genuinely uses several APIs: a tiny router
-// (flash-lite, ~$0.0001) decides, then the right-priced model answers — premium
-// tokens are spent only when the task is actually hard. The router NEVER answers.
-export const HIVEY_ROUTER_MODEL = HIVEY_TIERS.utility; // cheap + fast classifier
-export const HIVEY_ROUTER_LABELS = {
-  light: HIVEY_TIERS.utility,    // trivial → cheapest
-  normal: HIVEY_TIERS.chat,      // everyday → cheap/strong
-  hard: HIVEY_TIERS.reasoning,   // deep reasoning → premium (Opus)
-};
+// Before answering, a single CHEAP call (the variant's utility model) classifies the
+// request, so each request genuinely uses several APIs: a tiny router decides, then the
+// right model answers — premium models are spent only when the task warrants it. The
+// router NEVER answers the question itself.
+export function hiveyRouterModel(modelId) { return hiveyTiers(modelId).utility; }
 export const HIVEY_ROUTER_SYSTEM =
   "You are a routing classifier for an AI assistant. Read the user's last message " +
   "(with any context) and reply with EXACTLY ONE word, no punctuation, choosing the " +
-  "CHEAPEST tier that can still answer well:\n" +
-  "- light = trivial: greeting, small talk, reformat, translate, a short factual lookup, a one-line answer.\n" +
-  "- normal = everyday: explanations, summaries, straightforward code, general questions needing a solid but not deep answer.\n" +
-  "- hard = needs deep reasoning: multi-step problem solving, strategy/architecture, complex or algorithmic code, non-trivial debugging, math/proofs, security analysis, careful long-form analysis.\n" +
-  "Prefer 'normal' when unsure; reserve 'hard' for genuinely demanding tasks. Output ONLY one of: light, normal, hard. Never answer the question.";
-// Map the router's word to a tier model id; defaults to the everyday tier.
-export function hiveyTierForLabel(label) {
+  "right tier — cheap for simple work, premium only when the task warrants it:\n" +
+  "- normal = everyday chat: explanations, summaries, simple/boilerplate code, general questions, short factual answers, translations.\n" +
+  "- code = substantial programming: writing or refactoring real features, debugging non-trivial issues, multi-file or framework code (React/Node/etc.), API integration, reviewing code.\n" +
+  "- hard = deep reasoning beyond plain coding: system architecture, algorithms, performance optimization, math/proofs, security analysis, strategy, careful long-form analysis (and the very hardest coding problems).\n" +
+  "Prefer 'normal' when unsure; use 'code' for genuine programming tasks and 'hard' only for demanding reasoning. Output ONLY one of: normal, code, hard. Never answer the question.";
+// Map the router's word to a tier model id within the chosen Hivey variant.
+export function hiveyTierForLabel(modelId, label) {
+  const T = hiveyTiers(modelId);
   const k = String(label || "").toLowerCase().replace(/[^a-z]/g, "");
-  if (k.startsWith("light")) return HIVEY_ROUTER_LABELS.light;
-  if (k.startsWith("hard")) return HIVEY_ROUTER_LABELS.hard;
-  if (k.startsWith("normal")) return HIVEY_ROUTER_LABELS.normal;
-  return HIVEY_TIERS.chat;
+  if (k.startsWith("hard")) return T.reasoning;
+  if (k.startsWith("code")) return T.code;
+  if (k.startsWith("normal")) return T.chat;
+  return T.chat; // includes back-compat light/simple
 }
 
 export function modelFor(providerId, settings) {
