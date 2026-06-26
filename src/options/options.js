@@ -258,7 +258,18 @@ function buildCard(id) {
   if (meta.needsKey || id === "custom") {
     const lab = el("label", null, meta.needsKey ? t("opt.key.label") : t("opt.key.labelOpt"));
     const inp = el("input");
-    inp.type = "password";
+    // Masked TEXT field instead of type=password: API keys are not login credentials, so
+    // we don't want Firefox/Chrome to pop "save this password?" on the Settings page. CSS
+    // text-security masks the value; the password manager ignores non-password fields.
+    inp.type = "text";
+    inp.autocomplete = "off";
+    inp.spellcheck = false;
+    inp.setAttribute("autocapitalize", "off");
+    inp.setAttribute("autocorrect", "off");
+    inp.setAttribute("data-lpignore", "true"); // LastPass ignore
+    inp.setAttribute("data-1p-ignore", "true"); // 1Password ignore
+    inp.style.setProperty("-webkit-text-security", "disc");
+    inp.style.setProperty("text-security", "disc");
     inp.id = `key_${id}`;
     inp.placeholder = meta.keyHint || "key…";
     inp.value = (settings.keys && settings.keys[id]) || "";

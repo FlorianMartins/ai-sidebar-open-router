@@ -293,6 +293,17 @@ async function init() {
   const _urlConv = _params.get("conv");
   setMode(IS_TAB && CHAT_MODES.includes(_urlMode) ? _urlMode : (settings.mode || "chat"));
   if (IS_TAB && _urlConv) { try { await loadConversation(_urlConv); } catch (_) {} }
+  // Coming back from the full-screen tab (exitTab): land on the conversation we left.
+  if (!IS_TAB) {
+    try {
+      const { pgReturn } = await browser.storage.local.get("pgReturn");
+      if (pgReturn && Date.now() - pgReturn.ts < 15000) {
+        await browser.storage.local.remove("pgReturn");
+        if (CHAT_MODES.includes(pgReturn.mode) && pgReturn.mode !== mode) setMode(pgReturn.mode);
+        if (pgReturn.conv) await loadConversation(pgReturn.conv);
+      }
+    } catch (_) {}
+  }
   setupPageAwareness();
   autoListConnected();           // refresh available models in the background
   // Run a queued context-menu action whenever it appears — even if the sidebar was
@@ -1114,31 +1125,43 @@ function toggleRail() {
 
 // ----- Open in a full-screen tab --------------------------------------------
 // Open the sidebar full-screen ON the conversation/workspace the user is currently
-// looking at (the tab loads it from storage via ?mode= & ?conv=).
-async function openInTab() {
-  try { await saveCurrent(); } catch (_) {} // make sure the current thread is on disk first
+// looking at (the tab loads it from storage via ?mode= & ?conv=), and CLOSE the docked
+// sidebar. CRUCIAL: sidebarAction.close() only works synchronously from a user gesture,
+// so we run everything WITHOUT awaiting and call close() inside the same click tick.
+function openInTab() {
   let url = browser.runtime.getURL("src/sidebar/sidebar.html") + "?tab=1";
   if (mode) url += "&mode=" + encodeURIComponent(mode);
   if (convId) url += "&conv=" + encodeURIComponent(convId);
-  try { await browser.tabs.create({ url }); } catch (_) { window.open(url, "_blank", "noopener"); }
-  // Close the docked sidebar so we don't show the same UI twice (Firefox only API).
+  // The thread is already auto-saved after each turn; this just captures any last edit
+  // (fire-and-forget so we never lose the click gesture before close()).
+  try { saveCurrent(); } catch (_) {}
+  try { browser.tabs.create({ url }); } catch (_) { window.open(url, "_blank", "noopener"); }
   try { if (browser.sidebarAction && browser.sidebarAction.close) browser.sidebarAction.close(); } catch (_) {}
 }
-// Reverse of openInTab: re-open the docked sidebar and close this full-screen tab,
-// so the same "Agrandir" button toggles back. sidebarAction.open() must run inside
-// the click gesture (it's called first), so we await it before removing the tab.
-async function exitTab() {
-  try { await saveCurrent(); } catch (_) {}
-  try { if (browser.sidebarAction && browser.sidebarAction.open) await browser.sidebarAction.open(); } catch (_) {}
-  try {
-    const cr = (typeof chrome !== "undefined") ? chrome : null;
-    const sp = cr && cr["sidePanel"];
-    if (sp && sp.open) { const w = await browser.windows.getCurrent(); await sp.open({ windowId: w && w.id }); }
-  } catch (_) {}
-  try {
-    const tb = await browser.tabs.getCurrent();
-    if (tb) await browser.tabs.remove(tb.id);
-  } catch (_) { try { window.close(); } catch (_) {} }
+// Reverse of openInTab: re-open the docked sidebar and close this full-screen tab, so the
+// same "Agrandir" button toggles back. sidebarAction.open() MUST be called synchronously
+// inside the click gesture (FIRST, before any await); only then do we save + close the tab
+// (the tab stays alive until removed, so that work is safe to await).
+function exitTab() {
+  let opened = false;
+  try { if (browser.sidebarAction && browser.sidebarAction.open) { browser.sidebarAction.open(); opened = true; } } catch (_) {}
+  if (!opened) {
+    try {
+      const cr = (typeof chrome !== "undefined") ? chrome : null;
+      const sp = cr && cr["sidePanel"];
+      if (sp && sp.open) { sp.open({}).catch(() => {}); }
+    } catch (_) {}
+  }
+  // Hand the reopened sidebar the conversation we were on, so it lands back on it.
+  try { browser.storage.local.set({ pgReturn: { conv: convId, mode, ts: Date.now() } }); } catch (_) {}
+  saveCurrent()
+    .catch(() => {})
+    .finally(() => {
+      browser.tabs
+        .getCurrent()
+        .then((tb) => { if (tb) browser.tabs.remove(tb.id); })
+        .catch(() => { try { window.close(); } catch (_) {} });
+    });
 }
 
 // ----- Element picker -------------------------------------------------------
