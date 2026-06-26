@@ -81,9 +81,9 @@ export const PROVIDERS = {
     // flagships). Regenerated daily by scripts/update-models.mjs from OpenRouter.
     // <models:openrouter:start>
     models: [
-      ["hivey/auto", "🐝 Hivey — smart routing (best value per task)"],
-      ["hivey/free", "🐝 Hivey Free — best free models, $0"],
-      ["hivey/premium", "🐝 Hivey Premium — top models, cost-aware"],
+      ["hivey/auto", "🟢 🐝 Hivey"],
+      ["hivey/free", "🎁 🐝 Hivey Free"],
+      ["hivey/premium", "🔴 🐝 Hivey Premium"],
       ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B Instruct — free (recommended)"],
       ["google/gemma-4-31b-it:free", "Gemma 4 31B — free"],
       ["openai/gpt-oss-120b:free", "gpt-oss-120b — free"],
@@ -380,37 +380,47 @@ export const HIVEY_AUTO = "hivey/auto";
 //  • free    → 100% free OpenRouter models ($0).
 //  • auto     → best value: cheap for everyday, premium only for code/reasoning.
 //  • premium → top models, yet cost-aware: trivial stays cheap, code uses Opus 4.8.
+// Tiers per variant: utility=router+housekeeping (never user-facing), light=trivial
+// (kept cheap even in Premium), chat=everyday substantive answers (the BEST FORMATTER of
+// the budget), code=real programming, reasoning=deep/hardest, agent=tools, search=basic
+// web research, image=picture gen. `emoji`/`color` = the price dot shown in the picker.
 export const HIVEY_VARIANTS = {
   "hivey/auto": {
-    label: "🐝 Hivey — smart routing (best value per task)",
+    label: "Hivey", emoji: "🟢", color: "#34d399",
     tiers: {
       utility: "openrouter|google/gemini-2.5-flash-lite",
+      light: "openrouter|deepseek/deepseek-chat-v3.1",
       chat: "openrouter|deepseek/deepseek-chat-v3.1",
       code: "openrouter|anthropic/claude-sonnet-4.6",
       reasoning: "openrouter|anthropic/claude-opus-4.8",
       agent: "openrouter|anthropic/claude-sonnet-4.6",
+      search: "openrouter|google/gemini-2.5-flash",
       image: "openrouter|google/gemini-2.5-flash-image",
     },
   },
   "hivey/free": {
-    label: "🐝 Hivey Free — best free models, $0",
+    label: "Hivey Free", emoji: "🎁", color: "#34d399",
     tiers: {
       utility: "openrouter|meta-llama/llama-3.2-3b-instruct:free",   // tiny fast classifier
+      light: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       chat: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       code: "openrouter|qwen/qwen3-coder:free",
       reasoning: "openrouter|nvidia/nemotron-3-super-120b-a12b:free",
       agent: "openrouter|qwen/qwen3-coder:free",                     // tool-capable free model
+      search: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       image: "openrouter|google/gemini-2.5-flash-image",             // no free image gen on OpenRouter — cheapest
     },
   },
   "hivey/premium": {
-    label: "🐝 Hivey Premium — top models, cost-aware",
+    label: "Hivey Premium", emoji: "🔴", color: "#f87171",
     tiers: {
-      utility: "openrouter|google/gemini-2.5-flash-lite",            // small tasks stay cheap even here
-      chat: "openrouter|google/gemini-2.5-flash",                    // everyday + search: cheap & strong
+      utility: "openrouter|google/gemini-2.5-flash-lite",            // trivial housekeeping stays cheap
+      light: "openrouter|google/gemini-2.5-flash",                   // trivial answers: fast & cheap, still premium-grade
+      chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday answers: best response formatting
       code: "openrouter|anthropic/claude-opus-4.8",                  // code with Opus 4.8
       reasoning: "openrouter|anthropic/claude-opus-4.8",
       agent: "openrouter|anthropic/claude-sonnet-4.6",               // reliable tool agent
+      search: "openrouter|google/gemini-2.5-flash",                  // basic web research: fast & grounded
       image: "openrouter|google/gemini-3-pro-image",                 // Nano Banana Pro (top image)
     },
   },
@@ -443,19 +453,20 @@ export function hiveyRouterModel(modelId) { return hiveyTiers(modelId).utility; 
 export const HIVEY_ROUTER_SYSTEM =
   "You are a routing classifier for an AI assistant. Read the user's last message " +
   "(with any context) and reply with EXACTLY ONE word, no punctuation, choosing the " +
-  "right tier — cheap for simple work, premium only when the task warrants it:\n" +
-  "- normal = everyday chat: explanations, summaries, simple/boilerplate code, general questions, short factual answers, translations.\n" +
+  "cheapest tier that still answers well — premium only when the task warrants it:\n" +
+  "- light = trivial: greeting, small talk, a yes/no or one-line factual answer, simple reformat/translate.\n" +
+  "- normal = everyday substantive answer: explanations, summaries, general questions, simple/boilerplate code — anything where a clear, well-formatted answer matters.\n" +
   "- code = substantial programming: writing or refactoring real features, debugging non-trivial issues, multi-file or framework code (React/Node/etc.), API integration, reviewing code.\n" +
   "- hard = deep reasoning beyond plain coding: system architecture, algorithms, performance optimization, math/proofs, security analysis, strategy, careful long-form analysis (and the very hardest coding problems).\n" +
-  "Prefer 'normal' when unsure; use 'code' for genuine programming tasks and 'hard' only for demanding reasoning. Output ONLY one of: normal, code, hard. Never answer the question.";
+  "Prefer 'normal' when unsure; use 'light' only for genuinely trivial turns, 'code' for real programming, 'hard' for demanding reasoning. Output ONLY one of: light, normal, code, hard. Never answer the question.";
 // Map the router's word to a tier model id within the chosen Hivey variant.
 export function hiveyTierForLabel(modelId, label) {
   const T = hiveyTiers(modelId);
   const k = String(label || "").toLowerCase().replace(/[^a-z]/g, "");
   if (k.startsWith("hard")) return T.reasoning;
   if (k.startsWith("code")) return T.code;
-  if (k.startsWith("normal")) return T.chat;
-  return T.chat; // includes back-compat light/simple
+  if (k.startsWith("light") || k.startsWith("simple") || k.startsWith("trivial")) return T.light || T.chat;
+  return T.chat; // normal + anything unrecognised
 }
 
 export function modelFor(providerId, settings) {

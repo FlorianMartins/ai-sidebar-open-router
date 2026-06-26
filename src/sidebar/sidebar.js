@@ -575,14 +575,14 @@ function chatComboItems() {
   const out = [];
   for (const pid of providersToShow()) {
     if (pid === "openrouter" && settings.orModels && settings.orModels.length) {
-      // 🐝 Hivey smart-routing variants (free / auto / premium), pinned at the very top.
-      // auto first (the recommended default), then free, then premium.
+      // 🐝 Hivey smart-routing variants (auto / free / premium), pinned at the very top,
+      // each with its representative price dot (🎁 free, 🟢 value, 🔴 premium).
       for (const hid of ["hivey/auto", "hivey/free", "hivey/premium"]) {
         const v = HIVEY_VARIANTS[hid];
         if (!v) continue;
         out.push({
-          value: "openrouter|" + hid, label: v.label,
-          provider: "openrouter", subprovider: "hivey", tier: "free", color: "var(--accent)", group: "🐝 Hivey (recommended)",
+          value: "openrouter|" + hid, label: v.emoji + " 🐝 " + v.label,
+          provider: "openrouter", subprovider: "hivey", tier: "free", color: v.color, group: "🐝 Hivey (recommended)",
         });
       }
       const byVendor = {};
@@ -3442,13 +3442,20 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   let isolated = false;
   let badge = isHivey(sel.modelId) ? "🐝 " + prettifyORName({ id: turnSel.modelId }) : null;
   if (wantWeb && !agentMode) {
-    const ss = parseSel(settings.searchModel || defaultSearchModel(settings));
+    // 🐝 Hivey routes web search to its variant's `search` tier (fast, grounded);
+    // otherwise the user's configured search model.
+    const hid = isHivey(sel.modelId) ? sel.modelId : null;
+    const ss = hid ? parseSel(hiveyTiers(hid).search) : parseSel(settings.searchModel || defaultSearchModel(settings));
     if (ss.providerId && !currentKeyMissing(ss.providerId) &&
-        (ss.providerId !== sel.providerId || ss.modelId !== sel.modelId)) {
+        (ss.providerId !== turnSel.providerId || ss.modelId !== turnSel.modelId)) {
       turnSel = ss;
       isolated = true;
-      const lbl = PROVIDERS[ss.providerId] ? PROVIDERS[ss.providerId].label : ss.providerId;
-      badge = t("badge.web", { label: lbl, model: ss.modelId });
+      if (hid) {
+        badge = "🐝 " + prettifyORName({ id: ss.modelId }) + " · web";
+      } else {
+        const lbl = PROVIDERS[ss.providerId] ? PROVIDERS[ss.providerId].label : ss.providerId;
+        badge = t("badge.web", { label: lbl, model: ss.modelId });
+      }
     }
   }
 
