@@ -30,6 +30,8 @@ const CHECK_ONLY = process.argv.includes("--check");
 // Ranked preference for FREE models (most capable / dependable first). Anything
 // free not listed here is still included afterwards (alphabetically), up to the cap.
 const FREE_PREF = [
+  // Gemma 4 first: gpt-oss-120b kept returning HTTP 400, so it's no longer the default.
+  "gemma-4-31b", "gemma-4",
   "gpt-oss-120b", "gpt-oss-20b",
   "deepseek-chat-v3", "deepseek-v3", "deepseek-r1",
   "llama-4-maverick", "llama-4-scout",

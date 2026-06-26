@@ -74,18 +74,16 @@ function makeFrame(srcdoc, { sandbox, initialHeight }) {
   // pointer lock and popups so they behave like real apps.
   f.setAttribute("sandbox", sandbox || "");
   f.style.height = (initialHeight || 160) + "px";
-  // IMPORTANT: load from a blob: URL, NOT srcdoc. A `srcdoc` document INHERITS the
-  // embedder's Content-Security-Policy — and the extension page CSP is `script-src
-  // 'self'`, which silently blocks every <script> inside the generated artifact. That
-  // is why artifacts rendered as a lifeless "presentation page": the markup showed but
-  // nothing ran. A blob: navigation is a separate response with no CSP of its own, so
-  // the artifact's scripts execute while the sandbox still keeps it on an opaque origin.
-  const blob = new Blob([srcdoc], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  f.src = url;
-  // Revoke once loaded (the document is fully parsed by then); keep a short grace
-  // delay so slow first paints still have the source.
-  f.addEventListener("load", () => setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 2000));
+  // IMPORTANT: load from a `data:` URL — NOT srcdoc and NOT blob:.
+  //  - `srcdoc` documents INHERIT the embedder's CSP, and the extension page CSP is
+  //    `script-src 'self'`, which silently blocks every <script> in the artifact (the
+  //    markup shows but nothing runs → a lifeless "presentation page").
+  //  - `blob:` URLs created here are `blob:moz-extension://…` — they carry the EXTENSION
+  //    origin and therefore the SAME strict CSP, so they don't help.
+  //  - a `data:` URL gives the framed document a null/opaque origin with NO inherited
+  //    CSP, so its scripts (and remote libs like React) actually execute, while the
+  //    sandbox (no allow-same-origin) keeps it isolated from the extension and the page.
+  f.src = "data:text/html;charset=utf-8," + encodeURIComponent(srcdoc);
   return f;
 }
 

@@ -189,6 +189,11 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .panel-head .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .panel-head-actions { display: flex; align-items: center; gap: 4px; }
 .panel-head-actions .icon { width: 24px; height: 24px; font-size: 12px; }
+#tabsClear {
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  font-size: 11px; padding: 2px 9px; border-radius: 7px; cursor: pointer;
+}
+#tabsClear:hover { color: var(--text); border-color: var(--accent); }
 .link-btn { background: none; border: 0; color: var(--accent); font-size: 12px; padding: 2px 4px; }
 .link-btn:hover { text-decoration: underline; }
 
@@ -685,6 +690,33 @@ body.mode-code #confirmBar { display: none !important; }
 .sr-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text); font-weight: 600; }
 .sr-count { flex: 0 0 auto; font-size: 11px; min-width: 18px; text-align: center; padding: 1px 6px; border-radius: 9px; background: var(--accent); color: #fff; }
 .sr-snippet { font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ----- Agent: collapsible "Actions" block ---------------------------------- */
+.agent-actions {
+  align-self: flex-start; width: 100%; margin: 2px 0;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); overflow: hidden;
+}
+.agent-actions-sum {
+  display: flex; align-items: center; gap: 8px; padding: 8px 11px; cursor: pointer;
+  list-style: none; font-size: 12.5px; color: var(--muted); user-select: none;
+}
+.agent-actions-sum::-webkit-details-marker { display: none; }
+.agent-actions-label { flex: 1 1 auto; }
+.agent-actions.done .agent-actions-label { color: var(--text); }
+.agent-actions-caret { width: 14px; height: 14px; opacity: 0.6; transition: transform .15s ease; }
+.agent-actions[open] .agent-actions-caret { transform: rotate(90deg); }
+.agent-spin {
+  width: 12px; height: 12px; flex: 0 0 auto; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); border-top-color: var(--accent);
+  animation: agent-spin 0.8s linear infinite;
+}
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+.agent-actions-list { padding: 4px 11px 9px; border-top: 1px solid var(--border); }
+.agent-act { padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.agent-act:last-child { border-bottom: 0; }
+.agent-act-head { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--text); word-break: break-word; }
+.agent-act-res { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.agent-act-res.err { color: #e06c75; }
 
 /* ----- Thinking / waiting indicator (shown until the first token) ---------- */
 .pending-msg .typing { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); }

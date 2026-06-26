@@ -45,7 +45,10 @@
     <div id="tabsPanel" class="panel hidden">
       <div class="panel-head">
         <span class="muted" data-i18n="tabs.hint">Tick tabs to add them to the context</span>
-        <button id="tabsClose" class="icon tabs-close" data-i18n-title="close.title" title="Close"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        <div class="panel-head-actions">
+          <button id="tabsClear" class="hidden" data-i18n="tabs.clear" data-i18n-title="tabs.clearTitle" title="Deselect all tabs">Reset</button>
+          <button id="tabsClose" class="icon tabs-close" data-i18n-title="close.title" title="Close"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
       </div>
       <ul id="tabsList" class="tabslist"></ul>
     </div>

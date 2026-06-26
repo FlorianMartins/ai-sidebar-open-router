@@ -69,6 +69,7 @@ const els = {
   tabsPanel: $("tabsPanel"),
   tabsList: $("tabsList"),
   tabsClose: $("tabsClose"),
+  tabsClear: $("tabsClear"),
   messages: $("messages"),
   empty: $("empty"),
   emptyOnboard: $("emptyOnboard"),
@@ -150,9 +151,22 @@ let filterPersistTimer = null;
 // modes. We swap the live globals (history/transcript/convId/…) in and out of a
 // per-mode session whenever the workspace changes.
 const CHAT_MODES = ["chat", "agent", "translate", "improve", "image", "pdf"];
-const sessions = {}; // mode -> { history, transcript, convId, lastUserContent, lastRunMode, lastForceWeb }
+const sessions = {}; // mode -> { history, transcript, convId, lastUserContent, lastRunMode, lastForceWeb, toggles }
+// The composer toggles (Thinking / Artifacts / Web / Page) are PER-TAB: each workspace
+// keeps its own. We seed every new tab from the startup defaults (captured once, before
+// any user toggling) so turning Thinking on in Chat never leaks into Agent or the others.
+let initialToggles = null;
+function seedToggles() {
+  const src = initialToggles || settings || {};
+  return {
+    thinking: !!src.thinking,
+    artifacts: src.artifacts !== false,
+    webSearch: !!src.webSearch,
+    includePageContext: src.includePageContext !== false,
+  };
+}
 function blankSession(m) {
-  return { history: [], transcript: [], convId: newConversationId(), lastUserContent: "", lastRunMode: m, lastForceWeb: false, nodes: null, pageCtxKeys: new Set(), customTitle: "", importedSources: [] };
+  return { history: [], transcript: [], convId: newConversationId(), lastUserContent: "", lastRunMode: m, lastForceWeb: false, nodes: null, pageCtxKeys: new Set(), customTitle: "", importedSources: [], toggles: seedToggles() };
 }
 // Visual persistence per tab: instead of re-deriving the DOM from `transcript`
 // (which can drop streamed/enhanced content and the compare bars), we DETACH the
@@ -189,6 +203,15 @@ function loadSessionToGlobals(m) {
   const s = getSession(m);
   history = s.history; transcript = s.transcript; convId = s.convId;
   lastUserContent = s.lastUserContent; lastRunMode = s.lastRunMode; lastForceWeb = s.lastForceWeb;
+}
+// Reflect a tab's own toggle states onto the composer checkboxes (per-tab toggles).
+function applyModeToggles(m) {
+  const tg = getSession(m).toggles || (getSession(m).toggles = seedToggles());
+  els.thinking.checked = tg.thinking;
+  els.artifactMode.checked = tg.artifacts;
+  els.webSearch.checked = tg.webSearch;
+  els.pageCtx.checked = tg.includePageContext;
+  setArtifactsLive(tg.artifacts);
 }
 // Re-render the chat area from the active session's transcript (used when the
 // workspace changes), re-attaching the per-message "compare" bar on the last answer.
@@ -234,6 +257,14 @@ async function updateActionIcon() {
 async function init() {
   configureMarkdown();
   settings = await getSettings();
+  // Snapshot the toggle defaults ONCE, before anything can change them, so every
+  // workspace tab seeds from the same baseline and stays independent thereafter.
+  initialToggles = {
+    thinking: !!settings.thinking,
+    artifacts: settings.artifacts !== false,
+    webSearch: !!settings.webSearch,
+    includePageContext: settings.includePageContext !== false,
+  };
   applyTheme(settings.theme || "dark", settings.themeColors); // colour theme + custom overrides
   updateActionIcon();                  // tint the toolbar/sidebar icon to match the theme
   setLang(settings.uiLang || "en");   // English by default; other languages chosen in Settings
@@ -1327,7 +1358,7 @@ function setMode(next) {
   mode = next;
   settings.mode = next;
   setSettings({ mode: next });
-  if (CHAT_MODES.includes(next)) loadSessionToGlobals(next);
+  if (CHAT_MODES.includes(next)) { loadSessionToGlobals(next); applyModeToggles(next); }
   els.rail.querySelectorAll(".railtab").forEach((b) => b.classList.toggle("active", b.dataset.mode === next));
   // The Thinking/Web/Page toggles (now inside the composer) belong to Chat only.
   els.chatControls.classList.toggle("hidden", next !== "chat");
@@ -1476,6 +1507,19 @@ async function buildTabsList() {
     li.appendChild(lab);
     els.tabsList.appendChild(li);
   }
+  updateTabsClearBtn();
+}
+// Show the "Reset" (deselect-all) action only when at least one tab is ticked.
+function updateTabsClearBtn() {
+  if (!els.tabsClear) return;
+  els.tabsClear.classList.toggle("hidden", !(settings.selectedTabs || []).length);
+}
+// Untick every tab and drop the multi-tab context in one click.
+async function clearSelectedTabs() {
+  settings.selectedTabs = [];
+  await setSettings({ selectedTabs: [] });
+  els.tabsList.querySelectorAll("input[type=checkbox]").forEach((cb) => (cb.checked = false));
+  updateTabsClearBtn();
 }
 async function persistSelectedTabs() {
   const ids = [];
@@ -1484,6 +1528,7 @@ async function persistSelectedTabs() {
   });
   settings.selectedTabs = ids;
   await setSettings({ selectedTabs: ids });
+  updateTabsClearBtn();
 }
 async function selectedTabsContext() {
   // Any tab the user has ticked is always added to the context (no extra toggle).
@@ -2388,6 +2433,8 @@ function wire() {
   const bindToggle = (el, key, after) =>
     el.addEventListener("change", async () => {
       settings[key] = el.checked;
+      // Remember this state on the ACTIVE tab so each workspace stays independent.
+      if (CHAT_MODES.includes(mode)) getSession(mode).toggles[key] = el.checked;
       await setSettings({ [key]: el.checked });
       if (after) after();
     });
@@ -2467,6 +2514,7 @@ function wire() {
     ensurePagePermission().then((ok) => (ok ? captureRegion() : addMessage("error", t("region.perm"))));
   });
   els.tabsClose.addEventListener("click", (e) => { e.stopPropagation(); els.tabsPanel.classList.add("hidden"); });
+  els.tabsClear.addEventListener("click", (e) => { e.stopPropagation(); clearSelectedTabs(); });
   els.tabsList.addEventListener("change", persistSelectedTabs);
 
   // Live-refresh the multi-tab picker while it's open: open/close/finished-loading
@@ -2668,6 +2716,68 @@ async function shareText(text, btn) {
     try { await navigator.share({ text: payload }); return; } catch (_) {}
   }
   copyToClipboard(payload, btn);
+}
+
+// Agent mode: a single collapsible "Actions" block that hides the agent's individual
+// tool calls (for immersion) while keeping them consultable on click. Shows a live
+// "Action in progress…" header that turns into "Actions (N)" and collapses when done.
+function makeAgentActions() {
+  let wrap = null, list = null, label = null, currentRow = null, count = 0;
+  const ensure = () => {
+    if (wrap) return;
+    els.empty.classList.add("hidden");
+    wrap = document.createElement("details");
+    wrap.className = "agent-actions";
+    wrap.open = false; // hidden by default — the user expands to inspect
+    const sum = document.createElement("summary");
+    sum.className = "agent-actions-sum";
+    const spin = document.createElement("span");
+    spin.className = "agent-spin";
+    label = document.createElement("span");
+    label.className = "agent-actions-label";
+    label.textContent = t("agent.actionsRunning");
+    const caret = document.createElement("span");
+    caret.className = "agent-actions-caret i-ph:caret-right";
+    sum.appendChild(spin);
+    sum.appendChild(label);
+    sum.appendChild(caret);
+    list = document.createElement("div");
+    list.className = "agent-actions-list";
+    wrap.appendChild(sum);
+    wrap.appendChild(list);
+    els.messages.appendChild(wrap);
+    els.messages.scrollTop = els.messages.scrollHeight;
+  };
+  return {
+    start(call) {
+      ensure();
+      const row = document.createElement("div");
+      row.className = "agent-act";
+      const head = document.createElement("div");
+      head.className = "agent-act-head";
+      head.textContent = `→ ${call.name}(${JSON.stringify(call.input).slice(0, 80)})`;
+      row.appendChild(head);
+      list.appendChild(row);
+      currentRow = row;
+      els.messages.scrollTop = els.messages.scrollHeight;
+    },
+    end(call, out) {
+      if (!currentRow) return;
+      const res = document.createElement("div");
+      res.className = "agent-act-res" + (out && (out.blocked || out.error) ? " err" : "");
+      res.textContent = out && out.blocked ? `🛡 ${out.error}` : out && out.error ? `✗ ${out.error}` : "✓ ok";
+      currentRow.appendChild(res);
+      count++;
+    },
+    finish() {
+      if (!wrap) return;
+      wrap.classList.add("done");
+      const sp = wrap.querySelector(".agent-spin");
+      if (sp) sp.remove();
+      if (label) label.textContent = count ? t("agent.actionsDone", { n: count }) : t("agent.actionsNone");
+      wrap.open = false; // keep it folded once finished; the user can expand to review
+    },
+  };
 }
 function addThinkBlock() {
   els.empty.classList.add("hidden");
@@ -3133,13 +3243,25 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   const tools = activeTools({ agentMode });
   const pending = addPendingIndicator();
   const sink = makeSink(badge, els.thinking.checked, pending);
+  // Agent mode: collapse the agent's tool calls into ONE foldable "Actions" block for
+  // a cleaner, more immersive run — the steps are hidden but consultable on click.
+  const agentActs = agentMode ? makeAgentActions() : null;
   if (agentMode) agentGlowActiveTab(); // glow the page border while the agent works
   try {
     await runConversation({
       provider, system, history: turnHistory, tools,
       onText: sink.onText, onThink: sink.onThink,
-      onToolStart: (call) => { sink.finalize(); if (agentMode) agentGlowActiveTab(); addMessage("tool", `→ ${call.name}(${JSON.stringify(call.input).slice(0, 80)})`); },
-      onToolEnd: (call, out) => { if (agentMode) agentGlowActiveTab(); addMessage("tool", out && out.blocked ? `   🛡 ${out.error}` : `   ${out && out.error ? "✗ " + out.error : "✓ ok"}`); },
+      onToolStart: (call) => {
+        sink.finalize();
+        if (agentMode) agentGlowActiveTab();
+        if (agentActs) agentActs.start(call);
+        else addMessage("tool", `→ ${call.name}(${JSON.stringify(call.input).slice(0, 80)})`);
+      },
+      onToolEnd: (call, out) => {
+        if (agentMode) agentGlowActiveTab();
+        if (agentActs) agentActs.end(call, out);
+        else addMessage("tool", out && out.blocked ? `   🛡 ${out.error}` : `   ${out && out.error ? "✗ " + out.error : "✓ ok"}`);
+      },
       // Agent permission: "manual" confirms EVERY action; "auto" (Allow, default) runs
       // freely but still confirms VERY SENSITIVE actions (downloads, reserve/book,
       // delete, sign-up, install…). confirmFn is therefore available in BOTH modes; the
@@ -3161,6 +3283,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     showRunError(turnSel.providerId, e, turnSel.modelId);
   } finally {
     removePending(pending);
+    if (agentActs) agentActs.finish(); // collapse the Actions block + show the final count
     if (agentMode) clearAgentGlow(); // stop the page-border glow when the agent finishes
     endBusy();
     await saveSession(sess, sessMode, sel);

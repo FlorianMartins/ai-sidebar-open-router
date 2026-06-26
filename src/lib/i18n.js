@@ -29,6 +29,8 @@ const EN = {
   "tabs.btnTitle": "Choose which tabs to give the AI",
   "tabs.use": "Use the ticked tabs",
   "tabs.hint": "Tick tabs to add them to the context",
+  "tabs.clear": "Reset",
+  "tabs.clearTitle": "Deselect all tabs",
   "refresh.title": "Refresh",
   "expand.title": "Open in a full-screen tab",
   "expand.exit": "Back to the docked sidebar",
@@ -245,6 +247,9 @@ const EN = {
   "msg.edit": "Edit this prompt",
   "msg.copyAnswer": "Copy answer",
   "msg.share": "Share / copy",
+  "agent.actionsRunning": "Action in progress…",
+  "agent.actionsDone": "Actions ({n}) — click to review",
+  "agent.actionsNone": "Actions",
 
   // ----- Thinking / loading indicator ----------------------------------------
   "think.working": "Thinking",
@@ -483,6 +488,8 @@ const FR = {
   "tabs.btnTitle": "Choisir les onglets à donner à l'IA",
   "tabs.use": "Utiliser les onglets cochés",
   "tabs.hint": "Cochez les onglets à ajouter au contexte",
+  "tabs.clear": "Réinitialiser",
+  "tabs.clearTitle": "Tout désélectionner",
   "refresh.title": "Rafraîchir",
   "expand.title": "Ouvrir en plein écran (nouvel onglet)",
   "expand.exit": "Revenir à la barre latérale",
@@ -689,6 +696,9 @@ const FR = {
   "msg.edit": "Modifier ce prompt",
   "msg.copyAnswer": "Copier la réponse",
   "msg.share": "Partager / copier",
+  "agent.actionsRunning": "Action en cours…",
+  "agent.actionsDone": "Actions ({n}) — cliquer pour consulter",
+  "agent.actionsNone": "Actions",
 
   // ----- Thinking / loading indicator ----------------------------------------
   "think.working": "Réflexion",

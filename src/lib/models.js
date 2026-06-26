@@ -81,7 +81,8 @@ export const PROVIDERS = {
     // flagships). Regenerated daily by scripts/update-models.mjs from OpenRouter.
     // <models:openrouter:start>
     models: [
-      ["openai/gpt-oss-120b:free", "gpt-oss-120b — free (recommended)"],
+      ["google/gemma-4-31b-it:free", "Gemma 4 31B — free (recommended)"],
+      ["openai/gpt-oss-120b:free", "gpt-oss-120b — free"],
       ["openai/gpt-oss-20b:free", "gpt-oss-20b — free"],
       ["qwen/qwen3-coder:free", "Qwen3 Coder 480B A35B — free"],
       ["qwen/qwen3-next-80b-a3b-instruct:free", "Qwen3 Next 80B A3B Instruct — free"],
@@ -95,7 +96,6 @@ export const PROVIDERS = {
       ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B Instruct — free"],
       ["cohere/north-mini-code:free", "North Mini Code — free"],
       ["google/gemma-4-26b-a4b-it:free", "Gemma 4 26B A4B — free"],
-      ["google/gemma-4-31b-it:free", "Gemma 4 31B — free"],
       ["liquid/lfm-2.5-1.2b-instruct:free", "LFM2.5-1.2B-Instruct — free"],
       ["liquid/lfm-2.5-1.2b-thinking:free", "LFM2.5-1.2B-Thinking — free (reasoning)"],
       ["meta-llama/llama-3.2-3b-instruct:free", "Llama 3.2 3B Instruct — free"],
