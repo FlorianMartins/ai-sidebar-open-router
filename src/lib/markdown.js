@@ -83,18 +83,25 @@ function makeFrame(srcdoc, { sandbox, initialHeight }) {
   f.dataset.aid = id;
   f.setAttribute("sandbox", sandbox || "");
   f.style.height = (initialHeight || 160) + "px";
-  f.src = RUNNER_URL;
-  // Hand the runner the artifact once it's ready (on load, and again if it pings ready).
-  let sent = false;
-  const send = () => {
-    if (sent || !f.contentWindow) return;
-    try { f.contentWindow.postMessage({ type: "pg-artifact-render", html: srcdoc }, "*"); sent = true; } catch (_) {}
-  };
-  f.addEventListener("load", () => setTimeout(send, 20));
-  const onReady = (e) => {
-    if (e.source === f.contentWindow && e.data && e.data.type === "pg-artifact-ready") { send(); window.removeEventListener("message", onReady); }
-  };
-  window.addEventListener("message", onReady);
+  // Hand the artifact to the runner via the URL fragment (#h=…): it's read on load (no
+  // postMessage race) and a fragment is NEVER sent to the server. For a doc too big for a
+  // URL (e.g. a bundled lib), fall back to postMessage after the runner signals ready.
+  const encoded = encodeURIComponent(srcdoc);
+  if (encoded.length < 1800000) {
+    f.src = RUNNER_URL + "#h=" + encoded;
+  } else {
+    f.src = RUNNER_URL;
+    let sent = false;
+    const send = () => {
+      if (sent || !f.contentWindow) return;
+      try { f.contentWindow.postMessage({ type: "pg-artifact-render", html: srcdoc }, "*"); sent = true; } catch (_) {}
+    };
+    f.addEventListener("load", () => setTimeout(send, 20));
+    const onReady = (e) => {
+      if (e.data && e.data.type === "pg-artifact-ready") { send(); window.removeEventListener("message", onReady); }
+    };
+    window.addEventListener("message", onReady);
+  }
   return f;
 }
 
@@ -218,10 +225,14 @@ function toolbarButton(label, onClick) {
 // extension (content-initiated top-level data: navigations are blocked, ours are not).
 function openArtifact(code, lang) {
   const doc = buildArtifactDoc(code, lang, "open");
-  // Open the runner in a new tab (real https origin → scripts run), then hand it the
-  // artifact via postMessage. We can't navigate a tab to data:/blob: (Firefox blocks
-  // top-level data:, and blob:moz-extension keeps the strict CSP), so the runner is the
-  // reliable path here too. Retry briefly until the tab's runner is ready.
+  // Open the runner in a new tab (real https origin → scripts run). The artifact rides
+  // in the URL fragment, so it never hits the server. We can't navigate a tab to
+  // data:/blob: (Firefox blocks top-level data:; blob:moz-extension keeps the strict CSP).
+  const encoded = encodeURIComponent(doc);
+  if (encoded.length < 1800000) {
+    try { window.open(RUNNER_URL + "#h=" + encoded, "_blank"); return; } catch (_) {}
+  }
+  // Large doc → open the runner then postMessage it.
   let win = null;
   try { win = window.open(RUNNER_URL, "_blank"); } catch (_) {}
   if (!win) return;
@@ -231,13 +242,7 @@ function openArtifact(code, lang) {
     try { win.postMessage({ type: "pg-artifact-render", html: doc }, "*"); } catch (_) {}
     if (tries >= 25) clearInterval(iv);
   }, 180);
-  const ack = (e) => {
-    if (e.data && e.data.type === "pg-artifact-ready") {
-      try { win.postMessage({ type: "pg-artifact-render", html: doc }, "*"); } catch (_) {}
-    }
-  };
-  window.addEventListener("message", ack);
-  setTimeout(() => { clearInterval(iv); window.removeEventListener("message", ack); }, 5000);
+  setTimeout(() => clearInterval(iv), 5000);
 }
 
 function artifactLabel(lang) {

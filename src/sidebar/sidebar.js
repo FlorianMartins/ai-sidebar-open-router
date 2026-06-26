@@ -1438,6 +1438,9 @@ async function openCodeApp() {
   if (!(settings.codeAppUrl || "").trim()) return browser.runtime.openOptionsPage();
   const url = codeAppLaunchUrl();
   try { await browser.tabs.create({ url }); } catch (_) { window.open(url, "_blank", "noopener"); }
+  // The workshop now lives in its own tab — bring the sidebar back to Chat so the user
+  // isn't left staring at the launcher screen.
+  setMode("chat");
 }
 
 // ----- Page awareness -------------------------------------------------------
