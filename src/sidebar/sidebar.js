@@ -12,7 +12,7 @@ import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts, setArtifactsLive, setJudge0Config } from "../lib/markdown.js";
-import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS, HIVEY_AUTO, HIVEY_TIERS, hiveyTierFor, isHivey } from "../lib/models.js";
+import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS, HIVEY_AUTO, HIVEY_TIERS, hiveyTierFor, hiveyTierForLabel, HIVEY_ROUTER_MODEL, HIVEY_ROUTER_SYSTEM, isHivey } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
 import { applyTheme, effectivePalette } from "../lib/theme.js";
 import { t, setLang, applyDom } from "../lib/i18n.js";
@@ -653,6 +653,31 @@ function currentSelection() {
 function resolveHivey(sel, runMode, text) {
   if (!sel || !isHivey(sel.modelId)) return sel;
   return parseSel(hiveyTierFor(runMode || mode, text || ""));
+}
+// Async variant: for ambiguous chat/PDF turns it asks a TINY cheap model (the router)
+// which difficulty tier should answer, then routes there — so one request uses several
+// APIs (router + solver) and premium models are spent only when the task is truly hard.
+// Deterministic modes (image/agent/translate/improve) skip the call. Any failure or a
+// >4.5s stall falls back instantly to the local regex heuristic, so it never blocks.
+async function resolveHiveyRouted(sel, runMode, text, signal) {
+  if (!sel || !isHivey(sel.modelId)) return sel;
+  const m = runMode || mode;
+  if (m === "image" || m === "agent" || m === "translate" || m === "improve") {
+    return parseSel(hiveyTierFor(m, text || ""));
+  }
+  const fallback = parseSel(hiveyTierFor(m, text || ""));
+  if (currentKeyMissing("openrouter")) return fallback;
+  const probe = (text || "").slice(0, 4000);
+  if (!probe.trim()) return fallback;
+  try {
+    const routerSel = parseSel(HIVEY_ROUTER_MODEL);
+    const label = await Promise.race([
+      runUtilityCompletion(routerSel, HIVEY_ROUTER_SYSTEM, probe, signal),
+      new Promise((res) => setTimeout(() => res(""), 4500)),
+    ]);
+    if (label && label.trim()) return parseSel(hiveyTierForLabel(label));
+  } catch (_) { /* fall through to the heuristic */ }
+  return fallback;
 }
 // True when Hivey is the user's chosen text model. Also checks the persisted selection so
 // it stays true on the Image tab (which has its own picker) — Hivey routes EVERY tab.
@@ -3398,9 +3423,12 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   // history. (Skipped in agent mode, which keeps its tools on the chosen model.)
   // 🐝 Hivey: route this turn to the best model for the task (cheap for simple chat,
   // premium for hard reasoning, an affordable strong model for the agent, etc.).
-  let turnSel = resolveHivey(sel, mode, modelContent);
+  // Effective mode for Hivey: the agent flag wins, then the per-call runMode
+  // (translate/improve route deterministically; chat goes through the LLM router).
+  const hiveyMode = agentMode ? "agent" : runMode;
+  let turnSel = await resolveHiveyRouted(sel, hiveyMode, modelContent, abortController && abortController.signal);
   let isolated = false;
-  let badge = isHivey(sel.modelId) ? "🐝 " + prettifyORName(turnSel.modelId) : null;
+  let badge = isHivey(sel.modelId) ? "🐝 " + prettifyORName({ id: turnSel.modelId }) : null;
   if (wantWeb && !agentMode) {
     const ss = parseSel(settings.searchModel || defaultSearchModel(settings));
     if (ss.providerId && !currentKeyMissing(ss.providerId) &&

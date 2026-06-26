@@ -390,6 +390,34 @@ export function hiveyTierFor(mode, text) {
   return HIVEY_TIERS.chat;
 }
 
+// ── Hivey LLM router ────────────────────────────────────────────────────────
+// Instead of (or before) the regex, a single CHEAP model call classifies the
+// request difficulty, so each request genuinely uses several APIs: a tiny router
+// (flash-lite, ~$0.0001) decides, then the right-priced model answers — premium
+// tokens are spent only when the task is actually hard. The router NEVER answers.
+export const HIVEY_ROUTER_MODEL = HIVEY_TIERS.utility; // cheap + fast classifier
+export const HIVEY_ROUTER_LABELS = {
+  light: HIVEY_TIERS.utility,    // trivial → cheapest
+  normal: HIVEY_TIERS.chat,      // everyday → cheap/strong
+  hard: HIVEY_TIERS.reasoning,   // deep reasoning → premium (Opus)
+};
+export const HIVEY_ROUTER_SYSTEM =
+  "You are a routing classifier for an AI assistant. Read the user's last message " +
+  "(with any context) and reply with EXACTLY ONE word, no punctuation, choosing the " +
+  "CHEAPEST tier that can still answer well:\n" +
+  "- light = trivial: greeting, small talk, reformat, translate, a short factual lookup, a one-line answer.\n" +
+  "- normal = everyday: explanations, summaries, straightforward code, general questions needing a solid but not deep answer.\n" +
+  "- hard = needs deep reasoning: multi-step problem solving, strategy/architecture, complex or algorithmic code, non-trivial debugging, math/proofs, security analysis, careful long-form analysis.\n" +
+  "Prefer 'normal' when unsure; reserve 'hard' for genuinely demanding tasks. Output ONLY one of: light, normal, hard. Never answer the question.";
+// Map the router's word to a tier model id; defaults to the everyday tier.
+export function hiveyTierForLabel(label) {
+  const k = String(label || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (k.startsWith("light")) return HIVEY_ROUTER_LABELS.light;
+  if (k.startsWith("hard")) return HIVEY_ROUTER_LABELS.hard;
+  if (k.startsWith("normal")) return HIVEY_ROUTER_LABELS.normal;
+  return HIVEY_TIERS.chat;
+}
+
 export function modelFor(providerId, settings) {
   const chosen = settings && settings.models && settings.models[providerId];
   if (chosen) return chosen;
