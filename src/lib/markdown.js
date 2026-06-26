@@ -67,27 +67,34 @@ const REPORTER = (id) =>
   )},h:document.documentElement.scrollHeight},'*')}catch(e){}}` +
   `window.addEventListener('load',function(){__r();setTimeout(__r,300);setTimeout(__r,1200)});<\/script>`;
 
+// The artifact "runner": a tiny static page served from hivey.be (a real https origin
+// whose CSP we control and made permissive). Inside an extension page, EVERY local
+// scheme for a framed document (srcdoc / blob: / data:) inherits the extension's strict
+// `script-src 'self'` CSP, so the artifact's scripts never run. Framing a real https
+// origin escapes that: the runner's document uses hivey.be's permissive CSP. The
+// artifact HTML is handed to the runner LOCALLY via postMessage — it never touches the
+// server (only the static runner is fetched). The frame stays sandboxed (opaque origin),
+// so the artifact can't reach the extension, the page or the user's keys.
+const RUNNER_URL = "https://hivey.be/artifact-runner.html";
 function makeFrame(srcdoc, { sandbox, initialHeight }) {
   const id = "af" + ++afCounter;
   const f = document.createElement("iframe");
   f.className = "artifact-frame";
   f.dataset.aid = id;
-  // Artifacts run in a sandboxed iframe (opaque origin): isolated from the
-  // extension, the visited pages and the user's API keys. We deliberately do NOT
-  // grant allow-same-origin. For interactive apps/games we allow scripts, modals,
-  // pointer lock and popups so they behave like real apps.
   f.setAttribute("sandbox", sandbox || "");
   f.style.height = (initialHeight || 160) + "px";
-  // IMPORTANT: load from a `data:` URL — NOT srcdoc and NOT blob:.
-  //  - `srcdoc` documents INHERIT the embedder's CSP, and the extension page CSP is
-  //    `script-src 'self'`, which silently blocks every <script> in the artifact (the
-  //    markup shows but nothing runs → a lifeless "presentation page").
-  //  - `blob:` URLs created here are `blob:moz-extension://…` — they carry the EXTENSION
-  //    origin and therefore the SAME strict CSP, so they don't help.
-  //  - a `data:` URL gives the framed document a null/opaque origin with NO inherited
-  //    CSP, so its scripts (and remote libs like React) actually execute, while the
-  //    sandbox (no allow-same-origin) keeps it isolated from the extension and the page.
-  f.src = "data:text/html;charset=utf-8," + encodeURIComponent(srcdoc);
+  f.src = RUNNER_URL;
+  // Hand the runner the artifact once it's ready (on load, and again if it pings ready).
+  let sent = false;
+  const send = () => {
+    if (sent || !f.contentWindow) return;
+    try { f.contentWindow.postMessage({ type: "pg-artifact-render", html: srcdoc }, "*"); sent = true; } catch (_) {}
+  };
+  f.addEventListener("load", () => setTimeout(send, 20));
+  const onReady = (e) => {
+    if (e.source === f.contentWindow && e.data && e.data.type === "pg-artifact-ready") { send(); window.removeEventListener("message", onReady); }
+  };
+  window.addEventListener("message", onReady);
   return f;
 }
 
@@ -142,7 +149,9 @@ function buildArtifactDoc(code, lang, id) {
 function renderPreview(slot, code, lang) {
   const id = "af" + (afCounter + 1);
   const srcdoc = buildArtifactDoc(code, lang, id);
-  const sandbox = lang === "svg" ? "" : GAME_SANDBOX;
+  // The runner itself needs allow-scripts to receive the artifact (even SVG, whose own
+  // content has no scripts), so every artifact uses the same sandbox set.
+  const sandbox = GAME_SANDBOX;
   const initialHeight = lang === "svg" ? 260 : 380;
   const f = makeFrame(srcdoc, { sandbox, initialHeight });
   slot.textContent = "";
@@ -171,7 +180,7 @@ function renderPreview(slot, code, lang) {
 // Localised labels for the fallback "run in a tab" button (en/fr, picked from <html lang>).
 function isFr() { try { return (document.documentElement.lang || "").toLowerCase().startsWith("fr"); } catch (_) { return false; } }
 function RUN_LABEL() { return isFr() ? "Lancer dans un onglet" : "Run in a new tab"; }
-function RUN_HINT() { return isFr() ? "L'aperçu intégré est bloqué par la sécurité du navigateur — ouvre l'artifact jouable dans un onglet." : "The inline preview is blocked by the browser's security policy — open the playable artifact in a tab."; }
+function RUN_HINT() { return isFr() ? "L'aperçu intégré n'a pas pu démarrer — ouvre l'artifact jouable dans un onglet." : "The inline preview couldn't start — open the playable artifact in a tab."; }
 
 async function renderMermaid(slot, code) {
   slot.textContent = "Rendu du diagramme…";
@@ -209,14 +218,26 @@ function toolbarButton(label, onClick) {
 // extension (content-initiated top-level data: navigations are blocked, ours are not).
 function openArtifact(code, lang) {
   const doc = buildArtifactDoc(code, lang, "open");
-  const url = "data:text/html;charset=utf-8," + encodeURIComponent(doc);
-  try {
-    if (typeof browser !== "undefined" && browser.tabs && browser.tabs.create) {
-      browser.tabs.create({ url });
-      return;
+  // Open the runner in a new tab (real https origin → scripts run), then hand it the
+  // artifact via postMessage. We can't navigate a tab to data:/blob: (Firefox blocks
+  // top-level data:, and blob:moz-extension keeps the strict CSP), so the runner is the
+  // reliable path here too. Retry briefly until the tab's runner is ready.
+  let win = null;
+  try { win = window.open(RUNNER_URL, "_blank"); } catch (_) {}
+  if (!win) return;
+  let tries = 0;
+  const iv = setInterval(() => {
+    tries++;
+    try { win.postMessage({ type: "pg-artifact-render", html: doc }, "*"); } catch (_) {}
+    if (tries >= 25) clearInterval(iv);
+  }, 180);
+  const ack = (e) => {
+    if (e.data && e.data.type === "pg-artifact-ready") {
+      try { win.postMessage({ type: "pg-artifact-render", html: doc }, "*"); } catch (_) {}
     }
-  } catch (_) {}
-  try { window.open(url, "_blank", "noopener"); } catch (_) {}
+  };
+  window.addEventListener("message", ack);
+  setTimeout(() => { clearInterval(iv); window.removeEventListener("message", ack); }, 5000);
 }
 
 function artifactLabel(lang) {
