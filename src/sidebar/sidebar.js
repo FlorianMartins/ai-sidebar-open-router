@@ -11,7 +11,7 @@ import { getSettings, setSettings, onSettingsChanged } from "../lib/storage.js";
 import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../lib/providers.js";
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
-import { configureMarkdown, renderMarkdown, enhanceArtifacts, setArtifactsLive } from "../lib/markdown.js";
+import { configureMarkdown, renderMarkdown, enhanceArtifacts, setArtifactsLive, setJudge0Config } from "../lib/markdown.js";
 import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
 import { applyTheme, effectivePalette } from "../lib/theme.js";
@@ -257,6 +257,7 @@ async function updateActionIcon() {
 async function init() {
   configureMarkdown();
   settings = await getSettings();
+  setJudge0Config({ endpoint: settings.judge0Endpoint, key: settings.judge0Key });
   // Snapshot the toggle defaults ONCE, before anything can change them, so every
   // workspace tab seeds from the same baseline and stays independent thereafter.
   initialToggles = {
@@ -2630,11 +2631,13 @@ function wire() {
       updateActionIcon();              // keep the browser icon in sync with the theme
     }
     const connChanged = !!(changes.keys || changes.baseUrls || changes.localEnabled);
-    if (!connChanged && !changes.modelLists && !changes.orModels && !changes.codeAppUrl && !changes.orFreeOnly) return;
+    const j0Changed = !!(changes.judge0Endpoint || changes.judge0Key);
+    if (!connChanged && !changes.modelLists && !changes.orModels && !changes.codeAppUrl && !changes.orFreeOnly && !j0Changed) return;
     settings = await getSettings();
     updateImageNote();
     refreshModelUI();
     if (changes.codeAppUrl) updateCodeLauncher();
+    if (j0Changed) setJudge0Config({ endpoint: settings.judge0Endpoint, key: settings.judge0Key });
     if (connChanged) autoListConnected();
   });
 }

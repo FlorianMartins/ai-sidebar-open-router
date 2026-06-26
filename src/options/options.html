@@ -86,6 +86,16 @@
         <label><span data-i18n="opt.code.url">Code workshop URL</span>
           <input type="text" id="codeAppUrl" placeholder="https://code.hivey.be" />
         </label>
+        <h3 style="margin:18px 0 4px" data-i18n="opt.judge0.h">Judge0 — compile &amp; run</h3>
+        <p class="muted" data-i18n="opt.judge0.p">
+          Lets the sidebar compile &amp; run code blocks in compiled languages (C, C++, Rust, Go, Python, Java…) and show the output. Uses a Judge0 instance (the public ce.judge0.com, api.judge0.com, the RapidAPI endpoint, or your own).
+        </p>
+        <label><span data-i18n="opt.judge0.url">Judge0 endpoint</span>
+          <input type="text" id="judge0Endpoint" placeholder="https://ce.judge0.com" />
+        </label>
+        <label><span data-i18n="opt.judge0.key">Judge0 API key (optional)</span>
+          <input type="text" id="judge0Key" autocomplete="off" placeholder="RapidAPI key / X-Auth-Token" />
+        </label>
       </section>
 
       <section id="sec-lang">

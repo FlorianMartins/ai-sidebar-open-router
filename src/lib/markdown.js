@@ -12,6 +12,70 @@ let mermaidLibPromise = null;
 let artifactsLive = true;
 export function setArtifactsLive(on) { artifactsLive = on !== false; }
 
+// Judge0 (compile & run) config, set from the sidebar's settings. When an endpoint is
+// configured, code blocks in compiled languages get a "Compile & run" button.
+let judge0Cfg = { endpoint: "", key: "" };
+export function setJudge0Config(c) { judge0Cfg = { endpoint: (c && c.endpoint) || "", key: (c && c.key) || "" }; }
+
+// File-language → regex matching the Judge0 language name (resolved to a numeric id at
+// run time from the instance's /languages, so it works across Judge0 versions).
+const JUDGE0_LANGS = {
+  c: /^c\s*\(/i, cpp: /c\+\+/i, "c++": /c\+\+/i, cc: /c\+\+/i, cxx: /c\+\+/i,
+  rust: /rust/i, rs: /rust/i, go: /\bgo\b/i, golang: /\bgo\b/i,
+  python: /python/i, py: /python/i, java: /\bjava\b/i, csharp: /c#|mono|\.net/i, cs: /c#|mono|\.net/i,
+  ruby: /ruby/i, rb: /ruby/i, php: /php/i, kotlin: /kotlin/i, kt: /kotlin/i,
+  swift: /swift/i, dart: /dart/i, scala: /scala/i, haskell: /haskell/i, hs: /haskell/i,
+  perl: /perl/i, pl: /perl/i, lua: /lua/i, bash: /bash/i, sh: /bash/i, sql: /sql/i,
+  typescript: /typescript/i, ts: /typescript/i,
+};
+function judge0Headers(base, key) {
+  const h = {};
+  if (!key) return h;
+  if (/rapidapi\.com/i.test(base)) {
+    h["X-RapidAPI-Key"] = key;
+    try { h["X-RapidAPI-Host"] = new URL(base).host; } catch (_) {}
+  } else {
+    h["X-Auth-Token"] = key;
+  }
+  return h;
+}
+// Compile & run a code block on Judge0 and show the output inside `slot`.
+async function runJudge0Block(source, lang, slot, btn) {
+  const re = JUDGE0_LANGS[lang];
+  if (!judge0Cfg.endpoint || !re) return;
+  const base = judge0Cfg.endpoint.replace(/\/+$/, "");
+  const headers = judge0Headers(base, judge0Cfg.key);
+  const orig = btn ? btn.textContent : "";
+  if (btn) { btn.textContent = "…"; btn.disabled = true; }
+  slot.style.display = "";
+  slot.innerHTML = '<pre class="j0-out">' + escapeHtml(isFr() ? "Compilation & exécution sur Judge0…" : "Compiling & running on Judge0…") + "</pre>";
+  try {
+    const langs = await (await fetch(base + "/languages", { headers })).json();
+    const matches = (Array.isArray(langs) ? langs : []).filter((l) => re.test(l.name || "")).sort((a, b) => b.id - a.id);
+    if (!matches.length) throw new Error("no Judge0 language matches ." + lang);
+    const res = await fetch(base + "/submissions?base64_encoded=false&wait=true", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ source_code: source, language_id: matches[0].id, stdin: "" }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status + " " + res.statusText);
+    const r = await res.json();
+    let out = "";
+    if (r.compile_output) out += "[compile]\n" + r.compile_output + "\n";
+    if (r.stdout) out += r.stdout;
+    if (r.stderr) out += (out ? "\n" : "") + "[stderr]\n" + r.stderr;
+    if (!out && r.message) out = r.message;
+    out += "\n\n[" + ((r.status && r.status.description) || "?") + " · " + (r.time ?? "?") + "s · " + (r.memory ?? "?") + " KB · " + matches[0].name + "]";
+    slot.innerHTML = '<pre class="j0-out">' + escapeHtml(out) + "</pre>";
+  } catch (e) {
+    const msg = "Judge0: " + (e && e.message ? e.message : String(e)) +
+      (isFr() ? "\n(vérifiez l'endpoint/clé dans Réglages ; l'instance doit autoriser le CORS)" : "\n(check the endpoint/key in Settings; the instance must allow CORS)");
+    slot.innerHTML = '<pre class="j0-out err">' + escapeHtml(msg) + "</pre>";
+  } finally {
+    if (btn) { btn.textContent = orig; btn.disabled = false; }
+  }
+}
+
 function getMermaidLib() {
   if (!mermaidLibPromise) {
     mermaidLibPromise = fetch(browser.runtime.getURL("vendor/mermaid.min.js")).then((r) =>
@@ -332,6 +396,16 @@ export function enhanceArtifacts(container) {
       });
       bar.appendChild(toggle);
       bar.appendChild(toolbarButton("⤢ Ouvrir", () => openArtifact(code.textContent, lang)));
+    }
+
+    // Compiled-language code (C/C++/Rust/Go/Python/Java…): a "Compile & run" button that
+    // executes it on the configured Judge0 instance and shows the output in the slot.
+    if (!isArtifact && judge0Cfg.endpoint && JUDGE0_LANGS[lang]) {
+      const runBtn = toolbarButton("▶ " + (isFr() ? "Compiler & exécuter" : "Compile & run"), () => {
+        runJudge0Block(code.textContent, lang, slot, runBtn);
+      });
+      runBtn.classList.add("j0-run-btn");
+      bar.appendChild(runBtn);
     }
 
     const copy = toolbarButton("Copier", () => {

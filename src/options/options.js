@@ -540,6 +540,9 @@ async function load() {
   $("orFreeOnly").checked = settings.orFreeOnly !== false;
   $("agentPermission").value = settings.agentPermission || "manual";
   $("codeAppUrl").value = settings.codeAppUrl != null ? settings.codeAppUrl : "";
+  $("judge0Endpoint").value = settings.judge0Endpoint != null ? settings.judge0Endpoint : "";
+  $("judge0Key").value = settings.judge0Key != null ? settings.judge0Key : "";
+  $("judge0Key").style.setProperty("-webkit-text-security", "disc"); // mask without type=password
   $("blockPayments").checked = settings.blockPayments;
   $("saveHistory").checked = settings.saveHistory;
   $("includePageContext").checked = settings.includePageContext;
@@ -585,6 +588,8 @@ function collectSettings() {
     agentPermission: $("agentPermission").value,
     confirmActions: $("agentPermission").value !== "auto",
     codeAppUrl: $("codeAppUrl").value.trim(),
+    judge0Endpoint: $("judge0Endpoint").value.trim(),
+    judge0Key: $("judge0Key").value.trim(),
     blockPayments: $("blockPayments").checked,
     saveHistory: $("saveHistory").checked,
     includePageContext: $("includePageContext").checked,

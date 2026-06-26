@@ -76,6 +76,12 @@ const DEFAULTS = {
   // configurable; leave blank to hide the launcher.
   codeAppUrl: "https://code.hivey.be",
 
+  // ----- Judge0 (compile & run compiled languages in the sidebar) ------------
+  // C/C++/Rust/Go/Python/Java… can't run in the browser, so code blocks in those
+  // languages get a "Compile & run" button that sends them to a Judge0 instance.
+  judge0Endpoint: "https://ce.judge0.com",
+  judge0Key: "", // optional: RapidAPI key (rapidapi endpoints) or self-hosted X-Auth-Token
+
   // ----- Compare & history ---------------------------------------------------
   compareMode: false, // run the prompt on a second model side-by-side
   compareModel: "", // "providerId|modelId" of the second model
