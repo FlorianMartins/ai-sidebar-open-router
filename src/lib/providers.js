@@ -13,7 +13,10 @@
 import { PROVIDERS, baseUrlFor, modelFor, keyFor } from "./models.js";
 
 const MAX_TOKENS = 4096;
-const THINKING_BUDGET = 6000;
+// Extended-thinking budget for Claude when the user turns Thinking ON. It's opt-in,
+// so we give it real room to reason (Claude-style deep thinking) rather than a token
+// sip. budget_tokens must stay below max_tokens (enforced via MAX_TOKENS + budget).
+const THINKING_BUDGET = 10000;
 
 // Generic SSE reader: yields the payloads of "data:" lines.
 async function* sseData(response) {
@@ -208,7 +211,9 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkin
       // OFF we explicitly DISABLE reasoning for a fast, cheap, near-instant answer — and
       // only enable it when the user actually asks for it.
       if (providerId === "openrouter") {
-        body.reasoning = thinking ? { effort: "medium" } : { enabled: false };
+        // Thinking is opt-in, so when it's on we ask for HIGH effort (deeper Claude-style
+        // reasoning) rather than medium; off = fully disabled for a fast, cheap answer.
+        body.reasoning = thinking ? { effort: "high" } : { enabled: false };
       }
       if (tools && tools.length) {
         body.tools = tools.map((t) => ({
