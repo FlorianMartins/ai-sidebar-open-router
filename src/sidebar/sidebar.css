@@ -502,6 +502,8 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .code-lang { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: auto; font-weight: 700; }
 .code-btn { font-size: 11px; padding: 3px 9px; border-radius: 7px; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
 .code-btn:hover { border-color: var(--accent); }
+.code-btn-primary { background: var(--grad); color: #fff; border-color: transparent; font-weight: 600; }
+.code-btn-primary:hover { filter: brightness(1.08); border-color: transparent; }
 .code-wrap pre { margin: 0; padding: 10px; overflow-x: auto; background: #0c0e14; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
 .code-wrap pre code { background: none; padding: 0; }
 .artifact-slot:empty { display: none; }

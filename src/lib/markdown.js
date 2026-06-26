@@ -187,6 +187,7 @@ function renderPreview(slot, code, lang) {
 // Localised labels for the fallback "run in a tab" button (en/fr, picked from <html lang>).
 function isFr() { try { return (document.documentElement.lang || "").toLowerCase().startsWith("fr"); } catch (_) { return false; } }
 function RUN_LABEL() { return isFr() ? "Lancer dans un onglet" : "Run in a new tab"; }
+function OPEN_TAB_LABEL() { return isFr() ? "Ouvrir dans un onglet" : "Open in a new tab"; }
 function RUN_HINT() { return isFr() ? "L'aperçu intégré n'a pas pu démarrer — ouvre l'artifact jouable dans un onglet." : "The inline preview couldn't start — open the playable artifact in a tab."; }
 
 async function renderMermaid(slot, code) {
@@ -293,7 +294,14 @@ export function enhanceArtifacts(container) {
         toggle.textContent = showingCode ? "</> Code" : "👁 Aperçu";
       });
       bar.appendChild(toggle);
-      bar.appendChild(toolbarButton("⤢ Ouvrir", () => openArtifact(code.textContent, lang)));
+    }
+
+    // A clear, prominent "open in a new tab" button on EVERY artifact (apps, games, SVG,
+    // diagrams) — opens the full-size, fully interactive artifact in its own tab.
+    if (isArtifact) {
+      const openBtn = toolbarButton("↗ " + OPEN_TAB_LABEL(), () => openArtifact(code.textContent, lang));
+      openBtn.classList.add("code-btn-primary");
+      bar.appendChild(openBtn);
     }
 
     const copy = toolbarButton("Copier", () => {
