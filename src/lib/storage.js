@@ -30,11 +30,11 @@ const DEFAULTS = {
                    // live in a sandboxed frame. Off = code stays as plain copyable blocks.
   searchModel: "", // "providerId|modelId" used in web-search mode ("" = auto-pick a free/online model)
   agentMode: false, // allow the model to act inside the browser
-  // Default agent model = a FREE, tool-capable model (Qwen3 Coder): the chat default
-  // (Gemma 4) is fine for chat, but the agent needs reliable tool/function calling and
-  // gpt-oss errors 400. Applied only when the user has OpenRouter connected; the user can
-  // override it in Settings. "" would mean "use the selected chat model".
-  agentModel: "openrouter|qwen/qwen3-coder:free",
+  // "" = the agent uses the SAME model the user selected for chat (so picking Claude Opus
+  // 4.8 in chat also drives the agent). The chat default (Llama 3.3 70B) is tool-capable,
+  // so this works out of the box. The user can still PIN a specific agent model in Settings
+  // (e.g. a free tool-capable model) if their chosen chat model can't call tools.
+  agentModel: "",
   agentPermission: "auto", // "auto" (default) = run actions automatically, BUT very sensitive ones
                            // (download / reserve / book / delete / transfer / sign-up / install…)
                            // still ask for confirmation; "manual" = confirm EVERY state-changing action.
@@ -165,6 +165,14 @@ export async function getSettings() {
     s.orFreeOnly = false;
     s.orFreeOnlyMigrated = true;
     try { await browser.storage.local.set({ orFreeOnly: false, orFreeOnlyMigrated: true }); } catch (_) {}
+  }
+  // One-time: a previous build force-pinned the agent to Qwen3 Coder, which OVERRODE the
+  // model the user selected for chat. Clear that ONCE so the agent follows the selected
+  // model again (e.g. Claude Opus 4.8). A later explicit agent-model choice sticks.
+  if (s.agentModel === "openrouter|qwen/qwen3-coder:free" && !s.agentModelResetMigrated) {
+    s.agentModel = "";
+    s.agentModelResetMigrated = true;
+    try { await browser.storage.local.set({ agentModel: "", agentModelResetMigrated: true }); } catch (_) {}
   }
   return s;
 }
