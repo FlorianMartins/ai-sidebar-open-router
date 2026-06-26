@@ -502,8 +502,24 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .code-lang { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: auto; font-weight: 700; }
 .code-btn { font-size: 11px; padding: 3px 9px; border-radius: 7px; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
 .code-btn:hover { border-color: var(--accent); }
-.code-btn-primary { background: var(--grad); color: #fff; border-color: transparent; font-weight: 600; }
-.code-btn-primary:hover { filter: brightness(1.08); border-color: transparent; }
+
+/* Interactive artifact → clean "open in a new tab" card (instead of an embedded preview) */
+.artifact-open-card {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  padding: 14px 16px; border: 0; border-radius: 0; background: var(--panel);
+  color: var(--text); font: inherit; transition: background .12s ease;
+}
+.artifact-open-card:hover { background: var(--panel-2); }
+.artifact-open-icon {
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--grad); color: #fff; font-size: 14px;
+}
+.artifact-open-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.artifact-open-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.artifact-open-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.artifact-open-arrow { flex: 0 0 auto; font-size: 16px; color: var(--accent); opacity: .8; }
+.artifact-open-card:hover .artifact-open-arrow { opacity: 1; }
 .code-wrap pre { margin: 0; padding: 10px; overflow-x: auto; background: #0c0e14; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
 .code-wrap pre code { background: none; padding: 0; }
 .artifact-slot:empty { display: none; }

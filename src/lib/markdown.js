@@ -188,6 +188,35 @@ function renderPreview(slot, code, lang) {
 function isFr() { try { return (document.documentElement.lang || "").toLowerCase().startsWith("fr"); } catch (_) { return false; } }
 function RUN_LABEL() { return isFr() ? "Lancer dans un onglet" : "Run in a new tab"; }
 function OPEN_TAB_LABEL() { return isFr() ? "Ouvrir dans un onglet" : "Open in a new tab"; }
+
+// A clean call-to-action card shown in place of an interactive artifact: clicking it
+// opens the artifact full-size in a new tab (where it's fully interactive).
+function makeOpenCard(code, lang) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "artifact-open-card";
+  const icon = document.createElement("span");
+  icon.className = "artifact-open-icon";
+  icon.textContent = "▶";
+  const txt = document.createElement("span");
+  txt.className = "artifact-open-text";
+  const title = document.createElement("span");
+  title.className = "artifact-open-title";
+  title.textContent = OPEN_TAB_LABEL();
+  const sub = document.createElement("span");
+  sub.className = "artifact-open-sub";
+  sub.textContent = isFr() ? "Aperçu interactif en plein écran" : "Full-screen interactive preview";
+  txt.appendChild(title);
+  txt.appendChild(sub);
+  const arrow = document.createElement("span");
+  arrow.className = "artifact-open-arrow";
+  arrow.textContent = "↗";
+  card.appendChild(icon);
+  card.appendChild(txt);
+  card.appendChild(arrow);
+  card.addEventListener("click", () => openArtifact(code, lang));
+  return card;
+}
 function RUN_HINT() { return isFr() ? "L'aperçu intégré n'a pas pu démarrer — ouvre l'artifact jouable dans un onglet." : "The inline preview couldn't start — open the playable artifact in a tab."; }
 
 async function renderMermaid(slot, code) {
@@ -267,7 +296,8 @@ export function enhanceArtifacts(container) {
 
     const lang = ([...code.classList].find((c) => c.startsWith("language-")) || "").slice(9);
     // Artifact mode OFF → no live preview; everything stays a plain copyable code block.
-    const isPreviewable = artifactsLive && (INTERACTIVE.includes(lang) || lang === "svg");
+    const isInteractive = artifactsLive && INTERACTIVE.includes(lang); // html / jsx / …
+    const isPreviewable = isInteractive || (artifactsLive && lang === "svg");
     const isMermaid = artifactsLive && lang === "mermaid";
     const isArtifact = isPreviewable || isMermaid;
 
@@ -284,24 +314,24 @@ export function enhanceArtifacts(container) {
     slot.className = "artifact-slot";
 
     if (isPreviewable) {
-      // Auto-render the live artifact; offer a toggle back to the source code.
-      renderPreview(slot, code.textContent, lang);
       pre.style.display = "none";
+      if (isInteractive) {
+        // Interactive apps/games: instead of embedding the live preview, show a clean
+        // call-to-action card that opens the artifact full-size in a new tab (where it's
+        // fully interactive/playable).
+        slot.appendChild(makeOpenCard(code.textContent, lang));
+      } else {
+        // SVG: render inline (static, no tab needed).
+        renderPreview(slot, code.textContent, lang);
+      }
       const toggle = toolbarButton("</> Code", () => {
         const showingCode = pre.style.display !== "none";
         pre.style.display = showingCode ? "none" : "";
         slot.style.display = showingCode ? "" : "none";
-        toggle.textContent = showingCode ? "</> Code" : "👁 Aperçu";
+        toggle.textContent = showingCode ? "</> Code" : isInteractive ? "👁 Artifact" : "👁 Aperçu";
       });
       bar.appendChild(toggle);
-    }
-
-    // A clear, prominent "open in a new tab" button on EVERY artifact (apps, games, SVG,
-    // diagrams) — opens the full-size, fully interactive artifact in its own tab.
-    if (isArtifact) {
-      const openBtn = toolbarButton("↗ " + OPEN_TAB_LABEL(), () => openArtifact(code.textContent, lang));
-      openBtn.classList.add("code-btn-primary");
-      bar.appendChild(openBtn);
+      bar.appendChild(toolbarButton("⤢ Ouvrir", () => openArtifact(code.textContent, lang)));
     }
 
     const copy = toolbarButton("Copier", () => {
