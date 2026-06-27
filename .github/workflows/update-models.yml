@@ -24,6 +24,11 @@ jobs:
 
       - name: Refresh OpenRouter model catalogue
         run: node scripts/update-models.mjs
+        env:
+          # 🐝 Optional: set the OPENROUTER_API_KEY repo secret to enable the daily LLM
+          # curation of Hivey's per-role model assignments (hivey-models.js). Without it,
+          # the catalogue still refreshes; only the Hivey re-pick is skipped.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
       - name: Commit changes (if any)
         run: |

@@ -18,14 +18,17 @@
 //   node scripts/update-models.mjs --check    # exit 1 if it WOULD change (CI dry-run)
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MODELS_FILE = join(__dirname, "..", "src", "lib", "models.js");
+const HIVEY_FILE = join(__dirname, "..", "src", "lib", "hivey-models.js");
 const API = "https://openrouter.ai/api/v1/models";
 
 const CHECK_ONLY = process.argv.includes("--check");
+// 🐝 Hivey model curation runs only when an OpenRouter key is available (CI secret / env).
+const HIVEY_KEY = process.env.OPENROUTER_API_KEY || process.env.HIVEY_CURATE_KEY || "";
 
 // Ranked preference for FREE models (most capable / dependable first). Anything
 // free not listed here is still included afterwards (alphabetically), up to the cap.
@@ -115,6 +118,101 @@ function idsInBlock(src, startMark, endMark) {
   return [...block.matchAll(/\["([^"]+)",/g)].map((m) => m[1]);
 }
 
+// 🐝 Hivey curation: an LLM picks the best AVAILABLE model per role/budget when a clearly
+// better one ships, and writes src/lib/hivey-models.js. Only runs when an OpenRouter key is
+// present (the API has no benchmark field, so we lean on the curator model's knowledge).
+const HIVEY_CURATE_SYSTEM =
+  "You are the model CURATOR for 'Hivey', a smart router that assigns the best OpenRouter model per role and budget. " +
+  "You get the CURRENT assignments and the list of AVAILABLE OpenRouter models (id + price per 1M tokens). Return an " +
+  "UPDATED object with the SAME structure/keys where each value is the best AVAILABLE model id for that role at a similar " +
+  "budget, using your knowledge of model benchmarks and reputation. Rules: (1) use ONLY ids from the available list; " +
+  "(2) KEEP the current id unless a clearly better one exists at a comparable price for that role; (3) respect budgets: " +
+  "'hivey/free' = ONLY ':free' models, 'hivey/low-cost' = cheap (≤ ~$1/M output), 'hivey/balanced' = mid with strong models " +
+  "for code/reasoning, 'hivey/pro' = the very best; (4) keep provider specialists: code/architecture/writing→Claude, " +
+  "tests→Qwen coder, math→Qwen/DeepSeek-R1, search/extract/vision→Gemini, image→best image model; (5) output ONLY a JSON object.";
+
+async function curateHivey(all) {
+  if (!HIVEY_KEY) {
+    console.log("🐝 Hivey curation skipped (no OPENROUTER_API_KEY / HIVEY_CURATE_KEY).");
+    return;
+  }
+  let current;
+  try {
+    ({ HIVEY_MODELS: current } = await import(pathToFileURL(HIVEY_FILE).href + `?t=${Date.now()}`));
+  } catch (e) {
+    console.log("🐝 curation: cannot read hivey-models.js —", e.message);
+    return;
+  }
+  const catalogIds = new Set(all.map((m) => m.id));
+  const avail = all.map((m) => {
+    const inP = m.pricing && +m.pricing.prompt ? (+m.pricing.prompt * 1e6).toFixed(2) : "0";
+    const outP = m.pricing && +m.pricing.completion ? (+m.pricing.completion * 1e6).toFixed(2) : "0";
+    return `${m.id} ($${inP}/$${outP})`;
+  });
+  const user = `CURRENT:\n${JSON.stringify(current, null, 2)}\n\nAVAILABLE (id ($in/$out per 1M)):\n${avail.join("\n")}`;
+  let picked;
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${HIVEY_KEY}`,
+        "HTTP-Referer": "https://hivey.be",
+        "X-Title": "Hivey model curator",
+      },
+      body: JSON.stringify({
+        model: "anthropic/claude-opus-4.8",
+        messages: [
+          { role: "system", content: HIVEY_CURATE_SYSTEM },
+          { role: "user", content: user },
+        ],
+        temperature: 0,
+        max_tokens: 4000,
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (!res.ok) {
+      console.log("🐝 curation: API HTTP", res.status, (await res.text()).slice(0, 200));
+      return;
+    }
+    const j = await res.json();
+    const txt = j?.choices?.[0]?.message?.content || "";
+    picked = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+  } catch (e) {
+    console.log("🐝 curation failed:", e.message);
+    return;
+  }
+
+  // Merge: keep the structure; adopt a suggested id only if it's valid AND in the catalogue.
+  const merged = {};
+  let changes = 0;
+  for (const variant of Object.keys(current)) {
+    merged[variant] = {};
+    for (const role of Object.keys(current[variant])) {
+      const cur = current[variant][role];
+      const sug = picked && picked[variant] && picked[variant][role];
+      if (typeof sug === "string" && sug !== cur && catalogIds.has(sug)) {
+        merged[variant][role] = sug;
+        changes++;
+        console.log(`🐝 ${variant}.${role}: ${cur} → ${sug}`);
+      } else {
+        merged[variant][role] = cur;
+      }
+    }
+  }
+  if (!changes) {
+    console.log("🐝 Hivey curation: no improvements.");
+    return;
+  }
+  if (CHECK_ONLY) {
+    console.log(`🐝 Hivey curation WOULD change ${changes} assignment(s).`);
+    return;
+  }
+  const header = readFileSync(HIVEY_FILE, "utf8").split("// <hivey:start>")[0];
+  writeFileSync(HIVEY_FILE, `${header}// <hivey:start>\nexport const HIVEY_MODELS = ${JSON.stringify(merged, null, 2)};\n// <hivey:end>\n`);
+  console.log(`✓ hivey-models.js updated (${changes} change(s)).`);
+}
+
 async function main() {
   const res = await fetch(API, { headers: { "user-agent": "firefox-ai-sidebar-model-updater" } });
   if (!res.ok) throw new Error(`OpenRouter /models HTTP ${res.status}`);
@@ -138,6 +236,12 @@ async function main() {
   }
 
   const chatPairs = [];
+  // 🐝 Pin the Hivey smart-routing pseudo-models at the very top — they aren't real catalogue
+  // models, so they'd otherwise be stripped on every regeneration.
+  chatPairs.push(["hivey/free", "🎁 🐝 Hivey Free"]);
+  chatPairs.push(["hivey/low-cost", "🟢 🐝 Hivey Low-Cost"]);
+  chatPairs.push(["hivey/balanced", "🟡 🐝 Hivey"]);
+  chatPairs.push(["hivey/pro", "🟠 🐝 Hivey Pro"]);
   freePick.forEach((m, i) => {
     const r = isReasoning(m.id) ? " (reasoning)" : "";
     const rec = i === 0 ? " (recommended)" : "";
@@ -178,6 +282,9 @@ async function main() {
   if (added.length) console.log("ADDED:\n  " + added.join("\n  "));
   if (removed.length) console.log("REMOVED:\n  " + removed.join("\n  "));
   if (!added.length && !removed.length) console.log("No model changes.");
+
+  // 🐝 Re-curate the Hivey per-role model assignments against the fresh catalogue.
+  await curateHivey(all);
 
   if (CHECK_ONLY) {
     if (changed) { console.error("models.js is out of date (run without --check)."); process.exit(1); }

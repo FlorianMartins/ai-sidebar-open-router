@@ -10,6 +10,8 @@
 // LM Studio, self-hosted servers…) speak the OpenAI dialect, so a single generic
 // client covers them all, parameterised only by `baseUrl` + `apiKey`.
 
+import { HIVEY_MODELS } from "./hivey-models.js";
+
 export const PROVIDERS = {
   anthropic: {
     label: "Claude (Anthropic)",
@@ -390,94 +392,19 @@ export const HIVEY_AUTO = HIVEY_DEFAULT; // back-compat alias for old imports
 const HIVEY_ALIASES = { "hivey/auto": "hivey/low-cost", "hivey/premium": "hivey/pro" };
 // Each variant maps the SAME capability keys to the best model of its budget — leaning on
 // the strength of each provider (Gemini→search/extract, Claude→code/writing, Qwen→tests,
-// DeepSeek-R1→math) while staying in the variant's price range.
+// DeepSeek-R1→math) while staying in the variant's price range. The actual model ids live in
+// hivey-models.js (AUTO-CURATED daily to track the best available model per role); here we
+// just wrap them with the "openrouter|" provider prefix and attach the label/colour.
+function orTiers(m) {
+  const o = {};
+  for (const k in m) o[k] = "openrouter|" + m[k];
+  return o;
+}
 export const HIVEY_VARIANTS = {
-  "hivey/free": {
-    label: "Hivey Free", emoji: "🎁", color: "#34d399",
-    tiers: {
-      router: "openrouter|meta-llama/llama-3.3-70b-instruct:free",   // dispatcher (best free classifier)
-      utility: "openrouter|meta-llama/llama-3.2-3b-instruct:free",   // housekeeping (titles/summaries/verify)
-      light: "openrouter|meta-llama/llama-3.2-3b-instruct:free",
-      chat: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
-      code: "openrouter|qwen/qwen3-coder:free",
-      test: "openrouter|qwen/qwen3-coder:free",
-      reasoning: "openrouter|nvidia/nemotron-3-super-120b-a12b:free",
-      math: "openrouter|qwen/qwq-32b:free",                          // Qwen QwQ = math/reasoning specialist
-      creative: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
-      extract: "openrouter|meta-llama/llama-3.2-3b-instruct:free",
-      vision: "openrouter|nvidia/nemotron-nano-12b-v2-vl:free",      // free multimodal (image input)
-      verify: "openrouter|meta-llama/llama-3.3-70b-instruct:free",   // fact-checker
-      agent: "openrouter|qwen/qwen3-coder:free",                     // tool-capable free model
-      search: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
-      image: "openrouter|google/gemini-2.5-flash-image",             // no free image gen on OpenRouter — cheapest
-    },
-  },
-  "hivey/low-cost": {
-    label: "Hivey Low-Cost", emoji: "🟢", color: "#34d399",
-    tiers: {
-      router: "openrouter|deepseek/deepseek-chat-v3.1",             // dispatcher (cheap, decent classifier)
-      utility: "openrouter|google/gemini-2.5-flash-lite",
-      light: "openrouter|deepseek/deepseek-chat-v3.1",
-      chat: "openrouter|deepseek/deepseek-chat-v3.1",
-      code: "openrouter|deepseek/deepseek-chat-v3.1",
-      test: "openrouter|qwen/qwen3-coder:free",                     // Qwen = strong, free, great at tests
-      reasoning: "openrouter|deepseek/deepseek-r1-0528",            // cheap strong reasoner
-      math: "openrouter|qwen/qwq-32b",                             // Qwen QwQ = math/reasoning specialist
-      creative: "openrouter|deepseek/deepseek-chat-v3.1",
-      extract: "openrouter|google/gemini-2.5-flash-lite",
-      vision: "openrouter|google/gemini-2.5-flash-lite",           // Gemini multimodal (image input)
-      verify: "openrouter|deepseek/deepseek-chat-v3.1",            // fact-checker
-      agent: "openrouter|deepseek/deepseek-chat-v3.1",
-      search: "openrouter|google/gemini-2.5-flash-lite",           // Gemini for search/grounding
-      image: "openrouter|google/gemini-2.5-flash-image",
-    },
-  },
-  "hivey/balanced": {
-    label: "Hivey", emoji: "🟡", color: "#fbbf24",
-    // Claude Sonnet 4.6 does the substantive heavy lifting (always ≥ Low-Cost, and a
-    // mis-route still lands on a strong model); specialised cheaper models take what their
-    // provider is best at (Gemini search/extract, Qwen tests, R1 math). Opus = dispatcher.
-    tiers: {
-      router: "openrouter|anthropic/claude-opus-4.8",               // smart dispatcher
-      utility: "openrouter|google/gemini-2.5-flash-lite",            // housekeeping (cheap)
-      light: "openrouter|google/gemini-2.5-flash",                   // trivial answers (cheap but capable)
-      chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday substantive answers
-      code: "openrouter|anthropic/claude-sonnet-4.6",                // Claude = best code
-      test: "openrouter|qwen/qwen3-coder:free",                     // Qwen = tests
-      reasoning: "openrouter|anthropic/claude-sonnet-4.6",
-      math: "openrouter|qwen/qwq-32b",                             // Qwen QwQ = math/reasoning specialist
-      creative: "openrouter|anthropic/claude-sonnet-4.6",           // Claude = best writing
-      extract: "openrouter|google/gemini-2.5-flash",               // Gemini = fast structured extraction
-      vision: "openrouter|google/gemini-2.5-flash",               // Gemini multimodal (image input)
-      verify: "openrouter|google/gemini-2.5-flash",               // fact-checker
-      agent: "openrouter|anthropic/claude-sonnet-4.6",
-      search: "openrouter|google/gemini-2.5-flash",                  // Gemini = search; Sonnet analyses
-      image: "openrouter|google/gemini-2.5-flash-image",
-    },
-  },
-  "hivey/pro": {
-    label: "Hivey Pro", emoji: "🟠", color: "#fb923c",
-    tiers: {
-      router: "openrouter|anthropic/claude-opus-4.8",               // smart dispatcher
-      utility: "openrouter|google/gemini-2.5-flash-lite",            // housekeeping stays cheap
-      light: "openrouter|google/gemini-2.5-flash",
-      chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday: best response formatting
-      code: "openrouter|anthropic/claude-opus-4.8",                  // code with Opus 4.8
-      // Code pipeline: Opus DESIGNS the solution, a cheaper reliable model WRITES it.
-      codePlanner: "openrouter|anthropic/claude-opus-4.8",
-      codeWriter: "openrouter|anthropic/claude-sonnet-4.6",
-      test: "openrouter|anthropic/claude-sonnet-4.6",               // reliable premium tests
-      reasoning: "openrouter|anthropic/claude-opus-4.8",
-      math: "openrouter|qwen/qwq-32b",                             // Qwen QwQ = math specialist (Opus verifies)
-      creative: "openrouter|anthropic/claude-sonnet-4.6",           // Claude = best writing
-      extract: "openrouter|google/gemini-2.5-flash",               // Gemini = fast structured extraction
-      vision: "openrouter|google/gemini-2.5-pro",                  // Gemini 2.5 Pro = top vision
-      verify: "openrouter|anthropic/claude-sonnet-4.6",            // strong fact-checker
-      agent: "openrouter|anthropic/claude-sonnet-4.6",               // reliable tool agent
-      search: "openrouter|google/gemini-2.5-flash",                  // Gemini = search; Opus/Sonnet analyses
-      image: "openrouter|google/gemini-3-pro-image",                 // Nano Banana Pro (top image)
-    },
-  },
+  "hivey/free": { label: "Hivey Free", emoji: "🎁", color: "#34d399", tiers: orTiers(HIVEY_MODELS["hivey/free"]) },
+  "hivey/low-cost": { label: "Hivey Low-Cost", emoji: "🟢", color: "#34d399", tiers: orTiers(HIVEY_MODELS["hivey/low-cost"]) },
+  "hivey/balanced": { label: "Hivey", emoji: "🟡", color: "#fbbf24", tiers: orTiers(HIVEY_MODELS["hivey/balanced"]) },
+  "hivey/pro": { label: "Hivey Pro", emoji: "🟠", color: "#fb923c", tiers: orTiers(HIVEY_MODELS["hivey/pro"]) },
 };
 // Extra capability regexes for the heuristic fallback (used only if the dispatcher fails).
 const HIVEY_TEST_RE = /\b(test unitaire|tests? unitaires|unit ?test|pytest|jest|vitest|mocha|junit|test ?case|couverture de test|écris des tests|write tests?)\b/i;
