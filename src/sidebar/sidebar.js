@@ -677,16 +677,17 @@ async function resolveHiveyRouted(sel, runMode, text, signal) {
   if (m === "image") return { sel: parseSel(T.image), tierKey: "image" };
   if (m === "agent") return { sel: fix(parseSel(T.agent)), tierKey: "agent" };
   if (m === "translate" || m === "improve") return { sel: fix(parseSel(T.utility)), tierKey: "utility" };
-  // Chat/PDF: ask the cheap router which tier should answer; fall back to the heuristic.
+  // Chat/PDF: the dispatcher (smartest model of the budget) picks the tier; fall back to
+  // the heuristic if it fails/stalls. A small probe keeps the dispatch call cheap & fast.
   let key = hiveyHeuristicKey(text || "");
   if (!currentKeyMissing("openrouter")) {
-    const probe = (text || "").slice(0, 4000);
+    const probe = (text || "").slice(0, 2000);
     if (probe.trim()) {
       try {
         const routerSel = fix(parseSel(hiveyRouterModel(hid)));
         const label = await Promise.race([
           runUtilityCompletion(routerSel, HIVEY_ROUTER_SYSTEM, probe, signal),
-          new Promise((res) => setTimeout(() => res(""), 4500)),
+          new Promise((res) => setTimeout(() => res(""), 7000)),
         ]);
         if (label && label.trim()) key = hiveyLabelKey(label);
       } catch (_) { /* keep the heuristic key */ }

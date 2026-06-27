@@ -392,7 +392,8 @@ export const HIVEY_VARIANTS = {
   "hivey/free": {
     label: "Hivey Free", emoji: "🎁", color: "#34d399",
     tiers: {
-      utility: "openrouter|meta-llama/llama-3.2-3b-instruct:free",   // tiny fast classifier
+      router: "openrouter|meta-llama/llama-3.3-70b-instruct:free",   // dispatcher (best free classifier)
+      utility: "openrouter|meta-llama/llama-3.2-3b-instruct:free",   // housekeeping (titles/summaries/verify)
       light: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       chat: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       code: "openrouter|qwen/qwen3-coder:free",
@@ -405,6 +406,7 @@ export const HIVEY_VARIANTS = {
   "hivey/low-cost": {
     label: "Hivey Low-Cost", emoji: "🟢", color: "#34d399",
     tiers: {
+      router: "openrouter|deepseek/deepseek-chat-v3.1",             // dispatcher (cheap, decent classifier)
       utility: "openrouter|google/gemini-2.5-flash-lite",
       light: "openrouter|deepseek/deepseek-chat-v3.1",
       chat: "openrouter|deepseek/deepseek-chat-v3.1",
@@ -417,10 +419,14 @@ export const HIVEY_VARIANTS = {
   },
   "hivey/balanced": {
     label: "Hivey", emoji: "🟡", color: "#fbbf24",
+    // Sonnet 4.6 does ALL the substantive work (so it's always ≥ Low-Cost, and a
+    // mis-routed turn still lands on a strong model); cheap models only handle trivial
+    // and repetitive work. Opus 4.8 is the dispatcher that allocates each turn.
     tiers: {
-      utility: "openrouter|google/gemini-2.5-flash-lite",
-      light: "openrouter|google/gemini-2.5-flash-lite",
-      chat: "openrouter|google/gemini-2.5-flash",                    // affordable, fast, strong everyday
+      router: "openrouter|anthropic/claude-opus-4.8",               // smart dispatcher
+      utility: "openrouter|google/gemini-2.5-flash-lite",            // housekeeping (cheap)
+      light: "openrouter|google/gemini-2.5-flash",                   // trivial answers (cheap but capable)
+      chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday substantive answers
       code: "openrouter|anthropic/claude-sonnet-4.6",
       reasoning: "openrouter|anthropic/claude-sonnet-4.6",
       agent: "openrouter|anthropic/claude-sonnet-4.6",
@@ -431,7 +437,8 @@ export const HIVEY_VARIANTS = {
   "hivey/pro": {
     label: "Hivey Pro", emoji: "🟠", color: "#fb923c",
     tiers: {
-      utility: "openrouter|google/gemini-2.5-flash-lite",            // repetitive work stays cheap
+      router: "openrouter|anthropic/claude-opus-4.8",               // smart dispatcher
+      utility: "openrouter|google/gemini-2.5-flash-lite",            // housekeeping stays cheap
       light: "openrouter|google/gemini-2.5-flash",
       chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday: best response formatting
       code: "openrouter|anthropic/claude-opus-4.8",                  // code with Opus 4.8
@@ -480,21 +487,21 @@ export function hiveyTierFor(modelId, mode, text) {
   return T.chat;
 }
 
-// ── Hivey LLM router ────────────────────────────────────────────────────────
-// Before answering, a single CHEAP call (the variant's utility model) classifies the
-// request, so each request genuinely uses several APIs: a tiny router decides, then the
-// right model answers — premium models are spent only when the task warrants it. The
-// router NEVER answers the question itself.
-export function hiveyRouterModel(modelId) { return hiveyTiers(modelId).utility; }
+// ── Hivey LLM router (the "dispatcher") ─────────────────────────────────────
+// Before answering, the variant's `router` model — the SMARTEST model of the budget
+// (Claude Opus 4.8 on the paid tiers) — classifies the request, so the right model
+// answers and money is spent where it buys performance. The router NEVER answers.
+export function hiveyRouterModel(modelId) { const T = hiveyTiers(modelId); return T.router || T.utility; }
 export const HIVEY_ROUTER_SYSTEM =
-  "You are a routing classifier for an AI assistant. Read the user's last message " +
-  "(with any context) and reply with EXACTLY ONE word, no punctuation, choosing the " +
-  "cheapest tier that still answers well — premium only when the task warrants it:\n" +
-  "- light = trivial: greeting, small talk, a yes/no or one-line factual answer, simple reformat/translate.\n" +
-  "- normal = everyday substantive answer: explanations, summaries, general questions, simple/boilerplate code — anything where a clear, well-formatted answer matters.\n" +
-  "- code = substantial programming: writing or refactoring real features, debugging non-trivial issues, multi-file or framework code (React/Node/etc.), API integration, reviewing code.\n" +
-  "- hard = deep reasoning beyond plain coding: system architecture, algorithms, performance optimization, math/proofs, security analysis, strategy, careful long-form analysis (and the very hardest coding problems).\n" +
-  "Prefer 'normal' when unsure; use 'light' only for genuinely trivial turns, 'code' for real programming, 'hard' for demanding reasoning. Output ONLY one of: light, normal, code, hard. Never answer the question.";
+  "You are the DISPATCHER of a team of AI models. Read the user's last message (with any " +
+  "context) and pick the cheapest model tier that will produce a GENUINELY CORRECT, high-" +
+  "quality answer — never downgrade a task that needs real capability. Reply with EXACTLY " +
+  "ONE word, no punctuation:\n" +
+  "- light = truly trivial: greeting, small talk, a yes/no or one-line factual answer, a simple reformat/translation.\n" +
+  "- normal = everyday substantive answer: explanations, summaries, general questions, advice — NO real programming.\n" +
+  "- code = ANY task that involves writing, completing, fixing, reviewing or reasoning about source code, however small (functions, components, scripts, games, algorithms in code, debugging). When in doubt between normal and code, choose code.\n" +
+  "- hard = deep non-code reasoning: system architecture, hard algorithms/math/proofs, performance optimization, security analysis, multi-step strategy, careful long analysis.\n" +
+  "Correctness first, cost second. Output ONLY one of: light, normal, code, hard. Never answer the question.";
 // Map the router's word to a tier model id within the chosen Hivey variant.
 export function hiveyTierForLabel(modelId, label) {
   const T = hiveyTiers(modelId);
