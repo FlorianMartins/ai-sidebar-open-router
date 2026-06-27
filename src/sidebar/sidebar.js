@@ -657,7 +657,9 @@ function currentSelection() {
 // (mode + a quick complexity heuristic). Anything else passes through unchanged.
 function resolveHivey(sel, runMode, text) {
   if (!sel || !isHivey(sel.modelId)) return sel;
-  return parseSel(hiveyTierFor(sel.modelId, runMode || mode, text || ""));
+  const m = runMode || mode;
+  const r = parseSel(hiveyTierFor(sel.modelId, m, text || ""));
+  return (sel.modelId === "hivey/free" && m !== "image") ? ensureUsableFree(r) : r;
 }
 // Async variant: for ambiguous chat/PDF turns it asks a TINY cheap model (the router)
 // which difficulty tier should answer, then routes there — so one request uses several
@@ -669,16 +671,19 @@ async function resolveHiveyRouted(sel, runMode, text, signal) {
   const hid = sel.modelId; // which Hivey variant (free / low-cost / balanced / pro)
   const T = hiveyTiers(hid);
   const m = runMode || mode;
+  // Free variant: guarantee the chosen text model is actually usable (skip image, paid).
+  const free = hid === "hivey/free";
+  const fix = (s) => (free ? ensureUsableFree(s) : s);
   if (m === "image") return { sel: parseSel(T.image), tierKey: "image" };
-  if (m === "agent") return { sel: parseSel(T.agent), tierKey: "agent" };
-  if (m === "translate" || m === "improve") return { sel: parseSel(T.utility), tierKey: "utility" };
+  if (m === "agent") return { sel: fix(parseSel(T.agent)), tierKey: "agent" };
+  if (m === "translate" || m === "improve") return { sel: fix(parseSel(T.utility)), tierKey: "utility" };
   // Chat/PDF: ask the cheap router which tier should answer; fall back to the heuristic.
   let key = hiveyHeuristicKey(text || "");
   if (!currentKeyMissing("openrouter")) {
     const probe = (text || "").slice(0, 4000);
     if (probe.trim()) {
       try {
-        const routerSel = parseSel(hiveyRouterModel(hid));
+        const routerSel = fix(parseSel(hiveyRouterModel(hid)));
         const label = await Promise.race([
           runUtilityCompletion(routerSel, HIVEY_ROUTER_SYSTEM, probe, signal),
           new Promise((res) => setTimeout(() => res(""), 4500)),
@@ -687,7 +692,7 @@ async function resolveHiveyRouted(sel, runMode, text, signal) {
       } catch (_) { /* keep the heuristic key */ }
     }
   }
-  return { sel: parseSel(T[key] || T.chat), tierKey: key };
+  return { sel: fix(parseSel(T[key] || T.chat)), tierKey: key };
 }
 // True when Hivey is the user's chosen text model. Also checks the persisted selection so
 // it stays true on the Image tab (which has its own picker) — Hivey routes EVERY tab.
@@ -810,6 +815,19 @@ function bestFreeOpenRouter(rich) {
     if (hit) return hit.id;
   }
   return free[0].id;
+}
+// 🐝 Hivey Free robustness: a hard-coded free model can lose its endpoint or be missing
+// from the account's list — swap it for the best free model that actually works, so the
+// Free variant never dead-ends on an unavailable model.
+function ensureUsableFree(sel) {
+  if (!sel || sel.providerId !== "openrouter") return sel;
+  const list = settings.orModels || [];
+  if (!list.length) return sel; // models not loaded yet — trust the configured id
+  const m = list.find((x) => x.id === sel.modelId);
+  const usable = m && !m.prompt && !m.completion && !orUnavailable.has(sel.modelId);
+  if (usable) return sel;
+  const pick = bestFreeOpenRouter(list);
+  return pick ? { providerId: "openrouter", modelId: pick } : sel;
 }
 
 // Best-effort: fetch the real available model list for every connected provider.
@@ -3110,25 +3128,44 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null) {
   };
 }
 
-// OpenRouter free-tier failures (data-policy gate / model unavailable / rate limit)
-// deserve an actionable message instead of a raw HTTP error.
-function isOpenRouterFreeError(providerId, msg) {
-  if (providerId !== "openrouter") return false;
-  return /no endpoints|data policy|privacy|404|not found|rate.?limit|429/i.test(msg || "");
+// Classify an OpenRouter failure so we show the RIGHT advice (not always "enable
+// privacy"). Order matters: the data-policy message also contains "no endpoints found".
+//   policy      → account privacy gate (free/loggable endpoints disabled)
+//   rate        → free-tier rate limit hit (~20/min, 200/day)
+//   unavailable → this model has no usable endpoint right now (auto-switch away)
+function classifyOpenRouterError(providerId, msg) {
+  if (providerId !== "openrouter") return null;
+  const m = msg || "";
+  if (/data policy|prompt logging|model training|privacy|loggable/i.test(m)) return "policy";
+  if (/\b429\b|rate.?limit|rate.?limited|free-models-per|requests per (day|min)/i.test(m)) return "rate";
+  if (/\b404\b|no endpoints found|no allowed providers|not found|does not exist/i.test(m)) return "unavailable";
+  return null;
 }
 function showRunError(providerId, e, modelId) {
   if (e && e.name === "AbortError") { addMessage("tool", t("msg.interrupted")); return; }
   const msg = e && e.message ? e.message : String(e);
-  if (isOpenRouterFreeError(providerId, msg)) {
-    if (modelId) handleOpenRouterUnavailable(modelId);
-    addOpenRouterFreeError();
+  const kind = classifyOpenRouterError(providerId, msg);
+  if (kind === "policy") {
+    addOpenRouterFreeError(msg); // privacy gate — show advice + the real message
+  } else if (kind === "rate") {
+    addMessage("error", t("err.orRate") + "\n\n" + t("err.orRaw", { msg: trimErr(msg) }));
+  } else if (kind === "unavailable") {
+    if (modelId) handleOpenRouterUnavailable(modelId); // drop it + switch to a working model
+    addMessage("error", t("err.orUnavailable", { model: modelId || "?" }) + "\n\n" + t("err.orRaw", { msg: trimErr(msg) }));
   } else {
     addMessage("error", t("err.generic", { msg }));
   }
 }
-// The OpenRouter free-tier error, with a one-click link straight to the privacy
-// page where free model endpoints are enabled.
-function addOpenRouterFreeError() {
+// Keep the raw OpenRouter message readable (strip the JSON envelope when present).
+function trimErr(msg) {
+  let m = String(msg || "");
+  const i = m.indexOf('"message"');
+  if (i >= 0) { const q = m.slice(i + 9).match(/"\s*:\s*"([^"]+)"/); if (q) m = q[1]; }
+  return m.slice(0, 300);
+}
+// The OpenRouter privacy-gate error, with a one-click link to the privacy page AND the
+// raw message OpenRouter returned (so the user can see the real cause).
+function addOpenRouterFreeError(rawMsg) {
   const div = addMessage("error", t("err.orFree"));
   div.appendChild(document.createElement("br"));
   const a = document.createElement("a");
@@ -3141,6 +3178,12 @@ function addOpenRouterFreeError() {
     try { browser.tabs.create({ url: a.href }); } catch (_) { window.open(a.href, "_blank", "noopener"); }
   });
   div.appendChild(a);
+  if (rawMsg) {
+    const raw = document.createElement("div");
+    raw.style.cssText = "margin-top:6px;opacity:.7;font-size:11px;white-space:pre-wrap";
+    raw.textContent = "OpenRouter: " + trimErr(rawMsg);
+    div.appendChild(raw);
+  }
 }
 // Drop an OpenRouter model that the account can't use from the picker, and switch
 // the active selection to the next best free model so the user isn't stuck on it.
@@ -3225,7 +3268,10 @@ function historyChars(h) {
 // (a free OpenRouter model, else the current selection as a last resort).
 function utilitySelection() {
   // 🐝 Hivey routes housekeeping (titles, summaries, compaction) to its cheap utility tier.
-  if (activeHiveyId() && !currentKeyMissing("openrouter")) return parseSel(hiveyTiers(activeHiveyId()).utility);
+  if (activeHiveyId() && !currentKeyMissing("openrouter")) {
+    const u = parseSel(hiveyTiers(activeHiveyId()).utility);
+    return activeHiveyId() === "hivey/free" ? ensureUsableFree(u) : u;
+  }
   if (settings.utilityModel) {
     const u = parseSel(settings.utilityModel);
     if (u.providerId && !currentKeyMissing(u.providerId)) return u;
