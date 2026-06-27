@@ -2752,7 +2752,7 @@ function wire() {
   });
   // Verification is also a GLOBAL preference: when ON, Hivey double-checks & auto-fixes
   // each substantive answer (extra tokens); OFF = no check (cheaper/faster).
-  els.verifyAnswers.checked = settings.verifyAnswers !== false;
+  els.verifyAnswers.checked = settings.verifyAnswers === true;
   els.verifyAnswers.addEventListener("change", async () => {
     settings.verifyAnswers = els.verifyAnswers.checked;
     await setSettings({ verifyAnswers: settings.verifyAnswers });
@@ -3900,7 +3900,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       // (facts, hallucinations, INCOMPLETE/truncated code). When the checker flags problems,
       // a STRONG model rewrites the answer; this repeats until it passes (cap 2 rounds). Runs
       // in the background so it never blocks the next message.
-      if (hid && aEl && tierKey !== "light" && tierKey !== "image" && settings.verifyAnswers !== false) {
+      if (hid && aEl && tierKey !== "light" && tierKey !== "image" && settings.verifyAnswers === true) {
         const q = displayText, vSig = abortController && abortController.signal;
         (async () => {
           let curEl = aEl, curRaw = sink.getRaw(), round = 0, corrected = false;
