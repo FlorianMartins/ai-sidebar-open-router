@@ -659,7 +659,7 @@ function resolveHivey(sel, runMode, text) {
   if (!sel || !isHivey(sel.modelId)) return sel;
   const m = runMode || mode;
   const r = parseSel(hiveyTierFor(sel.modelId, m, text || ""));
-  return (sel.modelId === "hivey/free" && m !== "image") ? ensureUsableFree(r) : r;
+  return m !== "image" ? ensureUsable(r, sel.modelId) : r;
 }
 // Async variant: for ambiguous chat/PDF turns it asks a TINY cheap model (the router)
 // which difficulty tier should answer, then routes there — so one request uses several
@@ -671,9 +671,9 @@ async function resolveHiveyRouted(sel, runMode, text, signal) {
   const hid = sel.modelId; // which Hivey variant (free / low-cost / balanced / pro)
   const T = hiveyTiers(hid);
   const m = runMode || mode;
-  // Free variant: guarantee the chosen text model is actually usable (skip image, paid).
-  const free = hid === "hivey/free";
-  const fix = (s) => (free ? ensureUsableFree(s) : s);
+  // Guarantee the chosen text model is actually usable on this account (skip the image
+  // tier, handled separately) — any variant, any specialised capability.
+  const fix = (s) => ensureUsable(s, hid);
   if (m === "image") return { sel: parseSel(T.image), tierKey: "image" };
   if (m === "agent") return { sel: fix(parseSel(T.agent)), tierKey: "agent" };
   if (m === "translate" || m === "improve") return { sel: fix(parseSel(T.utility)), tierKey: "utility" };
@@ -817,18 +817,26 @@ function bestFreeOpenRouter(rich) {
   }
   return free[0].id;
 }
-// 🐝 Hivey Free robustness: a hard-coded free model can lose its endpoint or be missing
-// from the account's list — swap it for the best free model that actually works, so the
-// Free variant never dead-ends on an unavailable model.
-function ensureUsableFree(sel) {
+// 🐝 Hivey robustness: a hard-coded tier model can be missing from the account's live
+// catalogue or have failed — swap it for a safe model in the SAME budget so a variant
+// never dead-ends on an unavailable model. Free → best working free model; paid → the
+// variant's chat/code/reasoning tier (whichever is available).
+function ensureUsable(sel, hid) {
   if (!sel || sel.providerId !== "openrouter") return sel;
   const list = settings.orModels || [];
-  if (!list.length) return sel; // models not loaded yet — trust the configured id
-  const m = list.find((x) => x.id === sel.modelId);
-  const usable = m && !m.prompt && !m.completion && !orUnavailable.has(sel.modelId);
-  if (usable) return sel;
-  const pick = bestFreeOpenRouter(list);
-  return pick ? { providerId: "openrouter", modelId: pick } : sel;
+  if (!list.length) return sel; // catalogue not loaded yet — trust the configured id
+  const here = (id) => list.some((x) => x.id === id) && !orUnavailable.has(id);
+  if (here(sel.modelId)) return sel;
+  if (hid === "hivey/free") {
+    const pick = bestFreeOpenRouter(list);
+    return pick ? { providerId: "openrouter", modelId: pick } : sel;
+  }
+  const T = hiveyTiers(hid);
+  for (const k of ["chat", "code", "reasoning"]) {
+    const f = parseSel(T[k] || "");
+    if (f.providerId === "openrouter" && here(f.modelId)) return f;
+  }
+  return sel; // give up gracefully — the error handler reports the real cause
 }
 
 // Best-effort: fetch the real available model list for every connected provider.
@@ -3270,8 +3278,7 @@ function historyChars(h) {
 function utilitySelection() {
   // 🐝 Hivey routes housekeeping (titles, summaries, compaction) to its cheap utility tier.
   if (activeHiveyId() && !currentKeyMissing("openrouter")) {
-    const u = parseSel(hiveyTiers(activeHiveyId()).utility);
-    return activeHiveyId() === "hivey/free" ? ensureUsableFree(u) : u;
+    return ensureUsable(parseSel(hiveyTiers(activeHiveyId()).utility), activeHiveyId());
   }
   if (settings.utilityModel) {
     const u = parseSel(settings.utilityModel);

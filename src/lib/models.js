@@ -388,16 +388,23 @@ export const HIVEY_DEFAULT = "hivey/balanced";
 export const HIVEY_AUTO = HIVEY_DEFAULT; // back-compat alias for old imports
 // Legacy selection ids → current variant (so a persisted choice keeps working).
 const HIVEY_ALIASES = { "hivey/auto": "hivey/low-cost", "hivey/premium": "hivey/pro" };
+// Each variant maps the SAME capability keys to the best model of its budget — leaning on
+// the strength of each provider (Gemini→search/extract, Claude→code/writing, Qwen→tests,
+// DeepSeek-R1→math) while staying in the variant's price range.
 export const HIVEY_VARIANTS = {
   "hivey/free": {
     label: "Hivey Free", emoji: "🎁", color: "#34d399",
     tiers: {
       router: "openrouter|meta-llama/llama-3.3-70b-instruct:free",   // dispatcher (best free classifier)
       utility: "openrouter|meta-llama/llama-3.2-3b-instruct:free",   // housekeeping (titles/summaries/verify)
-      light: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
+      light: "openrouter|meta-llama/llama-3.2-3b-instruct:free",
       chat: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       code: "openrouter|qwen/qwen3-coder:free",
+      test: "openrouter|qwen/qwen3-coder:free",
       reasoning: "openrouter|nvidia/nemotron-3-super-120b-a12b:free",
+      math: "openrouter|nvidia/nemotron-3-super-120b-a12b:free",
+      creative: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
+      extract: "openrouter|meta-llama/llama-3.2-3b-instruct:free",
       agent: "openrouter|qwen/qwen3-coder:free",                     // tool-capable free model
       search: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       image: "openrouter|google/gemini-2.5-flash-image",             // no free image gen on OpenRouter — cheapest
@@ -411,26 +418,34 @@ export const HIVEY_VARIANTS = {
       light: "openrouter|deepseek/deepseek-chat-v3.1",
       chat: "openrouter|deepseek/deepseek-chat-v3.1",
       code: "openrouter|deepseek/deepseek-chat-v3.1",
-      reasoning: "openrouter|deepseek/deepseek-r1-0528",             // cheap strong reasoner
+      test: "openrouter|qwen/qwen3-coder:free",                     // Qwen = strong, free, great at tests
+      reasoning: "openrouter|deepseek/deepseek-r1-0528",            // cheap strong reasoner
+      math: "openrouter|deepseek/deepseek-r1-0528",
+      creative: "openrouter|deepseek/deepseek-chat-v3.1",
+      extract: "openrouter|google/gemini-2.5-flash-lite",
       agent: "openrouter|deepseek/deepseek-chat-v3.1",
-      search: "openrouter|google/gemini-2.5-flash-lite",
+      search: "openrouter|google/gemini-2.5-flash-lite",           // Gemini for search/grounding
       image: "openrouter|google/gemini-2.5-flash-image",
     },
   },
   "hivey/balanced": {
     label: "Hivey", emoji: "🟡", color: "#fbbf24",
-    // Sonnet 4.6 does ALL the substantive work (so it's always ≥ Low-Cost, and a
-    // mis-routed turn still lands on a strong model); cheap models only handle trivial
-    // and repetitive work. Opus 4.8 is the dispatcher that allocates each turn.
+    // Claude Sonnet 4.6 does the substantive heavy lifting (always ≥ Low-Cost, and a
+    // mis-route still lands on a strong model); specialised cheaper models take what their
+    // provider is best at (Gemini search/extract, Qwen tests, R1 math). Opus = dispatcher.
     tiers: {
       router: "openrouter|anthropic/claude-opus-4.8",               // smart dispatcher
       utility: "openrouter|google/gemini-2.5-flash-lite",            // housekeeping (cheap)
       light: "openrouter|google/gemini-2.5-flash",                   // trivial answers (cheap but capable)
       chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday substantive answers
-      code: "openrouter|anthropic/claude-sonnet-4.6",
+      code: "openrouter|anthropic/claude-sonnet-4.6",                // Claude = best code
+      test: "openrouter|qwen/qwen3-coder:free",                     // Qwen = tests
       reasoning: "openrouter|anthropic/claude-sonnet-4.6",
+      math: "openrouter|deepseek/deepseek-r1-0528",                 // R1 = strong, cheap math/reasoning
+      creative: "openrouter|anthropic/claude-sonnet-4.6",           // Claude = best writing
+      extract: "openrouter|google/gemini-2.5-flash",               // Gemini = fast structured extraction
       agent: "openrouter|anthropic/claude-sonnet-4.6",
-      search: "openrouter|google/gemini-2.5-flash",                  // small fetcher; Sonnet analyses
+      search: "openrouter|google/gemini-2.5-flash",                  // Gemini = search; Sonnet analyses
       image: "openrouter|google/gemini-2.5-flash-image",
     },
   },
@@ -445,26 +460,45 @@ export const HIVEY_VARIANTS = {
       // Code pipeline: Opus DESIGNS the solution, a cheaper reliable model WRITES it.
       codePlanner: "openrouter|anthropic/claude-opus-4.8",
       codeWriter: "openrouter|anthropic/claude-sonnet-4.6",
+      test: "openrouter|anthropic/claude-sonnet-4.6",               // reliable premium tests
       reasoning: "openrouter|anthropic/claude-opus-4.8",
+      math: "openrouter|anthropic/claude-opus-4.8",
+      creative: "openrouter|anthropic/claude-sonnet-4.6",           // Claude = best writing
+      extract: "openrouter|google/gemini-2.5-flash",               // Gemini = fast structured extraction
       agent: "openrouter|anthropic/claude-sonnet-4.6",               // reliable tool agent
-      search: "openrouter|google/gemini-2.5-flash",                  // small fetcher; Opus/Sonnet analyses
+      search: "openrouter|google/gemini-2.5-flash",                  // Gemini = search; Opus/Sonnet analyses
       image: "openrouter|google/gemini-3-pro-image",                 // Nano Banana Pro (top image)
     },
   },
 };
+// Extra capability regexes for the heuristic fallback (used only if the dispatcher fails).
+const HIVEY_TEST_RE = /\b(test unitaire|tests? unitaires|unit ?test|pytest|jest|vitest|mocha|junit|test ?case|couverture de test|écris des tests|write tests?)\b/i;
+const HIVEY_MATH_RE = /math[ée]matiqu|[ée]quation|int[ée]grale|d[ée]riv[ée]e|th[ée]or[èe]me|d[ée]montre|\bprouve\b|\bprove\b|probabilit|statistiqu|\bcalcul|alg[èe]bre|g[ée]om[ée]trie/i;
+const HIVEY_SEARCH_RE = /\b(cherche|recherche|google|actualit|derni[èe]res? nouvelles|news|m[ée]t[ée]o|cours (de|du)|prix (de|du|actuel)|aujourd'?hui|en ce moment|r[ée]cent|qui est|sur le web|on the web|latest)\b/i;
+const HIVEY_CREATIVE_RE = /\b(po[èe]me|poem|histoire|story|nouvelle|slogan|marketing|publicit|r[ée]dige|[ée]cris (un|une|moi) (texte|article|mail|email|lettre|post|tweet|description|bio)|brainstorm|id[ée]es de)\b/i;
 // Tier KEY chosen for a chat turn (used by the orchestrator to know the task type).
 export function hiveyHeuristicKey(text) {
   const t = text || "";
-  if (t.length > 1800 || HIVEY_HARD_RE.test(t)) return "reasoning";
+  if (HIVEY_TEST_RE.test(t)) return "test";
   if (HIVEY_CODE_RE.test(t)) return "code";
+  if (HIVEY_SEARCH_RE.test(t)) return "search";
+  if (HIVEY_MATH_RE.test(t)) return "math";
+  if (HIVEY_CREATIVE_RE.test(t)) return "creative";
+  if (t.length > 1800 || HIVEY_HARD_RE.test(t)) return "reasoning";
   return "chat";
 }
+// Map the dispatcher's word to a capability KEY. Unknown words fall back to "chat".
 export function hiveyLabelKey(label) {
   const k = String(label || "").toLowerCase().replace(/[^a-z]/g, "");
-  if (k.startsWith("hard")) return "reasoning";
-  if (k.startsWith("code")) return "code";
-  if (k.startsWith("light") || k.startsWith("simple") || k.startsWith("trivial")) return "light";
-  return "chat";
+  if (k.startsWith("light") || k.startsWith("trivial") || k.startsWith("simple")) return "light";
+  if (k.startsWith("test")) return "test";
+  if (k.startsWith("debug") || k.startsWith("code") || k.startsWith("program")) return "code";
+  if (k.startsWith("search") || k.startsWith("web") || k.startsWith("lookup")) return "search";
+  if (k.startsWith("math")) return "math";
+  if (k.startsWith("creativ") || k.startsWith("write") || k.startsWith("writing")) return "creative";
+  if (k.startsWith("extract") || k.startsWith("summar")) return "extract";
+  if (k.startsWith("hard") || k.startsWith("reason")) return "reasoning";
+  return "chat"; // normal / unknown
 }
 export function isHivey(modelId) { return !!(modelId && (HIVEY_VARIANTS[modelId] || HIVEY_ALIASES[modelId])); }
 export function hiveyVariant(modelId) {
@@ -493,15 +527,19 @@ export function hiveyTierFor(modelId, mode, text) {
 // answers and money is spent where it buys performance. The router NEVER answers.
 export function hiveyRouterModel(modelId) { const T = hiveyTiers(modelId); return T.router || T.utility; }
 export const HIVEY_ROUTER_SYSTEM =
-  "You are the DISPATCHER of a team of AI models. Read the user's last message (with any " +
-  "context) and pick the cheapest model tier that will produce a GENUINELY CORRECT, high-" +
-  "quality answer — never downgrade a task that needs real capability. Reply with EXACTLY " +
-  "ONE word, no punctuation:\n" +
-  "- light = truly trivial: greeting, small talk, a yes/no or one-line factual answer, a simple reformat/translation.\n" +
-  "- normal = everyday substantive answer: explanations, summaries, general questions, advice — NO real programming.\n" +
-  "- code = ANY task that involves writing, completing, fixing, reviewing or reasoning about source code, however small (functions, components, scripts, games, algorithms in code, debugging). When in doubt between normal and code, choose code.\n" +
-  "- hard = deep non-code reasoning: system architecture, hard algorithms/math/proofs, performance optimization, security analysis, multi-step strategy, careful long analysis.\n" +
-  "Correctness first, cost second. Output ONLY one of: light, normal, code, hard. Never answer the question.";
+  "You are the DISPATCHER of a team of specialised AI models. Read the user's last message " +
+  "(with any context) and pick the SINGLE capability that best fits, so the model that is " +
+  "strongest at that capability handles it. Correctness/quality first, cost second — never " +
+  "downgrade a task that needs real capability. Reply with EXACTLY ONE word, no punctuation:\n" +
+  "- light = truly trivial: greeting, small talk, a yes/no or one-line factual answer, a simple reformat.\n" +
+  "- normal = everyday substantive answer: explanations, summaries, general questions, advice.\n" +
+  "- code = writing, completing, fixing, reviewing or reasoning about source code (functions, components, scripts, games, algorithms in code, debugging). When unsure between normal and code, choose code.\n" +
+  "- test = writing or fixing automated TESTS specifically (unit/integration tests, pytest/jest/etc.).\n" +
+  "- math = mathematics: equations, calculus, proofs, probability/statistics, symbolic work.\n" +
+  "- search = needs CURRENT/up-to-date or external info: news, prices, weather, recent events, looking something up on the web.\n" +
+  "- creative = creative writing: stories, poems, marketing copy, slogans, brainstorming, drafting emails/articles.\n" +
+  "- hard = deep non-code reasoning: system architecture, hard algorithms, performance, security analysis, multi-step strategy, careful long analysis.\n" +
+  "Output ONLY one of: light, normal, code, test, math, search, creative, hard. Never answer the question.";
 // Map the router's word to a tier model id within the chosen Hivey variant.
 export function hiveyTierForLabel(modelId, label) {
   const T = hiveyTiers(modelId);
