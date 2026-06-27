@@ -13,6 +13,17 @@
 import { PROVIDERS, baseUrlFor, modelFor, keyFor } from "./models.js";
 
 const MAX_TOKENS = 4096;
+// Generous per-model OUTPUT cap for OpenRouter so big answers (full apps / artifacts /
+// long code) are NOT truncated. OpenRouter clamps this down to each model's real limit,
+// so a high value is safe. Without it, requests defaulted to a tiny completion and cut
+// off mid-code — the artifact then failed to run and the verifier flagged it forever.
+function orMaxTokens(model) {
+  const m = String(model || "").toLowerCase();
+  if (m.includes("claude") || m.includes("opus") || m.includes("sonnet")) return 32000;
+  if (m.includes("gemini") || m.includes("gpt-5") || m.includes("gpt-4")) return 16000;
+  if (m.includes("deepseek") || m.includes("qwen") || m.includes("llama") || m.includes("nemotron")) return 12000;
+  return 8000;
+}
 // Extended-thinking budget for Claude when the user turns Thinking ON. It's opt-in,
 // so we give it real room to reason (Claude-style deep thinking) rather than a token
 // sip. budget_tokens must stay below max_tokens (enforced via MAX_TOKENS + budget).
@@ -193,6 +204,8 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkin
     async runTurn({ system, history, tools, onText, onThink, signal }) {
       const messages = system ? [{ role: "system", content: system }, ...history] : [...history];
       const body = { model, messages, stream: true };
+      // Give answers room to be COMPLETE (full code/artifacts) — see orMaxTokens.
+      if (providerId === "openrouter") body.max_tokens = orMaxTokens(model);
       // Web search: OpenRouter exposes a universal "web" plugin that works with
       // ANY model (including the free ones), so a fast free model can search the
       // web. Perplexity's Sonar models are online by default (nothing to add).
