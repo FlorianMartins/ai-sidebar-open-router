@@ -821,6 +821,13 @@ function bestFreeOpenRouter(rich) {
 // catalogue or have failed — swap it for a safe model in the SAME budget so a variant
 // never dead-ends on an unavailable model. Free → best working free model; paid → the
 // variant's chat/code/reasoning tier (whichever is available).
+// True if a model id is a free OpenRouter model (price 0 in the live catalogue, or a
+// :free id) — used to rotate only free models on rate limits.
+function isFreeModelId(id) {
+  if (/:free\b/.test(id || "")) return true;
+  const m = (settings.orModels || []).find((x) => x.id === id);
+  return !!(m && !m.prompt && !m.completion);
+}
 function ensureUsable(sel, hid) {
   if (!sel || sel.providerId !== "openrouter") return sel;
   const list = settings.orModels || [];
@@ -882,6 +889,9 @@ async function autoListConnected() {
 
 // ----- Model picker: searchable combobox + price/provider filter -------------
 const ALL_TIERS = ["free", "green", "yellow", "orange", "red"];
+// Sentinel allow-list value meaning "nothing selected → hide all" (an empty [] keeps the
+// historical meaning "no filter → show all", so this disambiguates the all-unchecked case).
+const FILTER_NONE = " none";
 function filterState() {
   return settings.modelFilter || { tiers: [...ALL_TIERS], providers: [], subproviders: [] };
 }
@@ -1052,18 +1062,35 @@ function onTierFilterChange() {
   settings.modelFilter = { ...filterState(), tiers };
   persistFilter(); afterFilterChange();
 }
-function onProviderFilterChange() {
+function onProviderFilterChange(e) {
+  // Toggling a provider mirrors onto its OpenRouter vendor checkboxes, so unchecking
+  // OpenRouter visibly unchecks (and hides) ALL of its models — even when it's the only
+  // connected provider (where an empty allow-list used to wrongly mean "show everything").
+  if (e && e.target && e.target.value === "openrouter") {
+    const on = e.target.checked;
+    els.filterProviders.querySelectorAll('input[data-kind="subprovider"]').forEach((cb) => { cb.checked = on; });
+  }
   const provs = [];
   els.filterProviders.querySelectorAll('input[data-kind="provider"]').forEach((cb) => { if (cb.checked) provs.push(cb.value); });
   const connected = connectedProviders(settings);
-  settings.modelFilter = { ...filterState(), providers: provs.length === connected.length ? [] : provs };
+  let providers;
+  if (provs.length === connected.length) providers = [];          // all checked → no filter
+  else if (provs.length === 0) providers = [FILTER_NONE];         // none checked → hide everything
+  else providers = provs;                                         // explicit allow-list
+  // Recompute the vendor allow-list from the (possibly mirrored) checkboxes.
+  const subBoxes = els.filterProviders.querySelectorAll('input[data-kind="subprovider"]');
+  const subs = [];
+  subBoxes.forEach((cb) => { if (cb.checked) subs.push(cb.value); });
+  const subproviders = subBoxes.length === 0 ? [] : (subs.length === subBoxes.length ? [] : (subs.length === 0 ? [FILTER_NONE] : subs));
+  settings.modelFilter = { ...filterState(), providers, subproviders };
   persistFilter(); afterFilterChange();
 }
 function onSubproviderFilterChange() {
   const all = els.filterProviders.querySelectorAll('input[data-kind="subprovider"]');
   const subs = [];
   all.forEach((cb) => { if (cb.checked) subs.push(cb.value); });
-  settings.modelFilter = { ...filterState(), subproviders: subs.length === all.length ? [] : subs };
+  const subproviders = subs.length === all.length ? [] : (subs.length === 0 ? [FILTER_NONE] : subs);
+  settings.modelFilter = { ...filterState(), subproviders };
   persistFilter(); afterFilterChange();
 }
 function resetFilter() {
@@ -3157,6 +3184,9 @@ function showRunError(providerId, e, modelId) {
   if (kind === "policy") {
     addOpenRouterFreeError(msg); // privacy gate — show advice + the real message
   } else if (kind === "rate") {
+    // A rate-limited FREE model is marked unavailable so Hivey rotates to another one on
+    // the next turn (paid models are left alone — a 429 there is transient).
+    if (modelId && isFreeModelId(modelId)) handleOpenRouterUnavailable(modelId);
     addMessage("error", t("err.orRate") + "\n\n" + t("err.orRaw", { msg: trimErr(msg) }));
   } else if (kind === "unavailable") {
     if (modelId) handleOpenRouterUnavailable(modelId); // drop it + switch to a working model
@@ -3336,7 +3366,7 @@ async function hiveyWebFetch(hid, query, signal) {
 // answer is sound, a short list of issues otherwise, or null on failure/skip.
 async function hiveyVerify(hid, question, answer, signal) {
   const T = hiveyTiers(hid);
-  const vs = parseSel(T.light || T.utility); // cheap but capable enough to fact-check
+  const vs = ensureUsable(parseSel(T.verify || T.light || T.utility), hid); // capable fact-checker
   if (!vs.providerId || currentKeyMissing(vs.providerId)) return null;
   const a = (typeof answer === "string" ? answer : "").slice(0, 6000);
   if (a.replace(/\s/g, "").length < 40) return null; // skip trivial/empty answers
@@ -3344,13 +3374,34 @@ async function hiveyVerify(hid, question, answer, signal) {
     const out = await Promise.race([
       runUtilityCompletion(
         vs,
-        "You are a meticulous fact-checker. Given the user's question and the assistant's answer, check for factual errors, fabricated or unsupported claims, and internal contradictions. If the answer is sound, reply EXACTLY 'OK'. Otherwise reply with up to 3 short bullet points naming the SPECIFIC problems — no preamble, no praise.",
+        "You are a meticulous fact-checker. Given the user's question and the assistant's answer, check for factual errors, fabricated or unsupported claims, hallucinations and internal contradictions. If the answer is sound, reply EXACTLY 'OK'. Otherwise reply with up to 4 short bullet points naming the SPECIFIC problems — no preamble, no praise.",
         "[Question]\n" + (question || "") + "\n\n[Answer]\n" + a, signal
       ),
       new Promise((res) => setTimeout(() => res(null), 15000)),
     ]);
     return out == null ? null : (out.trim() || null);
   } catch (_) { return null; }
+}
+
+// 🐝 Hivey anti-hallucination — when the verifier flags problems, a STRONG model rewrites
+// the answer, fixing the listed issues and refusing to invent facts. Returns the corrected
+// answer text, or "" on failure. Uses the variant's strongest relevant tier.
+async function hiveyCorrect(hid, question, answer, issues, tierKey, signal) {
+  const T = hiveyTiers(hid);
+  // Fix with the best model for the task: code→code, else the reasoning tier.
+  const cs = ensureUsable(parseSel((tierKey === "code" && T.code) ? T.code : (T.reasoning || T.chat)), hid);
+  if (!cs.providerId || currentKeyMissing(cs.providerId)) return "";
+  try {
+    return await Promise.race([
+      runUtilityCompletion(
+        cs,
+        "You are correcting an AI answer that a fact-checker flagged. Produce a REVISED answer that fixes every listed problem and removes any unsupported claim. Rules: do NOT invent facts; if something cannot be verified, say so explicitly rather than guessing; keep what was correct; be accurate and complete. Output ONLY the corrected answer (same language as the question), no meta-commentary.",
+        "[Question]\n" + (question || "") + "\n\n[Draft answer]\n" + (answer || "").slice(0, 8000) +
+        "\n\n[Problems found by the checker]\n" + (issues || ""), signal
+      ),
+      new Promise((res) => setTimeout(() => res(""), 40000)),
+    ]);
+  } catch (_) { return ""; }
 }
 
 // 🐝 Hivey orchestration stage 1 — CODE: the senior model designs a precise plan that a
@@ -3564,10 +3615,18 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   const hid = isHivey(sel.modelId) ? sel.modelId : null;
   const routed = await resolveHiveyRouted(sel, hiveyMode, modelContent, abortController && abortController.signal);
   let turnSel = routed.sel;
-  const tierKey = routed.tierKey;
+  let tierKey = routed.tierKey;
   let isolated = false;
   let webPlugin = wantWeb; // whether the FINAL model runs the web plugin itself
   let badge = hid ? "🐝 " + prettifyORName({ id: turnSel.modelId }) : null;
+
+  // 🐝 Hivey VISION: an image is attached → route to the variant's multimodal model,
+  // because the cheap text models (DeepSeek, Llama…) can't see images.
+  if (hid && attImgs && attImgs.length && !agentMode) {
+    turnSel = ensureUsable(parseSel(hiveyTiers(hid).vision || hiveyTiers(hid).chat), hid);
+    tierKey = "vision";
+    badge = "🐝 " + prettifyORName({ id: turnSel.modelId }) + " 👁";
+  }
 
   // Web search for NON-Hivey models: send the turn to a dedicated web-capable model.
   if (wantWeb && !agentMode && !hid) {
@@ -3583,7 +3642,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
 
   // 🐝 Hivey ORCHESTRATION — combine several models in ONE request: a cheap model does
   // the grunt work, the smart routed model does the thinking. Pure chat turns only.
-  if (hid && !agentMode && runMode !== "translate" && runMode !== "improve") {
+  if (hid && !agentMode && tierKey !== "vision" && runMode !== "translate" && runMode !== "improve") {
     const T = hiveyTiers(hid);
     if (wantWeb) {
       // (a) Web: a small fast model gathers facts + sources, the routed model analyses.
@@ -3633,7 +3692,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     sess.history.push({ role: "user", content: userContent });
     turnHistory = sess.history;
   }
-  const provider = makeProvider(
+  let provider = makeProvider(
     { ...settings, provider: turnSel.providerId, models: { ...settings.models, [turnSel.providerId]: turnSel.modelId } },
     { thinking: els.thinking.checked, webSearch: webPlugin }
   );
@@ -3646,7 +3705,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   const agentActs = agentMode ? makeAgentActions() : null;
   if (agentMode) agentGlowActiveTab(); // glow the page border while the agent works
   try {
-    await runConversation({
+    const runOnce = () => runConversation({
       provider, system, history: turnHistory, tools,
       onText: sink.onText, onThink: sink.onThink,
       onToolStart: (call) => {
@@ -3669,26 +3728,69 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       guard: { blockPayments: settings.blockPayments },
       signal: abortController.signal,
     });
+    // 🐝 Hivey Free auto-rotation: if a free model is out of credits / rate-limited
+    // before any output, drop it and retry on another free model that still works.
+    let attempt = 0;
+    while (true) {
+      try { await runOnce(); break; }
+      catch (runErr) {
+        const kind = classifyOpenRouterError(turnSel.providerId, runErr && runErr.message);
+        if (hid === "hivey/free" && (kind === "rate" || kind === "unavailable") && !sink.getRaw() && attempt < 4) {
+          orUnavailable.add(turnSel.modelId);
+          const next = ensureUsable(turnSel, hid); // now avoids the exhausted model
+          if (!next || next.modelId === turnSel.modelId) throw runErr; // no alternative left
+          turnSel = next;
+          attempt++;
+          addMessage("tool", t("or.switched", { model: turnSel.modelId }));
+          provider = makeProvider(
+            { ...settings, provider: turnSel.providerId, models: { ...settings.models, [turnSel.providerId]: turnSel.modelId } },
+            { thinking: els.thinking.checked, webSearch: webPlugin }
+          );
+          continue;
+        }
+        throw runErr;
+      }
+    }
     sink.finalize();
     if (sink.getRaw()) {
       sess.transcript.push({ role: "assistant", text: sink.getRaw() });
       const aEl = sink.getEl();
       if (aEl) { aEl._raw = sink.getRaw(); attachAssistantActions(aEl, sink.getRaw); }
       if (mode === sessMode) attachCompareBar(aEl); // compare bar only if still on this tab
-      // 🐝 Hivey verification — ALWAYS double-check substantive answers with a cheap
-      // model (facts, unsupported claims, contradictions). Runs in the background so it
-      // never blocks the next message; appends a small verdict under the answer.
+      // 🐝 Hivey verification — ALWAYS double-check substantive answers (facts, unsupported
+      // claims, hallucinations). If the checker flags problems, a STRONG model rewrites the
+      // answer and the corrected version is appended. Runs in the background (non-blocking).
       if (hid && aEl && tierKey !== "light" && tierKey !== "image") {
         const q = displayText, ans = sink.getRaw(), vSig = abortController && abortController.signal;
-        hiveyVerify(hid, q, ans, vSig).then((verdict) => {
+        hiveyVerify(hid, q, ans, vSig).then(async (verdict) => {
           if (!verdict || !aEl.isConnected) return;
-          const ok = /^\s*ok\b/i.test(verdict);
+          if (/^\s*ok\b/i.test(verdict)) {
+            const note = document.createElement("div");
+            note.className = "hivey-verify ok";
+            note.textContent = "✓ " + t("hivey.verified");
+            aEl.appendChild(note);
+            return;
+          }
+          // Issues found → flag, then regenerate a corrected answer.
           const note = document.createElement("div");
-          note.className = "hivey-verify " + (ok ? "ok" : "warn");
-          note.textContent = ok
-            ? "✓ " + t("hivey.verified")
-            : "⚠️ " + t("hivey.verifyIssues") + " " + verdict.replace(/\s+/g, " ").slice(0, 400);
+          note.className = "hivey-verify warn";
+          note.textContent = "⚠️ " + t("hivey.verifyIssues") + " " + verdict.replace(/\s+/g, " ").slice(0, 400)
+            + " — " + t("hivey.regenerating");
           aEl.appendChild(note);
+          const fixed = await hiveyCorrect(hid, q, ans, verdict, tierKey, vSig);
+          if (fixed && fixed.trim() && aEl.isConnected) {
+            const wrap = addMessage("assistant", "");
+            const head = document.createElement("div");
+            head.className = "hivey-verify ok";
+            head.textContent = "🔁 " + t("hivey.corrected");
+            wrap.appendChild(head);
+            const body = document.createElement("div");
+            body.innerHTML = renderMarkdown(fixed);
+            enhanceArtifacts(body);
+            wrap.appendChild(body);
+            wrap._raw = fixed; attachAssistantActions(wrap, () => fixed);
+            sess.transcript.push({ role: "assistant", text: "🔁 " + fixed });
+          }
         }).catch(() => {});
       }
     }

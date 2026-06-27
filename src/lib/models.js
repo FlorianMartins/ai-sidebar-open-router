@@ -402,9 +402,11 @@ export const HIVEY_VARIANTS = {
       code: "openrouter|qwen/qwen3-coder:free",
       test: "openrouter|qwen/qwen3-coder:free",
       reasoning: "openrouter|nvidia/nemotron-3-super-120b-a12b:free",
-      math: "openrouter|nvidia/nemotron-3-super-120b-a12b:free",
+      math: "openrouter|qwen/qwq-32b:free",                          // Qwen QwQ = math/reasoning specialist
       creative: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       extract: "openrouter|meta-llama/llama-3.2-3b-instruct:free",
+      vision: "openrouter|nvidia/nemotron-nano-12b-v2-vl:free",      // free multimodal (image input)
+      verify: "openrouter|meta-llama/llama-3.3-70b-instruct:free",   // fact-checker
       agent: "openrouter|qwen/qwen3-coder:free",                     // tool-capable free model
       search: "openrouter|meta-llama/llama-3.3-70b-instruct:free",
       image: "openrouter|google/gemini-2.5-flash-image",             // no free image gen on OpenRouter — cheapest
@@ -420,9 +422,11 @@ export const HIVEY_VARIANTS = {
       code: "openrouter|deepseek/deepseek-chat-v3.1",
       test: "openrouter|qwen/qwen3-coder:free",                     // Qwen = strong, free, great at tests
       reasoning: "openrouter|deepseek/deepseek-r1-0528",            // cheap strong reasoner
-      math: "openrouter|deepseek/deepseek-r1-0528",
+      math: "openrouter|qwen/qwq-32b",                             // Qwen QwQ = math/reasoning specialist
       creative: "openrouter|deepseek/deepseek-chat-v3.1",
       extract: "openrouter|google/gemini-2.5-flash-lite",
+      vision: "openrouter|google/gemini-2.5-flash-lite",           // Gemini multimodal (image input)
+      verify: "openrouter|deepseek/deepseek-chat-v3.1",            // fact-checker
       agent: "openrouter|deepseek/deepseek-chat-v3.1",
       search: "openrouter|google/gemini-2.5-flash-lite",           // Gemini for search/grounding
       image: "openrouter|google/gemini-2.5-flash-image",
@@ -441,9 +445,11 @@ export const HIVEY_VARIANTS = {
       code: "openrouter|anthropic/claude-sonnet-4.6",                // Claude = best code
       test: "openrouter|qwen/qwen3-coder:free",                     // Qwen = tests
       reasoning: "openrouter|anthropic/claude-sonnet-4.6",
-      math: "openrouter|deepseek/deepseek-r1-0528",                 // R1 = strong, cheap math/reasoning
+      math: "openrouter|qwen/qwq-32b",                             // Qwen QwQ = math/reasoning specialist
       creative: "openrouter|anthropic/claude-sonnet-4.6",           // Claude = best writing
       extract: "openrouter|google/gemini-2.5-flash",               // Gemini = fast structured extraction
+      vision: "openrouter|google/gemini-2.5-flash",               // Gemini multimodal (image input)
+      verify: "openrouter|google/gemini-2.5-flash",               // fact-checker
       agent: "openrouter|anthropic/claude-sonnet-4.6",
       search: "openrouter|google/gemini-2.5-flash",                  // Gemini = search; Sonnet analyses
       image: "openrouter|google/gemini-2.5-flash-image",
@@ -462,9 +468,11 @@ export const HIVEY_VARIANTS = {
       codeWriter: "openrouter|anthropic/claude-sonnet-4.6",
       test: "openrouter|anthropic/claude-sonnet-4.6",               // reliable premium tests
       reasoning: "openrouter|anthropic/claude-opus-4.8",
-      math: "openrouter|anthropic/claude-opus-4.8",
+      math: "openrouter|qwen/qwq-32b",                             // Qwen QwQ = math specialist (Opus verifies)
       creative: "openrouter|anthropic/claude-sonnet-4.6",           // Claude = best writing
       extract: "openrouter|google/gemini-2.5-flash",               // Gemini = fast structured extraction
+      vision: "openrouter|google/gemini-2.5-pro",                  // Gemini 2.5 Pro = top vision
+      verify: "openrouter|anthropic/claude-sonnet-4.6",            // strong fact-checker
       agent: "openrouter|anthropic/claude-sonnet-4.6",               // reliable tool agent
       search: "openrouter|google/gemini-2.5-flash",                  // Gemini = search; Opus/Sonnet analyses
       image: "openrouter|google/gemini-3-pro-image",                 // Nano Banana Pro (top image)

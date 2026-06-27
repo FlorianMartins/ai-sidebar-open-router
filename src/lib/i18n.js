@@ -287,6 +287,8 @@ const EN = {
   "badge.agent": "🤖 Agent · {label} · {model}",
   "hivey.verified": "Verified by a low-cost model",
   "hivey.verifyIssues": "Checked — possible issues:",
+  "hivey.regenerating": "regenerating a corrected answer…",
+  "hivey.corrected": "Corrected answer (after verification)",
 
   // ----- Quick actions / translate / improve / image -------------------------
   "label.translate": "🌐 Translate",
@@ -748,6 +750,8 @@ const FR = {
   "badge.agent": "🤖 Agent · {label} · {model}",
   "hivey.verified": "Vérifié par un modèle économique",
   "hivey.verifyIssues": "Vérifié — points à revoir :",
+  "hivey.regenerating": "régénération d'une réponse corrigée…",
+  "hivey.corrected": "Réponse corrigée (après vérification)",
 
   "label.translate": "🌐 Traduire",
   "label.translatePage": "🌐 Traduire la page",
