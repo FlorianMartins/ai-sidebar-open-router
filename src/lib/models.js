@@ -81,9 +81,10 @@ export const PROVIDERS = {
     // flagships). Regenerated daily by scripts/update-models.mjs from OpenRouter.
     // <models:openrouter:start>
     models: [
-      ["hivey/auto", "🟢 🐝 Hivey"],
       ["hivey/free", "🎁 🐝 Hivey Free"],
-      ["hivey/premium", "🔴 🐝 Hivey Premium"],
+      ["hivey/low-cost", "🟢 🐝 Hivey Low-Cost"],
+      ["hivey/balanced", "🟡 🐝 Hivey"],
+      ["hivey/pro", "🟠 🐝 Hivey Pro"],
       ["meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B Instruct — free (recommended)"],
       ["google/gemma-4-31b-it:free", "Gemma 4 31B — free"],
       ["openai/gpt-oss-120b:free", "gpt-oss-120b — free"],
@@ -371,33 +372,23 @@ export function baseUrlFor(providerId, settings) {
 // job — cheap models for housekeeping, an affordable strong model for chat/code, premium
 // for heavy reasoning and the agent, and a premium image model — so big models (Opus) are
 // only spent when they're actually needed. All via the user's OpenRouter key.
-export const HIVEY_AUTO = "hivey/auto";
-// ── Hivey: three smart-routing pseudo-models ────────────────────────────────
-// Each routes EVERY task to the best model of its budget. The `utility` tier is
-// PLUMBING ONLY (the LLM router + titles/summaries/compaction) — it never answers
-// the user, so its low cost is all that matters. `chat`=everyday (cheap), `code`=real
-// programming, `reasoning`=deep/hardest, `agent`=tools, `image`=picture gen.
-//  • free    → 100% free OpenRouter models ($0).
-//  • auto     → best value: cheap for everyday, premium only for code/reasoning.
-//  • premium → top models, yet cost-aware: trivial stays cheap, code uses Opus 4.8.
-// Tiers per variant: utility=router+housekeeping (never user-facing), light=trivial
-// (kept cheap even in Premium), chat=everyday substantive answers (the BEST FORMATTER of
-// the budget), code=real programming, reasoning=deep/hardest, agent=tools, search=basic
-// web research, image=picture gen. `emoji`/`color` = the price dot shown in the picker.
+// ── Hivey: four smart-routing pseudo-models, cheapest → priciest ────────────
+// Each routes EVERY task to the best model of its budget. Tiers: utility=router +
+// housekeeping (never user-facing), light=trivial (kept cheap), chat=everyday
+// substantive answers (the BEST FORMATTER of the budget), code=real programming,
+// reasoning=deep/hardest, agent=tools, search=cheap web-research fetcher (a small
+// model gathers, then the routed model analyses), image=picture gen. `emoji`/`color`
+// = the price dot in the picker.
+//  • free     🎁 → 100% free models ($0).
+//  • low-cost 🟢 → all cheap, no Claude (DeepSeek family).
+//  • balanced 🟡 → affordable & efficient: cheap everyday, Sonnet for code/reasoning.
+//  • pro      🟠 → smartest: Sonnet everyday, Opus for code/reasoning, Nano Banana Pro;
+//                  small models on repetitive work keep the budget moderate.
+export const HIVEY_DEFAULT = "hivey/balanced";
+export const HIVEY_AUTO = HIVEY_DEFAULT; // back-compat alias for old imports
+// Legacy selection ids → current variant (so a persisted choice keeps working).
+const HIVEY_ALIASES = { "hivey/auto": "hivey/low-cost", "hivey/premium": "hivey/pro" };
 export const HIVEY_VARIANTS = {
-  "hivey/auto": {
-    label: "Hivey", emoji: "🟢", color: "#34d399",
-    tiers: {
-      utility: "openrouter|google/gemini-2.5-flash-lite",
-      light: "openrouter|deepseek/deepseek-chat-v3.1",
-      chat: "openrouter|deepseek/deepseek-chat-v3.1",
-      code: "openrouter|anthropic/claude-sonnet-4.6",
-      reasoning: "openrouter|anthropic/claude-opus-4.8",
-      agent: "openrouter|anthropic/claude-sonnet-4.6",
-      search: "openrouter|google/gemini-2.5-flash",
-      image: "openrouter|google/gemini-2.5-flash-image",
-    },
-  },
   "hivey/free": {
     label: "Hivey Free", emoji: "🎁", color: "#34d399",
     tiers: {
@@ -411,22 +402,67 @@ export const HIVEY_VARIANTS = {
       image: "openrouter|google/gemini-2.5-flash-image",             // no free image gen on OpenRouter — cheapest
     },
   },
-  "hivey/premium": {
-    label: "Hivey Premium", emoji: "🔴", color: "#f87171",
+  "hivey/low-cost": {
+    label: "Hivey Low-Cost", emoji: "🟢", color: "#34d399",
     tiers: {
-      utility: "openrouter|google/gemini-2.5-flash-lite",            // trivial housekeeping stays cheap
-      light: "openrouter|google/gemini-2.5-flash",                   // trivial answers: fast & cheap, still premium-grade
-      chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday answers: best response formatting
+      utility: "openrouter|google/gemini-2.5-flash-lite",
+      light: "openrouter|deepseek/deepseek-chat-v3.1",
+      chat: "openrouter|deepseek/deepseek-chat-v3.1",
+      code: "openrouter|deepseek/deepseek-chat-v3.1",
+      reasoning: "openrouter|deepseek/deepseek-r1-0528",             // cheap strong reasoner
+      agent: "openrouter|deepseek/deepseek-chat-v3.1",
+      search: "openrouter|google/gemini-2.5-flash-lite",
+      image: "openrouter|google/gemini-2.5-flash-image",
+    },
+  },
+  "hivey/balanced": {
+    label: "Hivey", emoji: "🟡", color: "#fbbf24",
+    tiers: {
+      utility: "openrouter|google/gemini-2.5-flash-lite",
+      light: "openrouter|google/gemini-2.5-flash-lite",
+      chat: "openrouter|google/gemini-2.5-flash",                    // affordable, fast, strong everyday
+      code: "openrouter|anthropic/claude-sonnet-4.6",
+      reasoning: "openrouter|anthropic/claude-sonnet-4.6",
+      agent: "openrouter|anthropic/claude-sonnet-4.6",
+      search: "openrouter|google/gemini-2.5-flash",                  // small fetcher; Sonnet analyses
+      image: "openrouter|google/gemini-2.5-flash-image",
+    },
+  },
+  "hivey/pro": {
+    label: "Hivey Pro", emoji: "🟠", color: "#fb923c",
+    tiers: {
+      utility: "openrouter|google/gemini-2.5-flash-lite",            // repetitive work stays cheap
+      light: "openrouter|google/gemini-2.5-flash",
+      chat: "openrouter|anthropic/claude-sonnet-4.6",                // everyday: best response formatting
       code: "openrouter|anthropic/claude-opus-4.8",                  // code with Opus 4.8
+      // Code pipeline: Opus DESIGNS the solution, a cheaper reliable model WRITES it.
+      codePlanner: "openrouter|anthropic/claude-opus-4.8",
+      codeWriter: "openrouter|anthropic/claude-sonnet-4.6",
       reasoning: "openrouter|anthropic/claude-opus-4.8",
       agent: "openrouter|anthropic/claude-sonnet-4.6",               // reliable tool agent
-      search: "openrouter|google/gemini-2.5-flash",                  // basic web research: fast & grounded
+      search: "openrouter|google/gemini-2.5-flash",                  // small fetcher; Opus/Sonnet analyses
       image: "openrouter|google/gemini-3-pro-image",                 // Nano Banana Pro (top image)
     },
   },
 };
-export function isHivey(modelId) { return !!(modelId && HIVEY_VARIANTS[modelId]); }
-export function hiveyVariant(modelId) { return HIVEY_VARIANTS[modelId] || HIVEY_VARIANTS[HIVEY_AUTO]; }
+// Tier KEY chosen for a chat turn (used by the orchestrator to know the task type).
+export function hiveyHeuristicKey(text) {
+  const t = text || "";
+  if (t.length > 1800 || HIVEY_HARD_RE.test(t)) return "reasoning";
+  if (HIVEY_CODE_RE.test(t)) return "code";
+  return "chat";
+}
+export function hiveyLabelKey(label) {
+  const k = String(label || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (k.startsWith("hard")) return "reasoning";
+  if (k.startsWith("code")) return "code";
+  if (k.startsWith("light") || k.startsWith("simple") || k.startsWith("trivial")) return "light";
+  return "chat";
+}
+export function isHivey(modelId) { return !!(modelId && (HIVEY_VARIANTS[modelId] || HIVEY_ALIASES[modelId])); }
+export function hiveyVariant(modelId) {
+  return HIVEY_VARIANTS[modelId] || HIVEY_VARIANTS[HIVEY_ALIASES[modelId]] || HIVEY_VARIANTS[HIVEY_DEFAULT];
+}
 export function hiveyTiers(modelId) { return hiveyVariant(modelId).tiers; }
 // Heuristic fallback (used only if the LLM router fails/stalls). Word PREFIXES so
 // "raisonner", "stratégie", "optimiser"… all match. Order: deep reasoning → reasoning,

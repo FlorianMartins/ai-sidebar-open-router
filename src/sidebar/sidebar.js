@@ -12,7 +12,7 @@ import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
 import { executeTool } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts, setArtifactsLive, setJudge0Config } from "../lib/markdown.js";
-import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS, HIVEY_AUTO, HIVEY_VARIANTS, hiveyTiers, hiveyTierFor, hiveyTierForLabel, hiveyRouterModel, HIVEY_ROUTER_SYSTEM, isHivey } from "../lib/models.js";
+import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS, HIVEY_AUTO, HIVEY_VARIANTS, hiveyTiers, hiveyTierFor, hiveyHeuristicKey, hiveyLabelKey, hiveyRouterModel, HIVEY_ROUTER_SYSTEM, isHivey } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
 import { applyTheme, effectivePalette } from "../lib/theme.js";
 import { t, setLang, applyDom } from "../lib/i18n.js";
@@ -575,9 +575,9 @@ function chatComboItems() {
   const out = [];
   for (const pid of providersToShow()) {
     if (pid === "openrouter" && settings.orModels && settings.orModels.length) {
-      // 🐝 Hivey smart-routing variants (auto / free / premium), pinned at the very top,
-      // each with its representative price dot (🎁 free, 🟢 value, 🔴 premium).
-      for (const hid of ["hivey/auto", "hivey/free", "hivey/premium"]) {
+      // 🐝 Hivey smart-routing variants, pinned at the very top, cheapest → priciest,
+      // each with its representative price dot (🎁 free, 🟢 low-cost, 🟡 balanced, 🟠 pro).
+      for (const hid of ["hivey/free", "hivey/low-cost", "hivey/balanced", "hivey/pro"]) {
         const v = HIVEY_VARIANTS[hid];
         if (!v) continue;
         out.push({
@@ -665,25 +665,29 @@ function resolveHivey(sel, runMode, text) {
 // Deterministic modes (image/agent/translate/improve) skip the call. Any failure or a
 // >4.5s stall falls back instantly to the local regex heuristic, so it never blocks.
 async function resolveHiveyRouted(sel, runMode, text, signal) {
-  if (!sel || !isHivey(sel.modelId)) return sel;
-  const hid = sel.modelId; // which Hivey variant (free / auto / premium)
+  if (!sel || !isHivey(sel.modelId)) return { sel, tierKey: null };
+  const hid = sel.modelId; // which Hivey variant (free / low-cost / balanced / pro)
+  const T = hiveyTiers(hid);
   const m = runMode || mode;
-  if (m === "image" || m === "agent" || m === "translate" || m === "improve") {
-    return parseSel(hiveyTierFor(hid, m, text || ""));
+  if (m === "image") return { sel: parseSel(T.image), tierKey: "image" };
+  if (m === "agent") return { sel: parseSel(T.agent), tierKey: "agent" };
+  if (m === "translate" || m === "improve") return { sel: parseSel(T.utility), tierKey: "utility" };
+  // Chat/PDF: ask the cheap router which tier should answer; fall back to the heuristic.
+  let key = hiveyHeuristicKey(text || "");
+  if (!currentKeyMissing("openrouter")) {
+    const probe = (text || "").slice(0, 4000);
+    if (probe.trim()) {
+      try {
+        const routerSel = parseSel(hiveyRouterModel(hid));
+        const label = await Promise.race([
+          runUtilityCompletion(routerSel, HIVEY_ROUTER_SYSTEM, probe, signal),
+          new Promise((res) => setTimeout(() => res(""), 4500)),
+        ]);
+        if (label && label.trim()) key = hiveyLabelKey(label);
+      } catch (_) { /* keep the heuristic key */ }
+    }
   }
-  const fallback = parseSel(hiveyTierFor(hid, m, text || ""));
-  if (currentKeyMissing("openrouter")) return fallback;
-  const probe = (text || "").slice(0, 4000);
-  if (!probe.trim()) return fallback;
-  try {
-    const routerSel = parseSel(hiveyRouterModel(hid));
-    const label = await Promise.race([
-      runUtilityCompletion(routerSel, HIVEY_ROUTER_SYSTEM, probe, signal),
-      new Promise((res) => setTimeout(() => res(""), 4500)),
-    ]);
-    if (label && label.trim()) return parseSel(hiveyTierForLabel(hid, label));
-  } catch (_) { /* fall through to the heuristic */ }
-  return fallback;
+  return { sel: parseSel(T[key] || T.chat), tierKey: key };
 }
 // True when Hivey is the user's chosen text model. Also checks the persisted selection so
 // it stays true on the Image tab (which has its own picker) — Hivey routes EVERY tab.
@@ -3249,6 +3253,71 @@ async function runUtilityCompletion(sel, system, userText, signal) {
   return (turn && turn.text || "").trim();
 }
 
+// 🐝 Hivey orchestration stage 1 — WEB: a small fast model runs the web plugin and
+// gathers the relevant facts + source URLs, so the (pricier) routed model only has to
+// analyse and write. Returns the findings text, or "" on failure (caller falls back).
+async function hiveyWebFetch(hid, query, signal) {
+  const ss = parseSel(hiveyTiers(hid).search);
+  if (!ss.providerId || currentKeyMissing(ss.providerId)) return "";
+  const q = (typeof query === "string" ? query : "").slice(0, 4000);
+  if (!q.trim()) return "";
+  try {
+    const provider = makeProvider(
+      { ...settings, provider: ss.providerId, models: { ...settings.models, [ss.providerId]: ss.modelId } },
+      { thinking: false, webSearch: true }
+    );
+    const turn = await Promise.race([
+      provider.runTurn({
+        system: "You are a fast web-research assistant. Search the web for the user's request and return the key facts, figures, dates and quotes WITH their source URLs. Be concise and strictly factual — do NOT answer the user or give opinions, just gather the raw material.",
+        history: [{ role: "user", content: q }], tools: [], onText: null, onThink: null, signal,
+      }),
+      new Promise((res) => setTimeout(() => res(null), 22000)),
+    ]);
+    return (turn && turn.text || "").trim();
+  } catch (_) { return ""; }
+}
+
+// 🐝 Hivey verification — a CHEAP model double-checks the final answer for factual
+// errors, fabricated/unsupported claims and contradictions. Returns "OK" when the
+// answer is sound, a short list of issues otherwise, or null on failure/skip.
+async function hiveyVerify(hid, question, answer, signal) {
+  const T = hiveyTiers(hid);
+  const vs = parseSel(T.light || T.utility); // cheap but capable enough to fact-check
+  if (!vs.providerId || currentKeyMissing(vs.providerId)) return null;
+  const a = (typeof answer === "string" ? answer : "").slice(0, 6000);
+  if (a.replace(/\s/g, "").length < 40) return null; // skip trivial/empty answers
+  try {
+    const out = await Promise.race([
+      runUtilityCompletion(
+        vs,
+        "You are a meticulous fact-checker. Given the user's question and the assistant's answer, check for factual errors, fabricated or unsupported claims, and internal contradictions. If the answer is sound, reply EXACTLY 'OK'. Otherwise reply with up to 3 short bullet points naming the SPECIFIC problems — no preamble, no praise.",
+        "[Question]\n" + (question || "") + "\n\n[Answer]\n" + a, signal
+      ),
+      new Promise((res) => setTimeout(() => res(null), 15000)),
+    ]);
+    return out == null ? null : (out.trim() || null);
+  } catch (_) { return null; }
+}
+
+// 🐝 Hivey orchestration stage 1 — CODE: the senior model designs a precise plan that a
+// cheaper, reliable model then implements verbatim. Returns the plan, or "" on failure.
+async function hiveyCodePlan(hid, task, signal) {
+  const ps = parseSel(hiveyTiers(hid).codePlanner);
+  if (!ps.providerId || currentKeyMissing(ps.providerId)) return "";
+  const q = (typeof task === "string" ? task : "").slice(0, 6000);
+  if (!q.trim()) return "";
+  try {
+    return await Promise.race([
+      runUtilityCompletion(
+        ps,
+        "You are a senior software architect. For the user's coding task, produce a precise, complete implementation plan: the files/components to create, the key functions with their signatures, the data flow, the libraries to use, the edge cases and the pitfalls to avoid. Be specific and unambiguous so a capable engineer implements it correctly on the first try. Do NOT write the full final code — output the plan only.",
+        q, signal
+      ),
+      new Promise((res) => setTimeout(() => res(""), 35000)),
+    ]);
+  } catch (_) { return ""; }
+}
+
 // Compact a session's NATIVE history when it grows past the budget: summarise the
 // OLD turns with the cheap model and keep only the recent ones verbatim. The UI
 // transcript is untouched — the user still sees everything; only the model payload
@@ -3438,23 +3507,48 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   // Effective mode for Hivey: the agent flag wins, then the per-call runMode
   // (translate/improve route deterministically; chat goes through the LLM router).
   const hiveyMode = agentMode ? "agent" : runMode;
-  let turnSel = await resolveHiveyRouted(sel, hiveyMode, modelContent, abortController && abortController.signal);
+  const hid = isHivey(sel.modelId) ? sel.modelId : null;
+  const routed = await resolveHiveyRouted(sel, hiveyMode, modelContent, abortController && abortController.signal);
+  let turnSel = routed.sel;
+  const tierKey = routed.tierKey;
   let isolated = false;
-  let badge = isHivey(sel.modelId) ? "🐝 " + prettifyORName({ id: turnSel.modelId }) : null;
-  if (wantWeb && !agentMode) {
-    // 🐝 Hivey routes web search to its variant's `search` tier (fast, grounded);
-    // otherwise the user's configured search model.
-    const hid = isHivey(sel.modelId) ? sel.modelId : null;
-    const ss = hid ? parseSel(hiveyTiers(hid).search) : parseSel(settings.searchModel || defaultSearchModel(settings));
+  let webPlugin = wantWeb; // whether the FINAL model runs the web plugin itself
+  let badge = hid ? "🐝 " + prettifyORName({ id: turnSel.modelId }) : null;
+
+  // Web search for NON-Hivey models: send the turn to a dedicated web-capable model.
+  if (wantWeb && !agentMode && !hid) {
+    const ss = parseSel(settings.searchModel || defaultSearchModel(settings));
     if (ss.providerId && !currentKeyMissing(ss.providerId) &&
         (ss.providerId !== turnSel.providerId || ss.modelId !== turnSel.modelId)) {
       turnSel = ss;
       isolated = true;
-      if (hid) {
-        badge = "🐝 " + prettifyORName({ id: ss.modelId }) + " · web";
-      } else {
-        const lbl = PROVIDERS[ss.providerId] ? PROVIDERS[ss.providerId].label : ss.providerId;
-        badge = t("badge.web", { label: lbl, model: ss.modelId });
+      const lbl = PROVIDERS[ss.providerId] ? PROVIDERS[ss.providerId].label : ss.providerId;
+      badge = t("badge.web", { label: lbl, model: ss.modelId });
+    }
+  }
+
+  // 🐝 Hivey ORCHESTRATION — combine several models in ONE request: a cheap model does
+  // the grunt work, the smart routed model does the thinking. Pure chat turns only.
+  if (hid && !agentMode && runMode !== "translate" && runMode !== "improve") {
+    const T = hiveyTiers(hid);
+    if (wantWeb) {
+      // (a) Web: a small fast model gathers facts + sources, the routed model analyses.
+      const fetched = await hiveyWebFetch(hid, modelContent, abortController.signal);
+      if (fetched) {
+        modelContent = "[Web research gathered for you by a fast search model — analyse it critically and answer, citing the sources]\n" +
+          fetched + "\n\n[User request]\n" + modelContent;
+        webPlugin = false; // already researched; no need to pay for the plugin again
+        badge = "🐝 " + prettifyORName({ id: parseSel(T.search).modelId }) + " 🔎 → " + prettifyORName({ id: turnSel.modelId }) + " 🧠";
+      }
+      // If the fetch failed, keep webPlugin=true so the routed model still searches.
+    } else if (tierKey === "code" && T.codePlanner && T.codeWriter) {
+      // (b) Code: the senior model DESIGNS the solution, a cheaper model WRITES it.
+      const plan = await hiveyCodePlan(hid, modelContent, abortController.signal);
+      if (plan) {
+        modelContent = "[Senior engineer's implementation plan — follow it exactly and write COMPLETE, correct, runnable code; do not omit anything]\n" +
+          plan + "\n\n[User request]\n" + modelContent;
+        turnSel = parseSel(T.codeWriter);
+        badge = "🐝 " + prettifyORName({ id: parseSel(T.codePlanner).modelId }) + " 🧠 → " + prettifyORName({ id: turnSel.modelId }) + " ✍️";
       }
     }
   }
@@ -3487,7 +3581,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   }
   const provider = makeProvider(
     { ...settings, provider: turnSel.providerId, models: { ...settings.models, [turnSel.providerId]: turnSel.modelId } },
-    { thinking: els.thinking.checked, webSearch: wantWeb }
+    { thinking: els.thinking.checked, webSearch: webPlugin }
   );
   const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: runMode, blockPayments: settings.blockPayments, artifacts: els.artifactMode.checked });
   const tools = activeTools({ agentMode });
@@ -3527,6 +3621,22 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       const aEl = sink.getEl();
       if (aEl) { aEl._raw = sink.getRaw(); attachAssistantActions(aEl, sink.getRaw); }
       if (mode === sessMode) attachCompareBar(aEl); // compare bar only if still on this tab
+      // 🐝 Hivey verification — ALWAYS double-check substantive answers with a cheap
+      // model (facts, unsupported claims, contradictions). Runs in the background so it
+      // never blocks the next message; appends a small verdict under the answer.
+      if (hid && aEl && tierKey !== "light" && tierKey !== "image") {
+        const q = displayText, ans = sink.getRaw(), vSig = abortController && abortController.signal;
+        hiveyVerify(hid, q, ans, vSig).then((verdict) => {
+          if (!verdict || !aEl.isConnected) return;
+          const ok = /^\s*ok\b/i.test(verdict);
+          const note = document.createElement("div");
+          note.className = "hivey-verify " + (ok ? "ok" : "warn");
+          note.textContent = ok
+            ? "✓ " + t("hivey.verified")
+            : "⚠️ " + t("hivey.verifyIssues") + " " + verdict.replace(/\s+/g, " ").slice(0, 400);
+          aEl.appendChild(note);
+        }).catch(() => {});
+      }
     }
   } catch (e) {
     removePending(pending);

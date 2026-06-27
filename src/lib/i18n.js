@@ -282,6 +282,8 @@ const EN = {
   "err.noKeyModel": "No key for this model. Click “Connect / Add a provider” (⚙).",
   "badge.web": "🌐 Web search · {label} · {model}",
   "badge.agent": "🤖 Agent · {label} · {model}",
+  "hivey.verified": "Verified by a low-cost model",
+  "hivey.verifyIssues": "Checked — possible issues:",
 
   // ----- Quick actions / translate / improve / image -------------------------
   "label.translate": "🌐 Translate",
@@ -738,6 +740,8 @@ const FR = {
   "err.noKeyModel": "Aucune clé pour ce modèle. Cliquez « Connexion / Ajouter un fournisseur » (⚙).",
   "badge.web": "🌐 Recherche web · {label} · {model}",
   "badge.agent": "🤖 Agent · {label} · {model}",
+  "hivey.verified": "Vérifié par un modèle économique",
+  "hivey.verifyIssues": "Vérifié — points à revoir :",
 
   "label.translate": "🌐 Traduire",
   "label.translatePage": "🌐 Traduire la page",

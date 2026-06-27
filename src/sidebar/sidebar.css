@@ -727,6 +727,13 @@ body.mode-code #confirmBar { display: none !important; }
 
 /* ----- Per-message hover actions (copy / resend / edit · copy answer) ------- */
 .msg { position: relative; }
+/* 🐝 Hivey background fact-check verdict shown under an answer. */
+.hivey-verify {
+  margin-top: 6px; padding: 5px 9px; border-radius: 7px; font-size: 11.5px; line-height: 1.4;
+  border: 1px solid var(--border); white-space: pre-wrap;
+}
+.hivey-verify.ok { color: #34d399; border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.08); }
+.hivey-verify.warn { color: #fbbf24; border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.08); }
 .mact-bar { display: flex; gap: 3px; margin-top: 5px; opacity: 0.85; transition: opacity .12s ease; }
 .msg:hover > .mact-bar, .mact-bar:focus-within { opacity: 1; }
 /* User message actions (copy/resend/edit): cleaner UI — fully collapsed (no empty gap)
