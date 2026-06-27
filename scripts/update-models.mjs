@@ -18,7 +18,7 @@
 //   node scripts/update-models.mjs --check    # exit 1 if it WOULD change (CI dry-run)
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,8 +27,6 @@ const HIVEY_FILE = join(__dirname, "..", "src", "lib", "hivey-models.js");
 const API = "https://openrouter.ai/api/v1/models";
 
 const CHECK_ONLY = process.argv.includes("--check");
-// 🐝 Hivey model curation runs only when an OpenRouter key is available (CI secret / env).
-const HIVEY_KEY = process.env.OPENROUTER_API_KEY || process.env.HIVEY_CURATE_KEY || "";
 
 // Ranked preference for FREE models (most capable / dependable first). Anything
 // free not listed here is still included afterwards (alphabetically), up to the cap.
@@ -118,99 +116,85 @@ function idsInBlock(src, startMark, endMark) {
   return [...block.matchAll(/\["([^"]+)",/g)].map((m) => m[1]);
 }
 
-// 🐝 Hivey curation: an LLM picks the best AVAILABLE model per role/budget when a clearly
-// better one ships, and writes src/lib/hivey-models.js. Only runs when an OpenRouter key is
-// present (the API has no benchmark field, so we lean on the curator model's knowledge).
-const HIVEY_CURATE_SYSTEM =
-  "You are the model CURATOR for 'Hivey', a smart router that assigns the best OpenRouter model per role and budget. " +
-  "You get the CURRENT assignments and the list of AVAILABLE OpenRouter models (id + price per 1M tokens). Return an " +
-  "UPDATED object with the SAME structure/keys where each value is the best AVAILABLE model id for that role at a similar " +
-  "budget, using your knowledge of model benchmarks and reputation. Rules: (1) use ONLY ids from the available list; " +
-  "(2) KEEP the current id unless a clearly better one exists at a comparable price for that role; (3) respect budgets: " +
-  "'hivey/free' = ONLY ':free' models, 'hivey/low-cost' = cheap (≤ ~$1/M output), 'hivey/balanced' = mid with strong models " +
-  "for code/reasoning, 'hivey/pro' = the very best; (4) keep provider specialists: code/architecture/writing→Claude, " +
-  "tests→Qwen coder, math→Qwen/DeepSeek-R1, search/extract/vision→Gemini, image→best image model; (5) output ONLY a JSON object.";
+// 🐝 Hivey auto-curation — KEY-FREE & automatic. For each role, bump the assigned model to
+// the NEWEST release of the SAME model family available in the catalogue (e.g. Gemini 2.5
+// Flash → 3.5 Flash, Claude Opus 4.8 → 4.9). It only follows the SAME line (conservative,
+// never a risky cross-family jump), so Hivey gets more powerful on its own when providers
+// ship new versions — no API key, no benchmark feed needed. Writes src/lib/hivey-models.js.
 
-async function curateHivey(all) {
-  if (!HIVEY_KEY) {
-    console.log("🐝 Hivey curation skipped (no OPENROUTER_API_KEY / HIVEY_CURATE_KEY).");
-    return;
-  }
-  let current;
+// The "family stem" of a model id: drop pure version / size / date tokens, keep the
+// descriptive name. "google/gemini-2.5-flash"→"google/gemini-flash",
+// "anthropic/claude-opus-4.8"→"anthropic/claude-opus", "qwen/qwq-32b"→"qwen/qwq".
+function modelStem(id) {
+  const [prov, ...rest] = id.split("/");
+  const name = rest.join("/").replace(/:free$/, "");
+  const keep = name.split("-").filter((tk) =>
+    !/^v?\d+(\.\d+)*$/.test(tk) &&   // 3, 4.8, v3.1, 2.5
+    !/^\d+(\.\d+)?[bkm]$/i.test(tk) && // 32b, 120b, 1.2b
+    !/^a\d+[bkm]$/i.test(tk) &&        // a3b, a12b (MoE active params)
+    !/^\d{6,}$/.test(tk) &&            // 20260420, 0528 (date/build)
+    !/^(preview|latest)$/i.test(tk),
+  );
+  return `${prov}/${keep.join("-")}`;
+}
+
+function curateHivey(all) {
+  let current, srcText;
   try {
-    ({ HIVEY_MODELS: current } = await import(pathToFileURL(HIVEY_FILE).href + `?t=${Date.now()}`));
+    srcText = readFileSync(HIVEY_FILE, "utf8");
+    const start = srcText.indexOf("{", srcText.indexOf("HIVEY_MODELS"));
+    const objText = srcText.slice(start, srcText.lastIndexOf("}") + 1);
+    current = new Function(`return (${objText});`)(); // our own file — handles JS object literal
   } catch (e) {
     console.log("🐝 curation: cannot read hivey-models.js —", e.message);
     return;
   }
-  const catalogIds = new Set(all.map((m) => m.id));
-  const avail = all.map((m) => {
-    const inP = m.pricing && +m.pricing.prompt ? (+m.pricing.prompt * 1e6).toFixed(2) : "0";
-    const outP = m.pricing && +m.pricing.completion ? (+m.pricing.completion * 1e6).toFixed(2) : "0";
-    return `${m.id} ($${inP}/$${outP})`;
-  });
-  const user = `CURRENT:\n${JSON.stringify(current, null, 2)}\n\nAVAILABLE (id ($in/$out per 1M)):\n${avail.join("\n")}`;
-  let picked;
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${HIVEY_KEY}`,
-        "HTTP-Referer": "https://hivey.be",
-        "X-Title": "Hivey model curator",
-      },
-      body: JSON.stringify({
-        model: "anthropic/claude-opus-4.8",
-        messages: [
-          { role: "system", content: HIVEY_CURATE_SYSTEM },
-          { role: "user", content: user },
-        ],
-        temperature: 0,
-        max_tokens: 4000,
-        response_format: { type: "json_object" },
-      }),
-    });
-    if (!res.ok) {
-      console.log("🐝 curation: API HTTP", res.status, (await res.text()).slice(0, 200));
-      return;
-    }
-    const j = await res.json();
-    const txt = j?.choices?.[0]?.message?.content || "";
-    picked = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
-  } catch (e) {
-    console.log("🐝 curation failed:", e.message);
-    return;
-  }
 
-  // Merge: keep the structure; adopt a suggested id only if it's valid AND in the catalogue.
+  // Newest model per (stem, free/paid) — exclude preview/experimental builds.
+  const newest = { free: new Map(), paid: new Map() };
+  const byId = new Map();
+  for (const m of all) {
+    byId.set(m.id, m);
+    if (/preview|-exp\b|experimental/i.test(m.id)) continue;
+    const bucket = /:free$/.test(m.id) ? newest.free : newest.paid;
+    const s = modelStem(m.id);
+    const cur = bucket.get(s);
+    if (!cur || (m.created || 0) > (cur.created || 0)) bucket.set(s, m);
+  }
+  const outPrice = (m) => (m && m.pricing && +m.pricing.completion ? +m.pricing.completion * 1e6 : 0);
+
   const merged = {};
   let changes = 0;
   for (const variant of Object.keys(current)) {
     merged[variant] = {};
     for (const role of Object.keys(current[variant])) {
       const cur = current[variant][role];
-      const sug = picked && picked[variant] && picked[variant][role];
-      if (typeof sug === "string" && sug !== cur && catalogIds.has(sug)) {
-        merged[variant][role] = sug;
+      const isFree = /:free$/.test(cur);
+      const cand = (isFree ? newest.free : newest.paid).get(modelStem(cur));
+      const curM = byId.get(cur);
+      const newer = cand && cand.id !== cur && (cand.created || 0) > (curM ? curM.created || 0 : 0);
+      // Sanity guard: don't let a bump multiply the price by >5× (avoids freak jumps).
+      const sane = cand && (!curM || outPrice(cand) <= Math.max(outPrice(curM) * 5, 0.5) || outPrice(curM) === 0);
+      if (newer && sane) {
+        merged[variant][role] = cand.id;
         changes++;
-        console.log(`🐝 ${variant}.${role}: ${cur} → ${sug}`);
+        console.log(`🐝 ${variant}.${role}: ${cur} → ${cand.id}`);
       } else {
-        merged[variant][role] = cur;
+        merged[variant][role] = cur; // keep (already newest, or gone but no same-family replacement)
       }
     }
   }
   if (!changes) {
-    console.log("🐝 Hivey curation: no improvements.");
+    console.log("🐝 Hivey auto-curation: every role already on the newest model of its family.");
     return;
   }
   if (CHECK_ONLY) {
-    console.log(`🐝 Hivey curation WOULD change ${changes} assignment(s).`);
+    console.log(`🐝 Hivey auto-curation WOULD bump ${changes} assignment(s).`);
     return;
   }
-  const header = readFileSync(HIVEY_FILE, "utf8").split("// <hivey:start>")[0];
+  const header = srcText.split("// <hivey:start>")[0];
   writeFileSync(HIVEY_FILE, `${header}// <hivey:start>\nexport const HIVEY_MODELS = ${JSON.stringify(merged, null, 2)};\n// <hivey:end>\n`);
-  console.log(`✓ hivey-models.js updated (${changes} change(s)).`);
+  console.log(`✓ hivey-models.js auto-curated (${changes} bump(s)).`);
 }
 
 async function main() {
