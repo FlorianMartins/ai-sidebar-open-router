@@ -3054,7 +3054,7 @@ function attachAssistantActions(el, getRaw) {
   el._actsBound = true;
   const bar = document.createElement("div");
   bar.className = "mact-bar assistant";
-  bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copyAnswer"), (b) => copyToClipboard((getRaw && getRaw()) || el._raw || "", b)));
+  // Single "Share" action (copies to clipboard when no native share sheet is available).
   bar.appendChild(makeActBtn("mshare", "↗", t("msg.share"), (b) => shareText((getRaw && getRaw()) || el._raw || "", b)));
   el.appendChild(bar);
 }
@@ -3179,6 +3179,7 @@ function removePending(node) {
 // the animated waiting indicator, removed as soon as the first content arrives.
 function makeSink(badgeLabel, showThink = true, pendingEl = null) {
   let el = null, contentEl = null, raw = "", think = null;
+  let codingDetails = null, codingPre = null, coding = false; // collapsible live-code view
   const dropPending = () => { if (pendingEl) { removePending(pendingEl); pendingEl = null; } };
   const ensure = () => {
     if (el) return;
@@ -3192,12 +3193,34 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null) {
     contentEl = document.createElement("div");
     el.appendChild(contentEl);
   };
+  // When the answer starts emitting code, route the LIVE stream into a COLLAPSED
+  // "💻 Coding…" block (cleaner) that the user can expand to watch the code being written.
+  const ensureCoding = () => {
+    if (codingDetails) return;
+    codingDetails = document.createElement("details");
+    codingDetails.className = "coding-block";
+    const sum = document.createElement("summary");
+    sum.textContent = "💻 " + t("step.coding");
+    codingDetails.appendChild(sum);
+    codingPre = document.createElement("pre");
+    codingPre.className = "coding-live";
+    codingDetails.appendChild(codingPre);
+    el.appendChild(codingDetails);
+  };
   return {
     onText(delta) {
       dropPending();
       ensure();
       raw += delta;
-      contentEl.innerHTML = renderMarkdown(raw);
+      if (!coding && raw.indexOf("```") !== -1) coding = true;
+      if (coding) {
+        ensureCoding();
+        codingPre.textContent = raw;           // live code, hidden inside the foldable block
+        if (codingDetails.open) codingPre.scrollTop = codingPre.scrollHeight;
+        contentEl.style.display = "none";       // keep the message clean while coding
+      } else {
+        contentEl.innerHTML = renderMarkdown(raw);
+      }
       scrollMessages();
     },
     onThink(delta) {
@@ -3213,7 +3236,12 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null) {
     },
     finalize() {
       dropPending();
-      if (contentEl) { contentEl.innerHTML = renderMarkdown(raw); enhanceArtifacts(contentEl); }
+      if (contentEl) {
+        contentEl.style.display = "";
+        contentEl.innerHTML = renderMarkdown(raw);
+        enhanceArtifacts(contentEl); // turn code blocks into runnable artifact cards
+      }
+      if (codingDetails) { codingDetails.remove(); codingDetails = null; } // live view no longer needed
     },
     getRaw: () => raw,
     getEl: () => el,
@@ -3424,16 +3452,28 @@ async function hiveyVerify(hid, question, answer, signal) {
   const T = hiveyTiers(hid);
   const vs = ensureUsable(parseSel(T.verify || T.light || T.utility), hid); // capable fact-checker
   if (!vs.providerId || currentKeyMissing(vs.providerId)) return null;
-  const a = (typeof answer === "string" ? answer : "").slice(0, 6000);
+  // Feed the FULL answer (was sliced to 6k → the checker saw big code as "cut off" and
+  // wrongly flagged it as incomplete). Cap high enough for whole artifacts.
+  const full = (typeof answer === "string" ? answer : "");
+  const a = full.slice(0, 60000);
   if (a.replace(/\s/g, "").length < 40) return null; // skip trivial/empty answers
+  // Local truncation signal: balanced ``` fences ⇒ the code block is closed/complete, so
+  // tell the checker NOT to claim it is cut off.
+  const fences = (a.match(/```/g) || []).length;
+  const looksComplete = full.length <= 60000 && fences % 2 === 0;
+  const completeNote = looksComplete
+    ? "The answer below is the COMPLETE final output and its code blocks are properly closed. Do NOT claim it is truncated, cut off or incomplete — judge only what is actually present.\n"
+    : "";
   try {
     const out = await Promise.race([
       runUtilityCompletion(
         vs,
-        "You are a meticulous fact-checker. Given the user's question and the assistant's answer, check for factual errors, fabricated or unsupported claims, hallucinations and internal contradictions. If the answer is sound, reply EXACTLY 'OK'. Otherwise reply with up to 4 short bullet points naming the SPECIFIC problems — no preamble, no praise.",
+        "You are a meticulous reviewer. Check the assistant's answer for REAL problems only: factual errors, fabricated/unsupported claims, hallucinations, internal contradictions, or code that clearly cannot run (undefined references, broken syntax). Do NOT nitpick style, and do NOT invent missing-feature complaints if the feature actually appears in the answer. " +
+          completeNote +
+          "If the answer is sound, reply EXACTLY 'OK'. Otherwise reply with up to 4 short bullet points naming the SPECIFIC problems — no preamble, no praise.",
         "[Question]\n" + (question || "") + "\n\n[Answer]\n" + a, signal
       ),
-      new Promise((res) => setTimeout(() => res(null), 15000)),
+      new Promise((res) => setTimeout(() => res(null), 18000)),
     ]);
     return out == null ? null : (out.trim() || null);
   } catch (_) { return null; }
@@ -3452,7 +3492,7 @@ async function hiveyCorrect(hid, question, answer, issues, tierKey, signal) {
       runUtilityCompletion(
         cs,
         "You are correcting an AI answer that a checker flagged. Produce a REVISED, FINAL answer that fixes every listed problem. Rules: do NOT invent facts — if something cannot be verified, say so explicitly rather than guessing; keep what was correct. CRUCIAL: if the draft was cut off, truncated or incomplete (e.g. an unfinished function or missing logic), output the FULL, COMPLETE and RUNNABLE version with nothing omitted — finish every function and include all required code. Output ONLY the corrected answer (same language as the question), no meta-commentary.",
-        "[Question]\n" + (question || "") + "\n\n[Draft answer]\n" + (answer || "").slice(0, 12000) +
+        "[Question]\n" + (question || "") + "\n\n[Draft answer]\n" + (answer || "").slice(0, 60000) +
         "\n\n[Problems found by the checker]\n" + (issues || ""), signal
       ),
       new Promise((res) => setTimeout(() => res(""), 40000)),
@@ -3588,7 +3628,17 @@ function attachCompareBar(el) {
   bar.appendChild(lbl);
   bar.appendChild(sel);
   bar.appendChild(btn);
+  // A single "Share" action for this answer lives on the compare row, right of "Compare"
+  // (Share copies to the clipboard when no native share sheet is available).
+  const acts = document.createElement("span");
+  acts.className = "cmp-acts";
+  const getRaw = () => el._raw || el.textContent || "";
+  acts.appendChild(makeActBtn("mshare", "↗", t("msg.share"), (b) => shareText(getRaw(), b)));
+  bar.appendChild(acts);
   el.appendChild(bar);
+  // Remove this message's hover Copy/Share bar — its buttons now live on the compare row.
+  el.querySelectorAll(".mact-bar.assistant").forEach((n) => n.remove());
+  el._actsBound = true; // and don't let it be re-added
   applyModelFilter(); // honour the active price/provider filter in the compare list
 }
 
@@ -3613,7 +3663,9 @@ async function compareLast(second, btn) {
     await runConversation({ provider, system, history: [{ role: "user", content: lastUserContent }], tools: [], onText: sink.onText, onThink: sink.onThink, signal: abortController.signal });
     sink.finalize();
     if (sink.getRaw()) transcript.push({ role: "assistant", text: `**${badge}**\n\n${sink.getRaw()}` });
-    attachCompareBar(sink.getEl()); // allow comparing again with yet another model
+    const cmpEl = sink.getEl();
+    if (cmpEl) cmpEl._raw = sink.getRaw(); // so the row's Copy button has the text
+    attachCompareBar(cmpEl); // allow comparing again with yet another model
   } catch (e) {
     removePending(cmpPending);
     showRunError(second.providerId, e, second.modelId);

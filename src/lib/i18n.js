@@ -296,6 +296,7 @@ const EN = {
   "step.generate": "Generating the answer…",
   "step.verify": "Checking the answer…",
   "step.correct": "Fixing the issues found…",
+  "step.coding": "Coding… (click to view the code)",
 
   // ----- Quick actions / translate / improve / image -------------------------
   "label.translate": "🌐 Translate",
@@ -767,6 +768,7 @@ const FR = {
   "step.generate": "Génération de la réponse…",
   "step.verify": "Vérification de la réponse…",
   "step.correct": "Correction des problèmes détectés…",
+  "step.coding": "Codage… (cliquer pour voir le code)",
 
   "label.translate": "🌐 Traduire",
   "label.translatePage": "🌐 Traduire la page",
