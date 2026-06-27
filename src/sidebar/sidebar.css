@@ -750,19 +750,21 @@ body.mode-code #confirmBar { display: none !important; }
 .hivey-verify.warn { color: #fbbf24; border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.08); }
 .mact-bar { display: flex; gap: 3px; margin-top: 5px; opacity: 0.85; transition: opacity .12s ease; }
 .msg:hover > .mact-bar, .mact-bar:focus-within { opacity: 1; }
-/* User message actions (copy/resend/edit): cleaner UI — fully collapsed (no empty gap)
-   until the message is hovered (or a button is focused for keyboard users), then the
+/* Message actions (user: copy/edit/resend — assistant: copy/share): cleaner UI — fully
+   collapsed (no empty gap) until the message is hovered (or a button is focused), then the
    row expands into view. */
-.mact-bar.user {
-  justify-content: flex-end; opacity: 0; pointer-events: none;
+.mact-bar.user, .mact-bar.assistant {
+  opacity: 0; pointer-events: none;
   max-height: 0; margin-top: 0; overflow: hidden;
   transition: opacity .12s ease, max-height .15s ease, margin-top .15s ease;
 }
-.msg:hover > .mact-bar.user, .mact-bar.user:focus-within {
+.mact-bar.user { justify-content: flex-end; }
+.msg:hover > .mact-bar.user, .mact-bar.user:focus-within,
+.msg:hover > .mact-bar.assistant, .mact-bar.assistant:focus-within {
   opacity: 1; pointer-events: auto; max-height: 32px; margin-top: 6px;
 }
-/* Slightly larger, more legible icons on the user message (shown on hover). */
-.mact-bar.user .mact { width: 26px; height: 24px; font-size: 13px; border-radius: 6px; }
+/* Slightly larger, more legible icons on both message types (shown on hover). */
+.mact-bar.user .mact, .mact-bar.assistant .mact { width: 26px; height: 24px; font-size: 13px; border-radius: 6px; }
 /* The ↻ "resend" glyph reads smaller than the others because of its shape — bump it. */
 .mact.mresend { font-size: 16px; }
 .mact-bar.user .mact.mresend { font-size: 17px; }

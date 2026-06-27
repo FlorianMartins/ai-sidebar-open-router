@@ -2155,12 +2155,22 @@ async function loadConversation(id) {
   transcript = c.transcript || [];
   history = c.nativeHistory || [];
   convId = c.id;
-  lastUserContent = ""; // a loaded conversation has no pending "compare" target
+  // Restore the last user prompt as the "compare" target so the last answer can ALWAYS be
+  // re-run on another model — even after switching conversation (it used to be lost).
+  const lastUser = [...transcript].reverse().find((it) => it.role === "user" && it.kind !== "note");
+  lastUserContent = lastUser ? (lastUser.text || "") : "";
+  lastRunMode = "chat";
+  lastForceWeb = false;
   getSession(mode).pageCtxKeys = new Set(); // re-attach page context once for this thread
   getSession(mode).customTitle = c.customTitle || ""; // keep a manual rename
   getSession(mode).importedSources = c.importedSources || []; // keep dedup of imports
   syncSessionFromGlobals(mode); // these new arrays become this tab's live session
-  for (const item of transcript) renderTranscriptItem(item);
+  let lastAssistantEl = null;
+  for (const item of transcript) {
+    const el = renderTranscriptItem(item);
+    if (item.role !== "user" && item.kind !== "note") lastAssistantEl = el;
+  }
+  if (lastAssistantEl && lastUserContent) attachCompareBar(lastAssistantEl); // compare on the last answer
   els.empty.classList.add("hidden");
   els.historyPanel.classList.add("hidden");
 }
