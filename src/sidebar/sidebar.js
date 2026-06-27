@@ -2953,7 +2953,7 @@ function scrollMessages(force) {
   wireScroll();
   if (force) stickBottom = true;
   if (force || (settings.autoScroll !== false && stickBottom)) {
-    scrollMessages();
+    els.messages.scrollTop = els.messages.scrollHeight;
   }
   updateScrollBtn();
 }
