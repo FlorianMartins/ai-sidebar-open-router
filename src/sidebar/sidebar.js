@@ -10,7 +10,7 @@
 import { getSettings, setSettings, onSettingsChanged } from "../lib/storage.js";
 import { makeProvider, listModels, listOpenRouterRich, generateImage } from "../lib/providers.js";
 import { buildSystemPrompt, activeTools, runConversation } from "../lib/agent.js";
-import { executeTool } from "../lib/tools.js";
+import { executeTool, setAgentTab, clearAgentTab } from "../lib/tools.js";
 import { configureMarkdown, renderMarkdown, enhanceArtifacts, setArtifactsLive, setJudge0Config } from "../lib/markdown.js";
 import { PROVIDERS, PROVIDER_ORDER, modelFor, keyFor, connectedProviders, defaultSearchModel, IMAGE_SIZES, WRITING_PRESETS, HIVEY_AUTO, HIVEY_VARIANTS, hiveyTiers, hiveyTierFor, hiveyHeuristicKey, hiveyLabelKey, hiveyRouterModel, HIVEY_ROUTER_SYSTEM, isHivey } from "../lib/models.js";
 import { connectOpenRouter } from "../lib/auth.js";
@@ -96,6 +96,7 @@ const els = {
   artifactMode: $("artifactMode"),
   webSearch: $("webSearch"),
   pageCtx: $("pageCtx"),
+  autoScroll: $("autoScroll"),
   translateLang: $("translateLang"),
   improvePreset: $("improvePreset"),
   imageSize: $("imageSize"),
@@ -2740,6 +2741,14 @@ function wire() {
   bindToggle(els.artifactMode, "artifacts", () => setArtifactsLive(els.artifactMode.checked));
   bindToggle(els.webSearch, "webSearch");
   bindToggle(els.pageCtx, "includePageContext", updatePageBar);
+  // Auto-scroll is a GLOBAL preference (not per-tab): whether the view follows the AI's
+  // answer as it streams. OFF = stay put so you can read/scroll freely while it types.
+  els.autoScroll.checked = settings.autoScroll !== false;
+  els.autoScroll.addEventListener("change", async () => {
+    settings.autoScroll = els.autoScroll.checked;
+    await setSettings({ autoScroll: settings.autoScroll });
+    if (els.autoScroll.checked) scrollMessages(true);
+  });
 
   els.rail.querySelectorAll(".railtab").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
   els.openCodeApp.addEventListener("click", openCodeApp);
@@ -3054,8 +3063,8 @@ function attachAssistantActions(el, getRaw) {
   el._actsBound = true;
   const bar = document.createElement("div");
   bar.className = "mact-bar assistant";
-  // Single "Share" action (copies to clipboard when no native share sheet is available).
-  bar.appendChild(makeActBtn("mshare", "↗", t("msg.share"), (b) => shareText((getRaw && getRaw()) || el._raw || "", b)));
+  // Single "Copy" action (native share is unavailable on desktop, so plain copy is clearer).
+  bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copyAnswer"), (b) => copyToClipboard((getRaw && getRaw()) || el._raw || "", b)));
   el.appendChild(bar);
 }
 // Share an answer: use the native share sheet when available, else copy to clipboard.
@@ -3628,12 +3637,11 @@ function attachCompareBar(el) {
   bar.appendChild(lbl);
   bar.appendChild(sel);
   bar.appendChild(btn);
-  // A single "Share" action for this answer lives on the compare row, right of "Compare"
-  // (Share copies to the clipboard when no native share sheet is available).
+  // A single "Copy" action for this answer lives on the compare row, right of "Compare".
   const acts = document.createElement("span");
   acts.className = "cmp-acts";
   const getRaw = () => el._raw || el.textContent || "";
-  acts.appendChild(makeActBtn("mshare", "↗", t("msg.share"), (b) => shareText(getRaw(), b)));
+  acts.appendChild(makeActBtn("mcopy", "⧉", t("msg.copyAnswer"), (b) => copyToClipboard(getRaw(), b)));
   bar.appendChild(acts);
   el.appendChild(bar);
   // Remove this message's hover Copy/Share bar — its buttons now live on the compare row.
@@ -3817,7 +3825,15 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   // Agent mode: collapse the agent's tool calls into ONE foldable "Actions" block for
   // a cleaner, more immersive run — the steps are hidden but consultable on click.
   const agentActs = agentMode ? makeAgentActions() : null;
-  if (agentMode) agentGlowActiveTab(); // glow the page border while the agent works
+  if (agentMode) {
+    // 🔒 Pin the agent to the tab it starts on, so it keeps working there while the user
+    // is free to switch tabs / browse elsewhere during the run.
+    try {
+      const [atab] = await browser.tabs.query({ active: true, currentWindow: true });
+      if (atab && typeof atab.id === "number") setAgentTab(atab.id);
+    } catch (_) {}
+    agentGlowActiveTab(); // glow the page border while the agent works
+  }
   try {
     const runOnce = () => runConversation({
       provider, system, history: turnHistory, tools,
@@ -3923,7 +3939,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   } finally {
     removePending(pending);
     if (agentActs) agentActs.finish(); // collapse the Actions block + show the final count
-    if (agentMode) clearAgentGlow(); // stop the page-border glow when the agent finishes
+    if (agentMode) { clearAgentGlow(); clearAgentTab(); } // stop glow + unpin the agent's tab
     endBusy();
     await saveSession(sess, sessMode, sel);
     // Keep an open history panel in sync (e.g. the new conversation gets its title).

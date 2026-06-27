@@ -142,7 +142,19 @@ export const TOOLS = [
   },
 ];
 
+// 🔒 Agent focus: while the agent works, it stays PINNED to the tab it started on, so the
+// user can switch to other tabs / browse freely without the agent acting on the wrong page.
+let agentPinnedTab = null;
+export function setAgentTab(id) { agentPinnedTab = typeof id === "number" ? id : null; }
+export function clearAgentTab() { agentPinnedTab = null; }
+export function getAgentTab() { return agentPinnedTab; }
 async function getActiveTab() {
+  if (agentPinnedTab != null) {
+    try {
+      const t = await browser.tabs.get(agentPinnedTab);
+      if (t) return t; // operate on the pinned tab even if it's in the background
+    } catch (_) { agentPinnedTab = null; } // tab was closed → fall back to the live active tab
+  }
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab) throw new Error("No active tab.");
   return tab;

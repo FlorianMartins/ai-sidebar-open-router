@@ -763,16 +763,18 @@ body.mode-code #confirmBar { display: none !important; }
 /* Message actions (user: copy/edit/resend — assistant: copy/share): cleaner UI — fully
    collapsed (no empty gap) until the message is hovered (or a button is focused), then the
    row expands into view. */
-.mact-bar.user, .mact-bar.assistant {
-  opacity: 0; pointer-events: none;
+/* User message actions: collapsed until hovered. */
+.mact-bar.user {
+  justify-content: flex-end; opacity: 0; pointer-events: none;
   max-height: 0; margin-top: 0; overflow: hidden;
   transition: opacity .12s ease, max-height .15s ease, margin-top .15s ease;
 }
-.mact-bar.user { justify-content: flex-end; }
-.msg:hover > .mact-bar.user, .mact-bar.user:focus-within,
-.msg:hover > .mact-bar.assistant, .mact-bar.assistant:focus-within {
+.msg:hover > .mact-bar.user, .mact-bar.user:focus-within {
   opacity: 1; pointer-events: auto; max-height: 32px; margin-top: 6px;
 }
+/* Assistant answer Copy: at the BOTTOM-RIGHT, visible by default (a touch dim → full on hover). */
+.mact-bar.assistant { justify-content: flex-end; opacity: 0.55; transition: opacity .12s ease; }
+.msg:hover > .mact-bar.assistant, .mact-bar.assistant:focus-within { opacity: 1; }
 /* Slightly larger, more legible icons on both message types (shown on hover). */
 .mact-bar.user .mact, .mact-bar.assistant .mact { width: 26px; height: 24px; font-size: 13px; border-radius: 6px; }
 /* The ↻ "resend" glyph reads smaller than the others because of its shape — bump it. */
