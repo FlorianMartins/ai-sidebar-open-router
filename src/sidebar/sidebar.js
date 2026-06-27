@@ -97,6 +97,7 @@ const els = {
   webSearch: $("webSearch"),
   pageCtx: $("pageCtx"),
   autoScroll: $("autoScroll"),
+  verifyAnswers: $("verifyAnswers"),
   translateLang: $("translateLang"),
   improvePreset: $("improvePreset"),
   imageSize: $("imageSize"),
@@ -2749,6 +2750,13 @@ function wire() {
     await setSettings({ autoScroll: settings.autoScroll });
     if (els.autoScroll.checked) scrollMessages(true);
   });
+  // Verification is also a GLOBAL preference: when ON, Hivey double-checks & auto-fixes
+  // each substantive answer (extra tokens); OFF = no check (cheaper/faster).
+  els.verifyAnswers.checked = settings.verifyAnswers !== false;
+  els.verifyAnswers.addEventListener("change", async () => {
+    settings.verifyAnswers = els.verifyAnswers.checked;
+    await setSettings({ verifyAnswers: settings.verifyAnswers });
+  });
 
   els.rail.querySelectorAll(".railtab").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
   els.openCodeApp.addEventListener("click", openCodeApp);
@@ -3884,6 +3892,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     sink.finalize();
     if (sink.getRaw()) {
       sess.transcript.push({ role: "assistant", text: sink.getRaw() });
+      const ansIdx = sess.transcript.length - 1; // slot to REPLACE if it gets corrected
       const aEl = sink.getEl();
       if (aEl) { aEl._raw = sink.getRaw(); attachAssistantActions(aEl, sink.getRaw); }
       if (mode === sessMode) attachCompareBar(aEl); // compare bar only if still on this tab
@@ -3891,10 +3900,10 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       // (facts, hallucinations, INCOMPLETE/truncated code). When the checker flags problems,
       // a STRONG model rewrites the answer; this repeats until it passes (cap 2 rounds). Runs
       // in the background so it never blocks the next message.
-      if (hid && aEl && tierKey !== "light" && tierKey !== "image") {
+      if (hid && aEl && tierKey !== "light" && tierKey !== "image" && settings.verifyAnswers !== false) {
         const q = displayText, vSig = abortController && abortController.signal;
         (async () => {
-          let curEl = aEl, curRaw = sink.getRaw(), round = 0;
+          let curEl = aEl, curRaw = sink.getRaw(), round = 0, corrected = false;
           try {
             while (round < 2 && curEl && curEl.isConnected) {
               if (hstep) hstep.set(t("step.verify"));
@@ -3906,11 +3915,8 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
                 curEl.appendChild(note);
                 break;
               }
-              // Issues → note them on the current answer, then regenerate a corrected one.
-              const warn = document.createElement("div");
-              warn.className = "hivey-verify warn";
-              warn.textContent = "⚠️ " + t("hivey.verifyIssues") + " " + verdict.replace(/\s+/g, " ").slice(0, 300);
-              curEl.appendChild(warn);
+              // Issues found → regenerate a corrected answer and REPLACE the flawed one
+              // (the previous message is deleted, not stacked below).
               if (hstep) hstep.set(t("step.correct"));
               const fixed = await hiveyCorrect(hid, q, curRaw, verdict, tierKey, vSig);
               if (!fixed || !fixed.trim()) break;
@@ -3924,11 +3930,15 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
               enhanceArtifacts(body);
               wrap.appendChild(body);
               wrap._raw = fixed; attachAssistantActions(wrap, () => fixed);
-              sess.transcript.push({ role: "assistant", text: "🔁 " + fixed });
-              curEl = wrap; curRaw = fixed; round++;
+              sess.transcript[ansIdx] = { role: "assistant", text: fixed }; // replace, don't append
+              if (curEl) curEl.remove(); // delete the previous (flawed) message
+              if (mode === sessMode) attachCompareBar(wrap); // move the compare bar onto the fix
+              curEl = wrap; curRaw = fixed; round++; corrected = true;
             }
           } catch (_) {}
           if (hstep) hstep.done();
+          // Persist the corrected answer (the finally block already saved the original).
+          if (corrected) { try { await saveSession(sess, sessMode, sel); } catch (_) {} }
         })();
       } else if (hstep) { hstep.done(); }
     } else if (hstep) { hstep.done(); }
