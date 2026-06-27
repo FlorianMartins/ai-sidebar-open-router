@@ -726,12 +726,26 @@ body.mode-code #confirmBar { display: none !important; }
 .cmp-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ----- Per-message hover actions (copy / resend / edit · copy answer) ------- */
+/* "Jump to latest" button — shown when the user has scrolled up. */
+.scroll-bottom-btn {
+  position: absolute; right: 16px; bottom: 92px; z-index: 30;
+  width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1;
+  color: #fff; background: var(--accent); border: 1px solid var(--accent-2, var(--accent));
+  box-shadow: 0 3px 12px rgba(0,0,0,.35); transition: opacity .15s ease, transform .15s ease;
+}
+.scroll-bottom-btn:hover { transform: translateY(-1px); }
+.scroll-bottom-btn.hidden { display: none; }
+
 .msg { position: relative; }
 /* 🐝 Hivey background fact-check verdict shown under an answer. */
 .hivey-verify {
   margin-top: 6px; padding: 5px 9px; border-radius: 7px; font-size: 11.5px; line-height: 1.4;
   border: 1px solid var(--border); white-space: pre-wrap;
 }
+/* 🐝 Evolving workflow status line (Analyse → Search → Generate → Check → Fix). */
+.hivey-step { opacity: .85; font-size: 12px; animation: hiveyPulse 1.3s ease-in-out infinite; }
+@keyframes hiveyPulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
 .hivey-verify.ok { color: #34d399; border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.08); }
 .hivey-verify.warn { color: #fbbf24; border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.08); }
 .mact-bar { display: flex; gap: 3px; margin-top: 5px; opacity: 0.85; transition: opacity .12s ease; }
@@ -749,6 +763,9 @@ body.mode-code #confirmBar { display: none !important; }
 }
 /* Slightly larger, more legible icons on the user message (shown on hover). */
 .mact-bar.user .mact { width: 26px; height: 24px; font-size: 13px; border-radius: 6px; }
+/* The ↻ "resend" glyph reads smaller than the others because of its shape — bump it. */
+.mact.mresend { font-size: 16px; }
+.mact-bar.user .mact.mresend { font-size: 17px; }
 .mact {
   width: 19px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
   font-size: 10px; line-height: 1; border-radius: 5px; cursor: pointer;

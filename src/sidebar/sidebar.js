@@ -2914,14 +2914,60 @@ function autoGrow() {
 function resetComposerHeight() { els.input.style.height = "auto"; }
 
 // ----- Message rendering ----------------------------------------------------
+// --- Auto-scroll manager -----------------------------------------------------
+// Keep the thread pinned to the bottom while the AI streams, BUT pause as soon as the
+// user scrolls up (so they can read), and show a "↓ jump to latest" button. The whole
+// auto-scroll behaviour can be disabled with the `autoScroll` setting.
+let stickBottom = true, scrollWired = false;
+function isAtBottom() {
+  const m = els.messages;
+  return (m.scrollHeight - m.scrollTop - m.clientHeight) < 48;
+}
+function updateScrollBtn() {
+  if (els.scrollBottomBtn) els.scrollBottomBtn.classList.toggle("hidden", isAtBottom());
+}
+function wireScroll() {
+  if (scrollWired || !els.messages) return;
+  scrollWired = true;
+  els.messages.addEventListener("scroll", () => { stickBottom = isAtBottom(); updateScrollBtn(); });
+  const btn = document.createElement("button");
+  btn.id = "scrollBottomBtn"; btn.type = "button"; btn.className = "scroll-bottom-btn hidden";
+  btn.title = t("scroll.toBottom"); btn.innerHTML = "↓";
+  btn.addEventListener("click", () => scrollMessages(true));
+  (els.messages.parentElement || document.body).appendChild(btn);
+  els.scrollBottomBtn = btn;
+}
+// Scroll to the bottom when appropriate. force=true (user sent / clicked ↓) always scrolls
+// and re-pins; otherwise only if auto-scroll is on AND the user hasn't scrolled up.
+function scrollMessages(force) {
+  wireScroll();
+  if (force) stickBottom = true;
+  if (force || (settings.autoScroll !== false && stickBottom)) {
+    scrollMessages();
+  }
+  updateScrollBtn();
+}
 function addMessage(role, text) {
   els.empty.classList.add("hidden");
   const div = document.createElement("div");
   div.className = "msg " + role;
   div.textContent = text || "";
   els.messages.appendChild(div);
-  els.messages.scrollTop = els.messages.scrollHeight;
+  scrollMessages(role === "user"); // user-sent messages always jump to bottom & re-pin
   return div;
+}
+// 🐝 A SINGLE status line that EVOLVES through the workflow steps (Analysing → Searching →
+// Generating → Checking → Fixing). set() creates it on first use and updates in place.
+function makeStepStatus() {
+  let el = null;
+  return {
+    set(txt) {
+      if (!el || !el.isConnected) { el = addMessage("tool", ""); el.classList.add("hivey-step"); }
+      el.textContent = "🐝 " + txt;
+      scrollMessages();
+    },
+    done() { if (el) { el.remove(); el = null; } },
+  };
 }
 // Render attachment thumbnails/chips inside a user message bubble.
 function renderUserAttachments(div, meta) {
@@ -2986,8 +3032,8 @@ function attachUserActions(div, rawText) {
   const bar = document.createElement("div");
   bar.className = "mact-bar user";
   bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copy"), (b) => copyToClipboard(div._raw, b)));
-  bar.appendChild(makeActBtn("mresend", "↻", t("msg.resend"), () => resendPrompt(div._raw)));
   bar.appendChild(makeActBtn("medit", "✎", t("msg.edit"), () => editPrompt(div._raw)));
+  bar.appendChild(makeActBtn("mresend", "↻", t("msg.resend"), () => resendPrompt(div._raw)));
   div.appendChild(bar);
   div.addEventListener("dblclick", () => editPrompt(div._raw));
   div.addEventListener("contextmenu", (e) => { e.preventDefault(); editPrompt(div._raw); });
@@ -3040,7 +3086,7 @@ function makeAgentActions() {
     wrap.appendChild(sum);
     wrap.appendChild(list);
     els.messages.appendChild(wrap);
-    els.messages.scrollTop = els.messages.scrollHeight;
+    scrollMessages();
   };
   return {
     start(call) {
@@ -3053,7 +3099,7 @@ function makeAgentActions() {
       row.appendChild(head);
       list.appendChild(row);
       currentRow = row;
-      els.messages.scrollTop = els.messages.scrollHeight;
+      scrollMessages();
     },
     end(call, out) {
       if (!currentRow) return;
@@ -3085,7 +3131,7 @@ function addThinkBlock() {
   d.appendChild(s);
   d.appendChild(body);
   els.messages.appendChild(d);
-  els.messages.scrollTop = els.messages.scrollHeight;
+  scrollMessages();
   return body;
 }
 
@@ -3108,7 +3154,7 @@ function addPendingIndicator() {
   label.textContent = phrases[0] + "…";
   ind.appendChild(dots); ind.appendChild(label);
   wrap.appendChild(ind);
-  els.messages.scrollTop = els.messages.scrollHeight;
+  scrollMessages();
   wrap._iv = setInterval(() => { pi = (pi + 1) % phrases.length; label.textContent = phrases[pi] + "…"; }, 1800);
   return wrap;
 }
@@ -3142,7 +3188,7 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null) {
       ensure();
       raw += delta;
       contentEl.innerHTML = renderMarkdown(raw);
-      els.messages.scrollTop = els.messages.scrollHeight;
+      scrollMessages();
     },
     onThink(delta) {
       // Only surface reasoning when the 💭 toggle is ON. Some models (DeepSeek R1,
@@ -3153,7 +3199,7 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null) {
       dropPending();
       if (!think) think = addThinkBlock();
       think.textContent += delta;
-      els.messages.scrollTop = els.messages.scrollHeight;
+      scrollMessages();
     },
     finalize() {
       dropPending();
@@ -3395,8 +3441,8 @@ async function hiveyCorrect(hid, question, answer, issues, tierKey, signal) {
     return await Promise.race([
       runUtilityCompletion(
         cs,
-        "You are correcting an AI answer that a fact-checker flagged. Produce a REVISED answer that fixes every listed problem and removes any unsupported claim. Rules: do NOT invent facts; if something cannot be verified, say so explicitly rather than guessing; keep what was correct; be accurate and complete. Output ONLY the corrected answer (same language as the question), no meta-commentary.",
-        "[Question]\n" + (question || "") + "\n\n[Draft answer]\n" + (answer || "").slice(0, 8000) +
+        "You are correcting an AI answer that a checker flagged. Produce a REVISED, FINAL answer that fixes every listed problem. Rules: do NOT invent facts — if something cannot be verified, say so explicitly rather than guessing; keep what was correct. CRUCIAL: if the draft was cut off, truncated or incomplete (e.g. an unfinished function or missing logic), output the FULL, COMPLETE and RUNNABLE version with nothing omitted — finish every function and include all required code. Output ONLY the corrected answer (same language as the question), no meta-commentary.",
+        "[Question]\n" + (question || "") + "\n\n[Draft answer]\n" + (answer || "").slice(0, 12000) +
         "\n\n[Problems found by the checker]\n" + (issues || ""), signal
       ),
       new Promise((res) => setTimeout(() => res(""), 40000)),
@@ -3613,6 +3659,9 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   // (translate/improve route deterministically; chat goes through the LLM router).
   const hiveyMode = agentMode ? "agent" : runMode;
   const hid = isHivey(sel.modelId) ? sel.modelId : null;
+  // 🐝 Evolving workflow status (Analyse → Search/Plan → Generate → Check → Fix).
+  const hstep = hid ? makeStepStatus() : null;
+  if (hstep) hstep.set(t("step.analyze"));
   const routed = await resolveHiveyRouted(sel, hiveyMode, modelContent, abortController && abortController.signal);
   let turnSel = routed.sel;
   let tierKey = routed.tierKey;
@@ -3646,6 +3695,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
     const T = hiveyTiers(hid);
     if (wantWeb) {
       // (a) Web: a small fast model gathers facts + sources, the routed model analyses.
+      if (hstep) hstep.set(t("step.search"));
       const fetched = await hiveyWebFetch(hid, modelContent, abortController.signal);
       if (fetched) {
         modelContent = "[Web research gathered for you by a fast search model — analyse it critically and answer, citing the sources]\n" +
@@ -3656,6 +3706,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       // If the fetch failed, keep webPlugin=true so the routed model still searches.
     } else if (tierKey === "code" && T.codePlanner && T.codeWriter) {
       // (b) Code: the senior model DESIGNS the solution, a cheaper model WRITES it.
+      if (hstep) hstep.set(t("step.plan"));
       const plan = await hiveyCodePlan(hid, modelContent, abortController.signal);
       if (plan) {
         modelContent = "[Senior engineer's implementation plan — follow it exactly and write COMPLETE, correct, runnable code; do not omit anything]\n" +
@@ -3698,6 +3749,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
   );
   const system = buildSystemPrompt({ agentMode, targetLang: settings.targetLang, responseLang: settings.responseLang, mode: runMode, blockPayments: settings.blockPayments, artifacts: els.artifactMode.checked });
   const tools = activeTools({ agentMode });
+  if (hstep) hstep.set(t("step.generate"));
   const pending = addPendingIndicator();
   const sink = makeSink(badge, els.thinking.checked, pending);
   // Agent mode: collapse the agent's tool calls into ONE foldable "Actions" block for
@@ -3757,45 +3809,54 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
       const aEl = sink.getEl();
       if (aEl) { aEl._raw = sink.getRaw(); attachAssistantActions(aEl, sink.getRaw); }
       if (mode === sessMode) attachCompareBar(aEl); // compare bar only if still on this tab
-      // 🐝 Hivey verification — ALWAYS double-check substantive answers (facts, unsupported
-      // claims, hallucinations). If the checker flags problems, a STRONG model rewrites the
-      // answer and the corrected version is appended. Runs in the background (non-blocking).
+      // 🐝 Hivey verification + self-correction — ALWAYS double-check substantive answers
+      // (facts, hallucinations, INCOMPLETE/truncated code). When the checker flags problems,
+      // a STRONG model rewrites the answer; this repeats until it passes (cap 2 rounds). Runs
+      // in the background so it never blocks the next message.
       if (hid && aEl && tierKey !== "light" && tierKey !== "image") {
-        const q = displayText, ans = sink.getRaw(), vSig = abortController && abortController.signal;
-        hiveyVerify(hid, q, ans, vSig).then(async (verdict) => {
-          if (!verdict || !aEl.isConnected) return;
-          if (/^\s*ok\b/i.test(verdict)) {
-            const note = document.createElement("div");
-            note.className = "hivey-verify ok";
-            note.textContent = "✓ " + t("hivey.verified");
-            aEl.appendChild(note);
-            return;
-          }
-          // Issues found → flag, then regenerate a corrected answer.
-          const note = document.createElement("div");
-          note.className = "hivey-verify warn";
-          note.textContent = "⚠️ " + t("hivey.verifyIssues") + " " + verdict.replace(/\s+/g, " ").slice(0, 400)
-            + " — " + t("hivey.regenerating");
-          aEl.appendChild(note);
-          const fixed = await hiveyCorrect(hid, q, ans, verdict, tierKey, vSig);
-          if (fixed && fixed.trim() && aEl.isConnected) {
-            const wrap = addMessage("assistant", "");
-            const head = document.createElement("div");
-            head.className = "hivey-verify ok";
-            head.textContent = "🔁 " + t("hivey.corrected");
-            wrap.appendChild(head);
-            const body = document.createElement("div");
-            body.innerHTML = renderMarkdown(fixed);
-            enhanceArtifacts(body);
-            wrap.appendChild(body);
-            wrap._raw = fixed; attachAssistantActions(wrap, () => fixed);
-            sess.transcript.push({ role: "assistant", text: "🔁 " + fixed });
-          }
-        }).catch(() => {});
-      }
-    }
+        const q = displayText, vSig = abortController && abortController.signal;
+        (async () => {
+          let curEl = aEl, curRaw = sink.getRaw(), round = 0;
+          try {
+            while (round < 2 && curEl && curEl.isConnected) {
+              if (hstep) hstep.set(t("step.verify"));
+              const verdict = await hiveyVerify(hid, q, curRaw, vSig);
+              if (!verdict || /^\s*ok\b/i.test(verdict)) {
+                const note = document.createElement("div");
+                note.className = "hivey-verify ok";
+                note.textContent = "✓ " + t("hivey.verified");
+                curEl.appendChild(note);
+                break;
+              }
+              // Issues → note them on the current answer, then regenerate a corrected one.
+              const warn = document.createElement("div");
+              warn.className = "hivey-verify warn";
+              warn.textContent = "⚠️ " + t("hivey.verifyIssues") + " " + verdict.replace(/\s+/g, " ").slice(0, 300);
+              curEl.appendChild(warn);
+              if (hstep) hstep.set(t("step.correct"));
+              const fixed = await hiveyCorrect(hid, q, curRaw, verdict, tierKey, vSig);
+              if (!fixed || !fixed.trim()) break;
+              const wrap = addMessage("assistant", "");
+              const head = document.createElement("div");
+              head.className = "hivey-verify ok";
+              head.textContent = "🔁 " + t("hivey.corrected");
+              wrap.appendChild(head);
+              const body = document.createElement("div");
+              body.innerHTML = renderMarkdown(fixed);
+              enhanceArtifacts(body);
+              wrap.appendChild(body);
+              wrap._raw = fixed; attachAssistantActions(wrap, () => fixed);
+              sess.transcript.push({ role: "assistant", text: "🔁 " + fixed });
+              curEl = wrap; curRaw = fixed; round++;
+            }
+          } catch (_) {}
+          if (hstep) hstep.done();
+        })();
+      } else if (hstep) { hstep.done(); }
+    } else if (hstep) { hstep.done(); }
   } catch (e) {
     removePending(pending);
+    if (hstep) hstep.done();
     showRunError(turnSel.providerId, e, turnSel.modelId);
   } finally {
     removePending(pending);
@@ -4210,7 +4271,7 @@ async function pdfExtractImages() {
         img.alt = `${p.name} — page ${i}`;
         img.className = "gen-image";
         wrap.appendChild(img);
-        els.messages.scrollTop = els.messages.scrollHeight;
+        scrollMessages();
       }
     }
     status.remove();

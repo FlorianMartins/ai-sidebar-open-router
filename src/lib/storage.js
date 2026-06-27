@@ -93,6 +93,8 @@ const DEFAULTS = {
   cleanContext: true, // strip boilerplate/whitespace/duplicate lines from page & tab
                       // text before sending, AND send a page's content only ONCE per
                       // conversation (not re-attached on every follow-up message).
+  autoScroll: true,      // follow the AI's answer by auto-scrolling to the bottom while it
+                         // streams; off = the view stays put so you can read/scroll freely.
   compressHistory: true, // when a conversation grows long, summarise its OLD turns with
                          // a cheap model so later turns send far fewer tokens. The UI
                          // still shows the full transcript — only the model payload shrinks.

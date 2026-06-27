@@ -554,6 +554,7 @@ async function load() {
   $("maxPageChars").value = settings.maxPageChars;
   $("cleanContext").checked = settings.cleanContext !== false;
   $("compressHistory").checked = settings.compressHistory !== false;
+  $("autoScroll").checked = settings.autoScroll !== false;
   $("smartRouting").checked = settings.smartRouting !== false;
   refreshModelLists();
 }
@@ -601,6 +602,7 @@ function collectSettings() {
     maxPageChars: parseInt($("maxPageChars").value, 10) || 12000,
     cleanContext: $("cleanContext").checked,
     compressHistory: $("compressHistory").checked,
+    autoScroll: $("autoScroll").checked,
     smartRouting: $("smartRouting").checked,
     utilityModel: $("utilityModel").value,
   };
