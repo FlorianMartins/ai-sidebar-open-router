@@ -71,9 +71,9 @@ export const PROVIDERS = {
       ["google/gemini-3-pro-image-preview", "Nano Banana Pro (Gemini 3 Pro Image Preview)"],
       ["google/gemini-3.1-flash-image", "Nano Banana 2 (Gemini 3.1 Flash Image)"],
       ["google/gemini-3.1-flash-image-preview", "Nano Banana 2 (Gemini 3.1 Flash Image Preview)"],
+      ["google/gemini-3.1-flash-lite-image", "Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)"],
       ["openai/gpt-5-image", "GPT-5 Image"],
       ["openai/gpt-5-image-mini", "GPT-5 Image Mini"],
-      ["openai/gpt-5.4-image-2", "GPT-5.4 Image 2"],
     ],
     // <models:openrouter:image:end>
     // The sidebar still fetches the account's LIVE list at runtime; this curated set is
