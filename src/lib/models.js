@@ -108,7 +108,7 @@ export const PROVIDERS = {
       ["google/gemini-2.5-flash-lite-preview-09-2025", "Gemini 2.5 Flash Lite Preview 09-2025 (paid)"],
       ["deepseek/deepseek-r1-0528", "R1 0528 (reasoning) (paid)"],
       ["deepseek/deepseek-chat-v3.1", "DeepSeek V3.1 (paid)"],
-      ["x-ai/grok-build-0.1", "Grok Build 0.1 (paid)"],
+      ["x-ai/grok-4.5", "Grok 4.5 (paid)"],
     ],
     // <models:openrouter:end>
   },
