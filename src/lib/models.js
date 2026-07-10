@@ -105,7 +105,7 @@ export const PROVIDERS = {
       ["openai/o3-deep-research", "o3 Deep Research (reasoning) (paid)"],
       ["openai/gpt-4.1", "GPT-4.1 (paid)"],
       ["google/gemini-2.5-pro", "Gemini 2.5 Pro (paid)"],
-      ["google/gemini-2.5-flash-lite-preview-09-2025", "Gemini 2.5 Flash Lite Preview 09-2025 (paid)"],
+      ["google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite (paid)"],
       ["deepseek/deepseek-r1-0528", "R1 0528 (reasoning) (paid)"],
       ["deepseek/deepseek-chat-v3.1", "DeepSeek V3.1 (paid)"],
       ["x-ai/grok-4.5", "Grok 4.5 (paid)"],
