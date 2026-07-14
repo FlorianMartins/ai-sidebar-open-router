@@ -81,8 +81,7 @@ export const PROVIDERS = {
     // flagships). Regenerated daily by scripts/update-models.mjs from OpenRouter.
     // <models:openrouter:start>
     models: [
-      ["openai/gpt-oss-120b:free", "gpt-oss-120b — free (recommended)"],
-      ["openai/gpt-oss-20b:free", "gpt-oss-20b — free"],
+      ["openai/gpt-oss-20b:free", "gpt-oss-20b — free (recommended)"],
       ["qwen/qwen3-coder:free", "Qwen3 Coder 480B A35B — free"],
       ["qwen/qwen3-next-80b-a3b-instruct:free", "Qwen3 Next 80B A3B Instruct — free"],
       ["nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron 3 Nano 30B A3B — free"],
@@ -96,9 +95,10 @@ export const PROVIDERS = {
       ["cohere/north-mini-code:free", "North Mini Code — free"],
       ["google/gemma-4-26b-a4b-it:free", "Gemma 4 26B A4B — free"],
       ["google/gemma-4-31b-it:free", "Gemma 4 31B — free"],
-      ["liquid/lfm-2.5-1.2b-instruct:free", "LFM2.5-1.2B-Instruct — free"],
-      ["liquid/lfm-2.5-1.2b-thinking:free", "LFM2.5-1.2B-Thinking — free (reasoning)"],
       ["meta-llama/llama-3.2-3b-instruct:free", "Llama 3.2 3B Instruct — free"],
+      ["nousresearch/hermes-3-llama-3.1-405b:free", "Hermes 3 405B Instruct — free"],
+      ["openrouter/free", "Free Models Router — free"],
+      ["poolside/laguna-m.1:free", "Laguna M.1 — free"],
       ["anthropic/claude-opus-4.8-fast", "Claude Opus 4.8 (Fast) (paid)"],
       ["anthropic/claude-sonnet-4.6", "Claude Sonnet 4.6 (paid)"],
       ["openai/gpt-4o-mini-search-preview", "GPT-4o-mini Search Preview (paid)"],
