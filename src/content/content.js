@@ -126,6 +126,146 @@
     return { selection: (window.getSelection() || "").toString().slice(0, 8000) };
   }
 
+  // --- YouTube transcript (for universal summary) -------------------------------
+  function ytVideoId() {
+    try {
+      const u = new URL(location.href);
+      if (/(^|\.)youtu\.be$/.test(u.hostname)) return u.pathname.slice(1);
+      return u.searchParams.get("v") || (location.pathname.startsWith("/shorts/") ? location.pathname.split("/")[2] : null);
+    } catch (_) { return null; }
+  }
+  // Extract one balanced {...} JSON object starting at `startIdx` (respecting strings/escapes).
+  function extractJsonObject(str, startIdx) {
+    let depth = 0, inStr = false, esc = false;
+    for (let i = startIdx; i < str.length; i++) {
+      const ch = str[i];
+      if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') inStr = false; }
+      else if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") { depth--; if (depth === 0) return str.slice(startIdx, i + 1); }
+    }
+    return null;
+  }
+  async function readTranscript() {
+    const isYT = /(^|\.)youtube\.com$/.test(location.hostname) || /(^|\.)youtu\.be$/.test(location.hostname);
+    if (!isYT) return { ok: false, error: "not_youtube" };
+    let player = null;
+    try {
+      for (const s of document.scripts) {
+        const txt = s.textContent || "";
+        const i = txt.indexOf("ytInitialPlayerResponse");
+        if (i < 0) continue;
+        const brace = txt.indexOf("{", i);
+        if (brace < 0) continue;
+        const json = extractJsonObject(txt, brace);
+        if (json) { try { player = JSON.parse(json); } catch (_) {} }
+        if (player) break;
+      }
+    } catch (_) {}
+    const tl = player && player.captions && player.captions.playerCaptionsTracklistRenderer;
+    const tracks = tl && tl.captionTracks;
+    if (!tracks || !tracks.length) return { ok: false, error: "no_captions", videoId: ytVideoId() };
+    const uiLang = (document.documentElement.lang || "").slice(0, 2);
+    const track = tracks.find((t) => (t.languageCode || "").startsWith(uiLang)) || tracks.find((t) => (t.languageCode || "").startsWith("en")) || tracks[0];
+    if (!track || !track.baseUrl) return { ok: false, error: "no_captions", videoId: ytVideoId() };
+    const url = track.baseUrl + (track.baseUrl.includes("?") ? "&" : "?") + "fmt=json3";
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      const segments = (data.events || []).filter((e) => e.segs).map((e) => ({
+        start: Math.round((e.tStartMs || 0) / 1000),
+        text: e.segs.map((x) => x.utf8 || "").join("").replace(/\s+/g, " ").trim(),
+      })).filter((s) => s.text);
+      if (!segments.length) return { ok: false, error: "empty", videoId: ytVideoId() };
+      return { ok: true, videoId: (player.videoDetails && player.videoDetails.videoId) || ytVideoId(), title: document.title.replace(/\s*-\s*YouTube$/, ""), url: location.href, lang: track.languageCode, segments };
+    } catch (_) { return { ok: false, error: "fetch_failed", videoId: ytVideoId() }; }
+  }
+
+  // --- In-page translation (overlay) --------------------------------------
+  // Collect the page's visible text nodes, hand them to the sidebar for translation, then swap them
+  // back in place. Originals are kept so a floating toggle can flip between original / translated.
+  let trNodes = null;           // [{ node, orig, lead, trail, tr }]
+  let trToggle = null;          // floating toggle button
+  let trShown = "translated";
+  let trLabels = { orig: "↺ Original", trans: "🐝 Translated" };
+  const TR_SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "CODE", "PRE", "KBD", "SAMP", "TEXTAREA", "SVG", "CANVAS", "MATH", "OPTION"]);
+  function trCollect() {
+    trNodes = [];
+    const out = [];
+    const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        const v = (n.nodeValue || "").trim();
+        if (v.length < 2) return NodeFilter.FILTER_REJECT;
+        // Need at least one letter (Latin / accented / Greek / CJK / etc.) — skip pure numbers/symbols.
+        if (!/[A-Za-zÀ-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿऀ-ॿ぀-ヿ一-鿿가-힯]/.test(v)) return NodeFilter.FILTER_REJECT;
+        const p = n.parentElement;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        if (TR_SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+        if (p.isContentEditable) return NodeFilter.FILTER_REJECT;
+        if (p.closest(".__hivey_tr_toggle, #__ai_agent_glow")) return NodeFilter.FILTER_REJECT;
+        const cs = window.getComputedStyle(p);
+        if (cs && (cs.display === "none" || cs.visibility === "hidden")) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    let node, i = 0;
+    while ((node = walker.nextNode())) {
+      if (i >= 1500) break; // safety cap
+      const orig = node.nodeValue;
+      trNodes.push({ node, orig, lead: orig.match(/^\s*/)[0], trail: orig.match(/\s*$/)[0], tr: null });
+      out.push({ i, t: orig.trim().slice(0, 1200) });
+      i++;
+    }
+    return { items: out, title: document.title, url: location.href };
+  }
+  function trApply(map, labels) {
+    if (labels) trLabels = labels;
+    if (!trNodes) return { ok: false, error: "nothing collected" };
+    let n = 0;
+    for (const k in map) {
+      const rec = trNodes[+k];
+      if (!rec || !rec.node || !map[k]) continue;
+      rec.tr = String(map[k]);
+      try { rec.node.nodeValue = rec.lead + rec.tr + rec.trail; n++; } catch (_) {}
+    }
+    trShown = "translated";
+    trMountToggle();
+    return { ok: true, applied: n };
+  }
+  function trSet(which) {
+    if (!trNodes) return;
+    for (const r of trNodes) {
+      if (!r.node) continue;
+      try { r.node.nodeValue = which === "original" ? r.orig : (r.tr != null ? r.lead + r.tr + r.trail : r.orig); } catch (_) {}
+    }
+    trShown = which;
+    trUpdateToggle();
+  }
+  function trMountToggle() {
+    if (!trToggle) {
+      const b = document.createElement("button");
+      b.className = "__hivey_tr_toggle";
+      b.type = "button";
+      b.style.cssText =
+        "position:fixed;z-index:2147483646;bottom:16px;right:16px;padding:8px 13px;border-radius:999px;border:0;" +
+        "background:linear-gradient(135deg,#6d5efc,#22d3ee);color:#fff;font:600 12px system-ui,-apple-system,sans-serif;" +
+        "box-shadow:0 6px 20px rgba(0,0,0,.35);cursor:pointer;user-select:none";
+      b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); trSet(trShown === "translated" ? "original" : "translated"); });
+      (document.body || document.documentElement).appendChild(b);
+      trToggle = b;
+    }
+    trUpdateToggle();
+  }
+  function trUpdateToggle() {
+    if (trToggle) trToggle.textContent = trShown === "translated" ? trLabels.orig : trLabels.trans;
+  }
+  function trReset() {
+    trSet("original");
+    if (trToggle) { trToggle.remove(); trToggle = null; }
+    trNodes = null; trShown = "translated";
+    return { ok: true };
+  }
+
   function findElements(query) {
     refMap.clear();
     refCounter = 0;
@@ -215,6 +355,195 @@
     return { ok: true };
   }
 
+  // --- Set-of-Marks + click-by-coordinate (vision fallback) -----------------
+  // Overlay NUMBERED badges on the visible clickable elements so a vision model can say
+  // "click [7]" — returns a legend [{n,x,y,label}] (x,y = element centre, for click_at).
+  const MARK_ID = "__hivey_marks__";
+  function isClickable(el) {
+    if (!el || el.disabled) return false;
+    const tag = el.tagName.toLowerCase();
+    if (["a", "button", "input", "select", "textarea", "summary"].includes(tag)) return true;
+    const role = (el.getAttribute("role") || "").toLowerCase();
+    if (["button", "link", "tab", "menuitem", "checkbox", "radio", "switch", "option"].includes(role)) return true;
+    if (el.getAttribute("onclick") || el.tabIndex >= 0) return true;
+    try { if (getComputedStyle(el).cursor === "pointer") return true; } catch (_) {}
+    return false;
+  }
+  function markElements() {
+    unmarkElements();
+    const layer = document.createElement("div");
+    layer.id = MARK_ID;
+    layer.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
+    const marks = [];
+    const seen = new Set();
+    const all = document.querySelectorAll("a,button,input,select,textarea,summary,[role],[onclick],[tabindex]");
+    let n = 0;
+    for (const el of all) {
+      if (n >= 60) break;
+      if (!isClickable(el)) continue;
+      let r; try { r = el.getBoundingClientRect(); } catch (_) { continue; }
+      if (r.width < 8 || r.height < 8 || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
+      const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+      const key = cx + "x" + cy; if (seen.has(key)) continue; seen.add(key);
+      n++;
+      const badge = document.createElement("div");
+      badge.textContent = n;
+      badge.style.cssText = "position:fixed;left:" + Math.max(0, r.left) + "px;top:" + Math.max(0, r.top) + "px;" +
+        "background:#e11d48;color:#fff;font:700 11px/1.4 system-ui;padding:0 4px;border-radius:4px;" +
+        "box-shadow:0 0 0 1px #fff;transform:translateY(-2px);";
+      layer.appendChild(badge);
+      const label = (el.innerText || el.value || el.getAttribute("aria-label") || el.getAttribute("title") || el.tagName).trim().slice(0, 40);
+      marks.push({ n, x: cx, y: cy, label });
+    }
+    document.documentElement.appendChild(layer);
+    return { ok: true, marks };
+  }
+  function unmarkElements() {
+    const l = document.getElementById(MARK_ID); if (l) l.remove();
+    return { ok: true };
+  }
+  function clickAt(x, y) {
+    unmarkElements(); // never click our own overlay
+    const el = document.elementFromPoint(x, y);
+    if (!el) return { error: "Nothing at (" + x + "," + y + ")." };
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+    ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].forEach((type) => {
+      try { el.dispatchEvent(new MouseEvent(type, opts)); } catch (_) {}
+    });
+    const label = (el.innerText || el.value || el.getAttribute("aria-label") || el.tagName || "").trim().slice(0, 40);
+    return { ok: true, clicked: label || ("<" + el.tagName.toLowerCase() + ">") };
+  }
+
+  // Make a <video> START PLAYING, with sound whenever the browser allows it.
+  // CRITICAL: if the video is ALREADY playing (autoplay did its job), do NOTHING — calling
+  // play()/clicking the play button on a running player TOGGLES it and PAUSES it (the bug where
+  // the agent "launched the video then paused it"). We only ever ACT when the player is paused.
+  // When we do act and the browser blocks autoplay-with-sound, we fall back to MUTED so the video
+  // at least launches, then try to bring the sound back without re-pausing it.
+  async function playVideo(v) {
+    const tryPlay = async () => {
+      try {
+        const p = v.play();
+        if (p && p.then) await p;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    };
+    const alreadyPlaying = () => ({ ok: true, playing: true, muted: !!v.muted,
+      hint: v.muted ? "Already playing (muted). Click 🔊 / press M to unmute." : undefined });
+    // Autoplay already running → leave it alone (never toggle a playing video).
+    if (!v.paused) {
+      return alreadyPlaying();
+    }
+    // It may be ABOUT to autoplay (the page just loaded and the player hasn't started yet). Give
+    // autoplay a moment to kick in BEFORE we intervene — otherwise we'd "play" a video that was
+    // going to start on its own, and a second play()/toggle re-pauses it. Poll briefly.
+    for (let i = 0; i < 8 && v.paused; i++) {
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    if (!v.paused) {
+      return alreadyPlaying(); // autoplay started it on its own — don't touch it
+    }
+    // Genuinely paused → start it MUTED. Firefox always allows muted playback and lets it run
+    // CONTINUOUSLY. We do NOT auto-unmute: a programmatic play WITH SOUND — or unmuting a video that
+    // started without a real user gesture — gets PAUSED ~3 s later by the autoplay policy (that's
+    // the "plays 3 s then stops" bug). So we stay muted; the user clicks 🔊 once (a real gesture)
+    // to get persistent sound, or allows autoplay-with-sound for the site.
+    try { v.muted = true; } catch (_) {}
+    await tryPlay();
+    return {
+      ok: true, playing: !v.paused, muted: !!v.muted,
+      hint: v.paused
+        ? "The browser blocked autoplay. The user can click ▶, or allow autoplay for youtube.com once (Firefox: 🔒 → Autoplay → Allow Audio and Video) to make it work every time."
+        : (v.muted ? "Playing (muted) — the browser blocked autoplay WITH sound. Click 🔊 / press M to unmute, or allow autoplay for youtube.com once to get sound automatically." : undefined),
+    };
+  }
+
+  // --- Media control (play a video, toggle YouTube autoplay) ----------------
+  function controlMedia(action) {
+    try {
+      const isYT = /(^|\.)youtube\.com$/.test(location.hostname) || /(^|\.)youtu\.be$/.test(location.hostname);
+      // The main video = the biggest visible <video>.
+      let v = null, best = -1;
+      document.querySelectorAll("video").forEach((x) => {
+        let r; try { r = x.getBoundingClientRect(); } catch (_) { return; }
+        const a = (r.width || 0) * (r.height || 0);
+        if (a > best) { best = a; v = x; }
+      });
+      if (action === "play") {
+        // Already on a page with a player → make sure it actually plays.
+        if (v) {
+          return playVideo(v); // async: guarantees the video LAUNCHES, with sound when allowed
+        }
+        // No player yet (search results / home / channel). Return the FIRST video's URL so the
+        // tool layer can do a real navigation (a bare .click() triggers a YouTube SPA route change
+        // that destroys this content script, so playback never gets driven). The sidebar will
+        // navigate to watchUrl, wait for load, then call play again.
+        if (isYT) {
+          const link =
+            document.querySelector("ytd-video-renderer a#video-title, ytd-rich-item-renderer a#video-title-link, a#video-title") ||
+            document.querySelector('a[href*="/watch?v="]');
+          if (link && link.href) return { ok: false, watchUrl: link.href, note: "found first video — navigating to play it" };
+        }
+        return { ok: false, note: "No video found on this page (navigate to a video or a YouTube results page first)." };
+      }
+      if (action === "pause") {
+        if (v && v.pause) v.pause();
+        return { ok: true, paused: v ? v.paused : true };
+      }
+      if (action === "autoplay_status" || action === "autoplay_on" || action === "autoplay_off") {
+        // Locate YouTube's "Autoplay next" control across the layouts YT ships/A-B-tests.
+        // The player-bar toggle is the canonical one; aria-checked is the source of truth, but on
+        // some variants it sits on a child, and an older up-next paper toggle still exists for some.
+        function readYTAutoplay() {
+          const btn = document.querySelector(
+            ".ytp-autonav-toggle-button, button.ytp-autonav-toggle-button, [data-tooltip-target-id='ytp-autonav-toggle-button']"
+          );
+          if (btn) {
+            let ac = btn.getAttribute("aria-checked");
+            if (ac !== "true" && ac !== "false") {
+              const child = btn.querySelector("[aria-checked]");
+              if (child) ac = child.getAttribute("aria-checked");
+            }
+            if (ac === "true" || ac === "false") return { found: true, on: ac === "true", el: btn, via: "player" };
+            return { found: true, on: undefined, el: btn, via: "player" };
+          }
+          // Older / up-next rail paper toggle.
+          const paper = document.querySelector(
+            "ytd-compact-autoplay-renderer #toggle, tp-yt-paper-toggle-button#toggle, ytd-toggle-button-renderer #toggle"
+          );
+          if (paper) {
+            const on =
+              paper.getAttribute("aria-pressed") === "true" ||
+              paper.hasAttribute("checked") ||
+              paper.classList.contains("toggle-on");
+            return { found: true, on, el: paper, via: "uprail" };
+          }
+          return { found: false };
+        }
+
+        const st = readYTAutoplay();
+        if (action === "autoplay_status") {
+          if (st.found && typeof st.on === "boolean") return { ok: true, autoplay: st.on, via: st.via };
+          if (v) return { ok: true, autoplay: !!v.autoplay, via: "html5" };
+          return { ok: false, error: "Autoplay control not found — open a YouTube watch page (the toggle only exists while a video is playing)." };
+        }
+
+        const want = action === "autoplay_on";
+        if (st.found && st.el) {
+          if (st.on !== want) st.el.click();
+          return { ok: true, autoplay: want, via: st.via };
+        }
+        if (v) { v.autoplay = want; return { ok: true, autoplay: want, via: "html5" }; }
+        return { error: "No autoplay control found on this page (open a YouTube watch page first)." };
+      }
+      return { error: "Unknown media action." };
+    } catch (e) {
+      return { error: (e && e.message) || String(e) };
+    }
+  }
+
   // --- Element picker ------------------------------------------------------
   // Lets the user point at any element on the page (a table, an image, a menu…) and
   // "ask the AI about it". Hover outlines the element; a single click captures it;
@@ -274,7 +603,20 @@
     e.preventDefault(); e.stopPropagation();
     endPick(false);
   }
-  function pickSwallow(e) { e.preventDefault(); e.stopPropagation(); } // don't trigger page links/buttons
+  // Full swallow for the events that fire page links/buttons/menus (click happens AFTER selection).
+  function pickSwallow(e) { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); }
+  // Pointer events: block them reaching the PAGE (modern sites like YouTube toggle play on
+  // pointerdown/up, not click) WITHOUT preventDefault, so the compat mousedown/up our picker uses
+  // still fire.
+  function pickStopProp(e) { e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); }
+  // Events the picker listens to / swallows on the document (capture phase) — kept in one list so
+  // start and end stay in sync.
+  const PICK_LISTENERS = [
+    ["mousemove", () => pickMove], ["mousedown", () => pickDown], ["mouseup", () => pickUp],
+    ["pointerdown", () => pickStopProp], ["pointerup", () => pickStopProp],
+    ["click", () => pickSwallow], ["dblclick", () => pickSwallow], ["auxclick", () => pickSwallow],
+    ["contextmenu", () => pickSwallow], ["keydown", () => pickKey],
+  ];
   function pickKey(e) { if (e.key === "Escape") { e.preventDefault(); endPick(true); } }
   function describeElement(el) {
     const rect = el.getBoundingClientRect();
@@ -284,11 +626,7 @@
     return { tag: el.tagName.toLowerCase(), text, imgSrc, rect: { x: rect.left, y: rect.top, w: rect.width, h: rect.height } };
   }
   function endPick(cancelled) {
-    document.removeEventListener("mousemove", pickMove, true);
-    document.removeEventListener("mousedown", pickDown, true);
-    document.removeEventListener("mouseup", pickUp, true);
-    document.removeEventListener("click", pickSwallow, true);
-    document.removeEventListener("keydown", pickKey, true);
+    for (const [ev, fn] of PICK_LISTENERS) document.removeEventListener(ev, fn(), true);
     document.documentElement.style.cursor = "";
     if (pickHoverBox) { pickHoverBox.remove(); pickHoverBox = null; }
     pickBoxes.forEach((b) => b.remove());
@@ -305,11 +643,7 @@
       pickResolve = resolve; pickSelected = []; pickBoxes = []; pickPainting = false; pickHover = null;
       pickHoverBox = mkBox(ACCENT2, rgba(ACCENT2, 0.14), 2147483647);
       document.documentElement.style.cursor = "crosshair";
-      document.addEventListener("mousemove", pickMove, true);
-      document.addEventListener("mousedown", pickDown, true);
-      document.addEventListener("mouseup", pickUp, true);
-      document.addEventListener("click", pickSwallow, true);
-      document.addEventListener("keydown", pickKey, true);
+      for (const [ev, fn] of PICK_LISTENERS) document.addEventListener(ev, fn(), true);
     });
   }
 
@@ -338,14 +672,17 @@
     e.preventDefault(); e.stopPropagation();
     endRegion(false, regRect(e));
   }
-  function regSwallow(e) { e.preventDefault(); e.stopPropagation(); }
+  function regSwallow(e) { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); }
+  function regStopProp(e) { e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); } // block page pointer handlers, keep compat mouse events
+  const REG_LISTENERS = [
+    ["mousedown", () => regDown], ["mousemove", () => regMove], ["mouseup", () => regUp],
+    ["pointerdown", () => regStopProp], ["pointerup", () => regStopProp],
+    ["click", () => regSwallow], ["dblclick", () => regSwallow], ["auxclick", () => regSwallow],
+    ["contextmenu", () => regSwallow], ["keydown", () => regKey],
+  ];
   function regKey(e) { if (e.key === "Escape") { e.preventDefault(); endRegion(true); } }
   function endRegion(cancelled, rect) {
-    document.removeEventListener("mousedown", regDown, true);
-    document.removeEventListener("mousemove", regMove, true);
-    document.removeEventListener("mouseup", regUp, true);
-    document.removeEventListener("click", regSwallow, true);
-    document.removeEventListener("keydown", regKey, true);
+    for (const [ev, fn] of REG_LISTENERS) document.removeEventListener(ev, fn(), true);
     document.documentElement.style.cursor = "";
     if (regBox) { regBox.remove(); regBox = null; }
     regDragging = false; regStart = null;
@@ -360,11 +697,7 @@
       regResolve = resolve; regDragging = false; regStart = null;
       regBox = mkBox(ACCENT2, rgba(ACCENT2, 0.14), 2147483647);
       document.documentElement.style.cursor = "crosshair";
-      document.addEventListener("mousedown", regDown, true);
-      document.addEventListener("mousemove", regMove, true);
-      document.addEventListener("mouseup", regUp, true);
-      document.addEventListener("click", regSwallow, true);
-      document.addEventListener("keydown", regKey, true);
+      for (const [ev, fn] of REG_LISTENERS) document.addEventListener(ev, fn(), true);
     });
   }
 
@@ -374,6 +707,10 @@
   let glowEl = null;
   function setAgentGlow(on) {
     if (on) {
+      // The document_start frame script (agent-frame.js) may have already drawn the frame for an
+      // earlier-firing navigation — adopt that element instead of creating a duplicate.
+      const existing = document.getElementById("__ai_agent_glow");
+      if (existing) { glowEl = existing; return; }
       if (glowEl && document.documentElement.contains(glowEl)) return;
       // Rebuild the style each time so the glow tracks the current theme accent.
       let st = document.getElementById("__ai_agent_glow_style");
@@ -456,21 +793,21 @@
     const style = document.createElement("style");
     style.textContent =
       ".card{position:fixed;width:380px;max-width:92vw;max-height:62vh;display:flex;flex-direction:column;" +
-      "font:13px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#e8e8f2;background:#1a1d2c;border:1px solid #30334d;" +
+      "font:13px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#f4f2fc;background:#141317;border:1px solid #2a2836;" +
       "border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.55);overflow:hidden}" +
-      ".head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #2a2d44;cursor:move;user-select:none}" +
+      ".head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #242232;cursor:move;user-select:none}" +
       ".title{font-weight:600;color:#fff;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
       ".acts{margin-left:auto;display:flex;align-items:center;gap:5px;flex:0 0 auto}" +
-      "select{font:inherit;font-size:12px;padding:3px 6px;border-radius:7px;background:#262a40;color:#e8e8f2;border:1px solid #30334d}" +
-      "button{all:unset;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;cursor:pointer;color:#9b9db5}" +
-      "button:hover{background:#262a40;color:#fff}" +
-      ".src{font-size:11px;color:#9b9db5;padding:7px 10px;border-bottom:1px solid #2a2d44;max-height:64px;overflow:auto;white-space:pre-wrap;background:#14151c}" +
+      "select{font:inherit;font-size:12px;padding:3px 6px;border-radius:7px;background:#221f2e;color:#f4f2fc;border:1px solid #2a2836}" +
+      "button{all:unset;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;cursor:pointer;color:#9b98ad}" +
+      "button:hover{background:#221f2e;color:#fff}" +
+      ".src{font-size:11px;color:#9b98ad;padding:7px 10px;border-bottom:1px solid #242232;max-height:64px;overflow:auto;white-space:pre-wrap;background:#0d0c10}" +
       ".body{padding:10px 12px;overflow:auto;flex:1;min-height:46px;white-space:pre-wrap}" +
       ".body.done{white-space:normal}" +
-      ".body.loading{color:#9b9db5}" +
-      ".note{font-size:10px;color:#9b9db5;padding:5px 10px;border-top:1px solid #2a2d44;text-align:center}" +
+      ".body.loading{color:#9b98ad}" +
+      ".note{font-size:10px;color:#9b98ad;padding:5px 10px;border-top:1px solid #242232;text-align:center}" +
       ".body a{color:" + A + "}.body h1,.body h2,.body h3{color:" + A + ";margin:10px 0 5px}.body strong,.body b{color:" + A + "}" +
-      ".body ul,.body ol{padding-left:20px;margin:7px 0}.body p{margin:8px 0}.body pre{white-space:pre-wrap;background:#14151c;padding:8px;border-radius:8px;overflow:auto}" +
+      ".body ul,.body ol{padding-left:20px;margin:7px 0}.body p{margin:8px 0}.body pre{white-space:pre-wrap;background:#0d0c10;padding:8px;border-radius:8px;overflow:auto}" +
       "svg{display:block}";
     shadow.appendChild(style);
     const card = document.createElement("div"); card.className = "card";
@@ -507,22 +844,36 @@
     card.appendChild(head); card.appendChild(src); card.appendChild(body); card.appendChild(note);
     shadow.appendChild(card);
     (document.body || document.documentElement).appendChild(host);
-    // Position at the right-click point (clamped to the viewport).
-    const cw = 380;
-    const x = Math.min(Math.max(8, lastCtxPos.x), Math.max(8, window.innerWidth - cw - 8));
-    const y = Math.min(Math.max(8, lastCtxPos.y + 10), Math.max(8, window.innerHeight - 90));
-    card.style.left = x + "px"; card.style.top = y + "px";
+    // Keep the card FULLY inside the viewport. Because the body streams in and the card grows
+    // AFTER the first paint, re-clamp on every content update (and on resize) — otherwise a
+    // selection near the bottom edge would let the growing card spill below the screen.
+    const m = 8;
+    let _userMoved = false; // once dragged, respect the user's position
+    const clamp = () => {
+      if (_userMoved) return;
+      const cw = card.offsetWidth || 380;
+      const ch = card.offsetHeight || 220;
+      const maxX = Math.max(m, window.innerWidth - cw - m);
+      const maxY = Math.max(m, window.innerHeight - ch - m);
+      const x = Math.min(Math.max(m, lastCtxPos.x), maxX);
+      const y = Math.min(Math.max(m, lastCtxPos.y + 10), maxY);
+      card.style.left = x + "px"; card.style.top = y + "px";
+    };
+    clamp();
+    requestAnimationFrame(clamp); // re-measure after layout settles
+    window.addEventListener("resize", clamp);
     // Drag by the header.
     let ox = 0, oy = 0;
     const onMove = (e) => {
       let nx = e.clientX - ox, ny = e.clientY - oy;
-      nx = Math.max(2, Math.min(window.innerWidth - 60, nx));
-      ny = Math.max(2, Math.min(window.innerHeight - 30, ny));
+      nx = Math.max(2, Math.min(window.innerWidth - (card.offsetWidth || 60), nx));
+      ny = Math.max(2, Math.min(window.innerHeight - (card.offsetHeight || 30), ny));
       card.style.left = nx + "px"; card.style.top = ny + "px";
     };
     const stop = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", stop); };
     head.addEventListener("mousedown", (e) => {
       if (e.target.closest("button, select")) return;
+      _userMoved = true; // user takes over positioning → stop auto-clamping
       const r = card.getBoundingClientRect();
       ox = e.clientX - r.left; oy = e.clientY - r.top; e.preventDefault();
       document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", stop);
@@ -533,8 +884,8 @@
     setTimeout(() => document.addEventListener("mousedown", onDocDown, true), 0);
     document.addEventListener("keydown", onKey, true);
     pageBubble = {
-      host, body, raw: "",
-      cleanup: () => { document.removeEventListener("mousedown", onDocDown, true); document.removeEventListener("keydown", onKey, true); stop(); },
+      host, body, raw: "", reclamp: clamp,
+      cleanup: () => { document.removeEventListener("mousedown", onDocDown, true); document.removeEventListener("keydown", onKey, true); window.removeEventListener("resize", clamp); stop(); },
     };
   }
 
@@ -548,7 +899,7 @@
         if (pageBubble) { pageBubble.raw = ""; pageBubble.body.className = "body loading"; pageBubble.body.textContent = "…"; }
         return Promise.resolve({ ok: true });
       case "bubble_delta":
-        if (pageBubble) { pageBubble.raw += msg.text || ""; pageBubble.body.className = "body"; pageBubble.body.textContent = pageBubble.raw; pageBubble.body.scrollTop = pageBubble.body.scrollHeight; }
+        if (pageBubble) { pageBubble.raw += msg.text || ""; pageBubble.body.className = "body"; pageBubble.body.textContent = pageBubble.raw; pageBubble.body.scrollTop = pageBubble.body.scrollHeight; pageBubble.reclamp && pageBubble.reclamp(); }
         return Promise.resolve({ ok: true });
       case "bubble_done":
         if (pageBubble) {
@@ -558,6 +909,7 @@
           // markdown safely here (the background service worker has no DOM).
           if (msg.html) { pageBubble.body.innerHTML = msg.html; }
           else { pageBubble.body.innerHTML = miniMarkdown(pageBubble.raw); }
+          pageBubble.reclamp && pageBubble.reclamp(); // keep it on-screen after it grows
         }
         return Promise.resolve({ ok: true });
       case "bubble_error":
@@ -574,6 +926,14 @@
         return Promise.resolve(readPage());
       case "read_selection":
         return Promise.resolve(readSelection());
+      case "read_transcript":
+        return readTranscript();
+      case "tr_collect":
+        return Promise.resolve(trCollect());
+      case "tr_apply":
+        return Promise.resolve(trApply(msg.map || {}, msg.labels));
+      case "tr_reset":
+        return Promise.resolve(trReset());
       case "pick_element":
         setAccents(msg);
         return startPick();
@@ -594,6 +954,14 @@
         return Promise.resolve(fillInput(msg.ref, msg.value, msg.submit, msg.guard, msg.confirmed));
       case "scroll_page":
         return Promise.resolve(scrollPage(msg.direction));
+      case "control_media":
+        return Promise.resolve(controlMedia(msg.action));
+      case "mark_elements":
+        return Promise.resolve(markElements());
+      case "unmark_elements":
+        return Promise.resolve(unmarkElements());
+      case "click_at":
+        return Promise.resolve(clickAt(msg.x, msg.y));
       case "ping":
         return Promise.resolve({ ok: true });
     }

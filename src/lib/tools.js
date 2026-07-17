@@ -73,6 +73,23 @@ export const TOOLS = [
     },
   },
   {
+    name: "check_links",
+    description:
+      "Verify candidate URLs in HIDDEN background tabs WITHOUT disturbing the user's tab: each URL is " +
+      "opened in the background, loaded, its FINAL url + page title + a short content snippet are read, " +
+      "then the tab is CLOSED. Returns one result per URL so you can pick the one that actually WORKS and " +
+      "shows the right content (e.g. a film/show really available on a LEGAL platform, not an error or " +
+      "geo-block), THEN navigate the main tab to the best one. Read-only; only for legitimate/legal sites.",
+    write: false,
+    input_schema: {
+      type: "object",
+      properties: {
+        urls: { type: "array", items: { type: "string" }, description: "Up to 5 full https URLs to test." },
+      },
+      required: ["urls"],
+    },
+  },
+  {
     name: "switch_tab",
     description: "Activate (bring to front) the tab with the given id.",
     write: true,
@@ -140,6 +157,59 @@ export const TOOLS = [
       required: ["direction"],
     },
   },
+  {
+    name: "control_media",
+    description:
+      "Control the page's media player (works on YouTube and standard HTML5 video/audio). " +
+      "action: 'play' starts/plays the video, 'pause' pauses it, 'autoplay_on'/'autoplay_off' " +
+      "toggle YouTube's autoplay-next setting, and 'autoplay_status' READS the current autoplay " +
+      "state (returns {autoplay:true|false}) — call it before claiming whether autoplay is on/off " +
+      "instead of guessing. To play a specific song/video, call play with " +
+      "`query` (e.g. {action:'play', query:'song name'}) — it searches YouTube, OPENS the first " +
+      "result and starts playback by itself in this ONE call, from ANY page. Use this to launch a " +
+      "video or enable autoplay; never use a search engine to play media.",
+    write: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["play", "pause", "autoplay_on", "autoplay_off", "autoplay_status"] },
+        query: { type: "string", description: "What to play (song/video name). When set with action 'play', searches YouTube and plays the first result automatically." },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "screenshot",
+    description:
+      "Capture a SCREENSHOT of the current page (the visible viewport) and SEE it. Use this ONLY " +
+      "when the DOM tools aren't enough: content rendered on a <canvas>/in an image/PDF/video, a " +
+      "captcha or visual layout you must read, to VISUALLY VERIFY a result, or to decide WHERE to " +
+      "click when refs are ambiguous. Prefer read_page / find_elements first — this is the fallback " +
+      "for visual reasoning. (Vision-capable models only, e.g. Claude.)",
+    input_schema: {
+      type: "object",
+      properties: {
+        reason: { type: "string", description: "Why a screenshot is needed (what you're trying to see/verify)." },
+        marks: { type: "boolean", description: "Set-of-Marks: overlay NUMBERED labels on every clickable element and return a legend [n → {x,y,label}]. Then click with click_at using a mark's x,y. Use this when you must click something the DOM refs can't reach." },
+      },
+    },
+  },
+  {
+    name: "click_at",
+    description:
+      "Click at exact viewport COORDINATES (x,y in CSS pixels). Use this as a fallback when " +
+      "find_elements/click_element can't reach the target (canvas, iframe, custom widget, captcha), " +
+      "typically after a `screenshot {marks:true}` — click the x,y of the numbered mark you want.",
+    write: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        x: { type: "number", description: "X coordinate in CSS pixels (viewport)." },
+        y: { type: "number", description: "Y coordinate in CSS pixels (viewport)." },
+      },
+      required: ["x", "y"],
+    },
+  },
 ];
 
 // 🔒 Agent focus: while the agent works, it stays PINNED to the tab it started on, so the
@@ -181,6 +251,75 @@ async function sendToTab(tabId, message) {
 async function sendToActiveTab(message) {
   const tab = await getActiveTab();
   return sendToTab(tab.id, message);
+}
+
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Resolve once a tab has finished loading (status 'complete'), bounded by a timeout so we
+// never hang the agent. Used after navigations so the next tool sees a loaded page.
+function waitForTabLoad(tabId, timeout = 12000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      try { browser.tabs.onUpdated.removeListener(listener); } catch (_) {}
+      resolve();
+    };
+    const listener = (id, info) => { if (id === tabId && info.status === "complete") finish(); };
+    try { browser.tabs.onUpdated.addListener(listener); } catch (_) {}
+    // Already loaded? resolve immediately.
+    browser.tabs.get(tabId).then((t) => { if (t && t.status === "complete") finish(); }).catch(() => {});
+    setTimeout(finish, timeout);
+  });
+}
+
+// Robust, model-independent "play media" orchestration. From ANY starting page:
+//   • optional `query` → navigate to YouTube search results,
+//   • the content script returns the first result's watchUrl → real navigation to it,
+//   • wait for load, then drive playback (with one retry if the player isn't ready yet).
+// Doing this in the tool (not by chaining model turns) is why playback is now reliable.
+async function playMedia(query) {
+  const tab = await getActiveTab();
+  // The starting tab is often UN-scriptable (a fresh "new tab", the extension page, or any
+  // protected URL the agent was pinned to) — there sendToTab THROWS. Don't let that abort the
+  // whole action: swallow it and, if we know what to play, just navigate this tab to YouTube.
+  const tryPlay = async () => {
+    try { return await sendToTab(tab.id, { type: "control_media", action: "play" }); }
+    catch (_) { return null; }
+  };
+  // Poll a few times after a navigation: a freshly-loaded YouTube page (SPA) often isn't ready
+  // — the content script may not have injected yet, or the result list is still rendering.
+  const poll = async (ok) => {
+    let r = await tryPlay();
+    for (let i = 0; i < 6 && !(r && ok(r)); i++) { await delay(650); r = await tryPlay(); }
+    return r;
+  };
+  let res = await tryPlay();
+
+  // Nothing playable here (no player, or page unreachable) and we know WHAT to play → go to
+  // YouTube results IN THIS TAB (works even from a protected page: we only change its URL).
+  if (query && !(res && res.watchUrl) && !(res && res.playing)) {
+    // YouTube's default RELEVANCE order (no &sp=) surfaces the best-matching result for the query
+    // (official soundtracks, full versions…), not just the most-viewed — the agent refines the
+    // query itself when it wants a specific quality.
+    const url = "https://www.youtube.com/results?search_query=" + encodeURIComponent(query);
+    await browser.tabs.update(tab.id, { url });
+    await waitForTabLoad(tab.id);
+    res = await poll((r) => r.watchUrl || r.playing);
+  }
+
+  // On a results/home page the content script hands back the first video's URL → open it for
+  // real (with autoplay=1) and drive playback once the player has mounted.
+  if (res && res.watchUrl) {
+    const watch = res.watchUrl + (res.watchUrl.includes("?") ? "&" : "?") + "autoplay=1";
+    await browser.tabs.update(tab.id, { url: watch });
+    await waitForTabLoad(tab.id);
+    res = await poll((r) => r.ok || r.playing);
+  }
+  if (!res) throw new Error(query
+    ? "Couldn't start playback (the player was blocked or didn't load)."
+    : "No media on this page — pass a `query` (song/video name) so I can search YouTube.");
+  return res;
 }
 
 // A navigation/open that triggers a file download (or a blob/data download) is a
@@ -253,6 +392,33 @@ export async function executeTool(name, input, opts = {}) {
       }
       case "scroll_page":
         return await sendToActiveTab({ type: "scroll_page", direction: input.direction });
+      case "control_media":
+        if (input.action === "play") return await playMedia(input.query);
+        return await sendToActiveTab({ type: "control_media", action: input.action });
+
+      case "screenshot": {
+        // Hybrid vision: capture the agent's (active) tab so a vision model can SEE the page.
+        const tab = await getActiveTab();
+        try { await browser.tabs.update(tab.id, { active: true }); } catch (_) {} // must be visible to capture
+        let legend = null;
+        if (input.marks) { // Set-of-Marks: number the clickable elements first
+          try { const r = await sendToTab(tab.id, { type: "mark_elements" }); legend = r && r.marks; } catch (_) {}
+          await delay(150); // let the overlay paint before capture
+        }
+        let dataUrl;
+        try { dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 72 }); }
+        catch (e) { try { await sendToTab(tab.id, { type: "unmark_elements" }); } catch (_) {} return { error: "Couldn't capture the page (it may be a protected/restricted page)." }; }
+        if (input.marks) { try { await sendToTab(tab.id, { type: "unmark_elements" }); } catch (_) {} }
+        if (!dataUrl) return { error: "Screenshot failed." };
+        return {
+          ok: true, _image: dataUrl, marks: (legend && legend.length) ? legend : undefined,
+          note: input.marks
+            ? "Numbered clickable elements are overlaid on the screenshot — call click_at with the x,y of the mark you want."
+            : "Screenshot of the current page is attached — read it visually.",
+        };
+      }
+      case "click_at":
+        return await sendToActiveTab({ type: "click_at", x: input.x, y: input.y });
 
       case "list_tabs": {
         const tabs = await browser.tabs.query({ currentWindow: true });
@@ -266,11 +432,42 @@ export async function executeTool(name, input, opts = {}) {
         };
       }
       case "open_tab": {
-        const tab = await browser.tabs.create({
-          url: input.url,
-          active: input.active !== false,
-        });
-        return { ok: true, tabId: tab.id };
+        // The agent works inside its ONE dedicated tab — reuse it (navigate) instead of
+        // spawning new tabs, so the user can keep browsing / run other agent tasks elsewhere.
+        const tab = await getActiveTab();
+        await browser.tabs.update(tab.id, { url: input.url, ...(input.active === true ? { active: true } : {}) });
+        await waitForTabLoad(tab.id);
+        return { ok: true, tabId: tab.id, reusedTab: true };
+      }
+      case "check_links": {
+        // Probe candidate URLs in HIDDEN background tabs (active:false), read title/final-url/snippet,
+        // then close each tab. Never touches the agent's pinned tab.
+        const urls = Array.isArray(input.urls) ? input.urls.slice(0, 5) : [];
+        const results = [];
+        for (const url of urls) {
+          if (typeof url !== "string" || !/^https?:\/\//i.test(url)) { results.push({ url, ok: false, error: "not an http(s) url" }); continue; }
+          let tabId = null;
+          try {
+            const created = await browser.tabs.create({ url, active: false });
+            tabId = created.id;
+            await waitForTabLoad(tabId, 15000);
+            let info = null;
+            try { info = await browser.tabs.get(tabId); } catch (_) {}
+            let title = info ? info.title : "";
+            let snippet = "";
+            try {
+              const page = await sendToTab(tabId, { type: "read_page" });
+              if (page && page.title) title = page.title;
+              if (page && page.text) snippet = String(page.text).replace(/\s+/g, " ").trim().slice(0, 400);
+            } catch (_) {}
+            results.push({ url, ok: true, finalUrl: info ? info.url : url, title, snippet });
+          } catch (e) {
+            results.push({ url, ok: false, error: (e && e.message) || String(e) });
+          } finally {
+            if (tabId != null) { try { await browser.tabs.remove(tabId); } catch (_) {} }
+          }
+        }
+        return { ok: true, results };
       }
       case "switch_tab": {
         await browser.tabs.update(input.tabId, { active: true });
@@ -283,6 +480,7 @@ export async function executeTool(name, input, opts = {}) {
       case "navigate": {
         const tab = await getActiveTab();
         await browser.tabs.update(tab.id, { url: input.url });
+        await waitForTabLoad(tab.id); // resolve only once the page has actually loaded
         return { ok: true };
       }
       default:

@@ -1,0 +1,11 @@
+/* Bundled variable webfonts for the UI font picker (Settings → Appearance).
+   Each is a latin variable woff2 (weight axis 100–900) fetched once from Fontsource and
+   stored locally, so selecting a font works fully offline with no external request.
+   URLs are relative to THIS file (vendor/fonts/), so the same sheet works for both the
+   sidebar and the options page. */
+@font-face { font-family: "Inter";             src: url("inter.woff2")   format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Manrope";           src: url("manrope.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Plus Jakarta Sans"; src: url("jakarta.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "DM Sans";           src: url("dmsans.woff2")  format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Outfit";            src: url("outfit.woff2")  format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Figtree";           src: url("figtree.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }

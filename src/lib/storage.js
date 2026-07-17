@@ -13,7 +13,7 @@ const DEFAULTS = {
   // ----- Provider / model selection ----------------------------------------
   provider: "openrouter", // active provider id — OpenRouter (free models + 1-click OAuth)
   keys: {}, // per-provider API keys      { anthropic:"", openai:"", ... }
-  models: {}, // per-provider chosen model  { anthropic:"claude-opus-4-8", ... }
+  models: { openrouter: "hivey/free" }, // default model = 🐝 Hivey Free (not a random free model)
   baseUrls: {}, // per-provider base URL overrides (ollama / lmstudio / custom)
 
   // ----- Image generation ---------------------------------------------------
@@ -23,24 +23,33 @@ const DEFAULTS = {
 
   // ----- UI / behaviour ------------------------------------------------------
   mode: "chat", // active workspace tab: chat | agent | translate | improve | image | terminal | code
-  thinking: false, // surface the model's reasoning (supported models only)
-  webSearch: false, // web search: Anthropic native, OpenRouter "web" plugin, Perplexity Sonar
+  thinkLevel: "off", // reasoning depth: "off" (no thinking — fast/cheap) | "high" | "max"
+  webSearch: false, // web search OFF by default (opt-in per tab)
+  deepSearch: false, // 🔎 DeepSearch: multi-step cited web research (opt-in per Chat tab)
+  deepSearchDepth: "standard", // fast | standard | deep — scales sub-queries + sources read
+  wisebaseEnabled: true, // 📚 Wisebase tab (local KB + RAG). Tab shown by default; can be hidden.
+  wisebaseTopK: 6, // RAG retrieval: number of passages injected as context
+  wisebaseScope: "", // last-used search scope: "" = all collections, else a collectionId
+  webDefault: false, // open the embedded Web chats panel on startup (for API-free users)
+  modeSel: {}, // per-workspace model selection ("provider|model") — each tab keeps its own
   artifacts: true, // Artifact mode: encourage the model to build runnable artifacts (interactive
                    // HTML/JS apps & games, React components, SVG, Mermaid diagrams) and render them
                    // live in a sandboxed frame. Off = code stays as plain copyable blocks.
-  searchModel: "", // "providerId|modelId" used in web-search mode ("" = auto-pick a free/online model)
+  searchModel: "openrouter|hivey/free", // web-search model: 🐝 Hivey Free (cheap & competent)
   agentMode: false, // allow the model to act inside the browser
   // "" = the agent uses the SAME model the user selected for chat (so picking Claude Opus
   // 4.8 in chat also drives the agent). The chat default (Llama 3.3 70B) is tool-capable,
   // so this works out of the box. The user can still PIN a specific agent model in Settings
   // (e.g. a free tool-capable model) if their chosen chat model can't call tools.
   agentModel: "",
+  agentVerify: false, // independent verifier pass at the end of an agent task — OFF by default (opt-in in Settings).
+  agentInteractive: false, // interaction mode: the agent proposes several options in chat (after page+web research) instead of acting on its own.
   agentPermission: "auto", // "auto" (default) = run actions automatically, BUT very sensitive ones
                            // (download / reserve / book / delete / transfer / sign-up / install…)
                            // still ask for confirmation; "manual" = confirm EVERY state-changing action.
                            // The anti-purchase guardrail (blockPayments) applies in BOTH modes.
   confirmActions: false, // ask before every state-changing action (kept in sync with agentPermission)
-  includePageContext: true, // feed the active page into the chat
+  includePageContext: false, // page reading OFF by default (Chat); user enables it via the Page chip
   autoReadPage: true, // re-read the page on every navigation (subdomains too)
   includeSelectedTabs: false, // also feed the user-selected extra tabs
   selectedTabs: [], // tab ids the user ticked for multi-tab context
@@ -53,12 +62,40 @@ const DEFAULTS = {
                      // (🎁🟢🟡🟠🔴) by default. Free-only is an opt-in toggle in Settings.
                      // Inaccessible models are auto-removed on error + a data-policy link is shown.
   improvePreset: "improve", // default writing preset for the "improve" mode
+  promptLibrary: [], // user's reusable saved prompts: [{ id, title, text, category, at }]. Inserted via
+                     // the 📚 library button or the "/" command palette. Local-only (BYOK privacy model).
+  promptFavorites: [], // ⭐ favorited prompt ids (built-in or user) — shown in the library's Favorites tab.
+  modelVotes: {}, // 🏆 per-model win tally from the compare "Best" vote { "provider|model": count }.
+  shortcuts: {}, // configurable keyboard shortcuts { actionId: "Ctrl+Shift+N" } — merged over defaults.
   uiLang: "en", // sidebar interface language: "en" (default) | "fr". Changed from Settings.
   theme: "dark", // colour theme key (see src/lib/theme.js): dark (default) | hive | modern | neon | sunset | light
   themeColors: {}, // optional per-colour overrides applied ON TOP of the theme { accent, accent2, bg, panel, text }
+  auraColor: "", // background aura colour ("" = follow the accent). Also synced to Hivey Code.
+  auraOpacity: 0.12, // background aura intensity (0–0.3)
+  auraSize: 720, // background aura radius in px
   railSide: "left", // workspace tab rail position INSIDE the sidebar: "left" (default) | "right".
                     // (The sidebar's own browser-side position is not controllable by extensions.)
-  railHidden: false, // hide the workspace tabs rail entirely (toggled by clicking the brand/logo).
+  railHidden: true, // rail is a hover overlay, hidden (not pinned) by default; hover ☰ to peek, click to pin.
+  railOrder: [], // user-defined order of the workspace tab icons (drag to reorder). [] = default order.
+  railTabsHidden: [], // workspace modes whose rail icon is hidden (Settings → Appearance).
+  metricScore: true, // model picker: show the accuracy (🎯 %) badge. Independent of price.
+  metricPrice: false, // model picker: show the price (💰) badge. Both can be on at once.
+  modelSort: "", // model list quick sort cycle: "" (normal) | "desc" (best first) | "asc" (worst first).
+  soundOnDone: false, // play a short chime when an answer finishes (composer 🔔 toggle).
+  tabDoneIndicator: true, // show a dot on a workspace icon when its answer finishes while you're on another tab.
+  selectorOff: {}, // per selector-tab page-mode off state { translate:true, … } (eye toggle).
+  msgBorderOn: false, // show the outline around reply bubbles (Settings → Appearance). Off by default.
+  msgBorderColor: "", // custom reply-bubble border colour ("" = theme default); also drives the neon outline colour.
+  railIconColor: "", // custom MENU (rail) icon colour ("" = theme default grey/idle, --text active).
+  topIconColor: "", topIconColor2: "", topIconGradient: true, // top-bar icons colour 1 / 2 / gradient on (default brand gradient).
+  railIconOpacity: 100, msgBorderOpacity: 100, contourOpacity: 100, // element-colour opacities (0–100).
+  gradientOn: true, // use the accent→accent2 gradient on text/logo/buttons (off = flat accent).
+  gradientSplit: -1, // gradient two-colour ratio % held by accent before transition (-1 = theme default).
+  textOutlineOn: false, // neon-tube effect on the response-area title AND its icon. Off by default. Colour = msgBorderColor or accent.
+  contourOn: true, // offset-shadow contour on the title + icon — ON by default (combinable with neon).
+  contourColor: "#000000", // contour colour — black by default.
+  uiFont: "", // chosen UI font key ("" = system). See UI_FONTS in theme.js; fonts bundled in vendor/fonts.
+  smoothStream: true, // reveal streamed answers with a fluid rAF typewriter (adapts to model speed). Off = instant chunks.
 
   // ----- Model picker filter (price tiers + providers) -----------------------
   // Persisted state of the model-filter popover shared by every workspace's picker.
@@ -74,7 +111,10 @@ const DEFAULTS = {
   // side: the sidebar hands it its OpenRouter key via the URL fragment (#sk=) so
   // both share one and the same key/budget — a single service. URL is user-
   // configurable; leave blank to hide the launcher.
-  codeAppUrl: "https://code.hivey.be",
+  codeAppUrl: "https://app.hivey.be",
+
+  // Width (px) of the left activity rail — user-resizable by dragging its edge (clamped 48–110).
+  railWidth: 56,
 
   // ----- Judge0 (compile & run compiled languages in the sidebar) ------------
   // C/C++/Rust/Go/Python/Java… can't run in the browser, so code blocks in those
@@ -132,6 +172,12 @@ function migrate(s) {
     "Japonais": "Japanese", "Russe": "Russian",
   };
   if (s.targetLang && LANG_FR2EN[s.targetLang]) s.targetLang = LANG_FR2EN[s.targetLang];
+  // Hivey Code moved from the old Bolt instance (code.hivey.be) to the greenfield app (app.hivey.be).
+  if (s.codeAppUrl === "https://code.hivey.be") s.codeAppUrl = "https://app.hivey.be";
+  // Default OpenRouter model = 🐝 Hivey Free. Force it when unset or stuck on a raw free model
+  // (gpt-oss…) so the picker opens on Hivey Free, not a random free endpoint.
+  s.models = s.models || {};
+  if (!s.models.openrouter || /gpt-oss/i.test(s.models.openrouter)) s.models.openrouter = "hivey/free";
   // Theme list was revamped: drop removed themes, map them to the closest survivor.
   if (s.theme === "violet" || s.theme === "pro") s.theme = "dark";
   if (s.theme === "gamer") s.theme = "neon";
@@ -162,12 +208,27 @@ export async function getSettings() {
     s.agentPermMigrated = true;
     try { await browser.storage.local.set({ agentPermission: "auto", confirmActions: false, agentPermMigrated: true }); } catch (_) {}
   }
-  // One-time: ensure "Page" (read the active tab) is ON by default. Flip a stored
-  // false to true ONCE; the user can still turn it off afterwards (flag prevents re-flip).
-  if (s.includePageContext === false && !s.pageCtxOnMigrated) {
-    s.includePageContext = true;
-    s.pageCtxOnMigrated = true;
-    try { await browser.storage.local.set({ includePageContext: true, pageCtxOnMigrated: true }); } catch (_) {}
+  // Web search is OFF by default now (opt-in per tab). One-time: flip any previously force-enabled
+  // default back to off; keeps the cheap search-model routing for when the user does turn it on.
+  if (!s.webOffDefaultMigrated) {
+    s.webSearch = false;
+    if (!s.searchModel) s.searchModel = "openrouter|hivey/free";
+    s.webOffDefaultMigrated = true;
+    try { await browser.storage.local.set({ webSearch: false, searchModel: s.searchModel, webOffDefaultMigrated: true }); } catch (_) {}
+  }
+  // One-time: the rail became a HOVER OVERLAY hidden by default. Flip an old pinned-open
+  // (railHidden=false) to hidden ONCE; the user can still pin it open by clicking ☰.
+  if (s.railHidden === false && !s.railOverlayMigrated) {
+    s.railHidden = true;
+    s.railOverlayMigrated = true;
+    try { await browser.storage.local.set({ railHidden: true, railOverlayMigrated: true }); } catch (_) {}
+  }
+  // One-time: page reading is now OFF by default (Chat). Flip a stored ON to off ONCE; the user
+  // can still turn it back on via the Page chip (flag prevents re-flip).
+  if (s.includePageContext !== false && !s.pageCtxOffMigrated) {
+    s.includePageContext = false;
+    s.pageCtxOffMigrated = true;
+    try { await browser.storage.local.set({ includePageContext: false, pageCtxOffMigrated: true }); } catch (_) {}
   }
   // One-time: the earlier build defaulted to free-only, which hid paid models and made
   // every shown model the same green. Flip it off once so the full coloured list returns.

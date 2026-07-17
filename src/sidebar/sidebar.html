@@ -3,55 +3,34 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../../vendor/fonts/fonts.css" />
     <link rel="stylesheet" href="sidebar.css" />
     <title>Hivey AI</title>
   </head>
   <body>
+    <!-- Persistent gradient defs: the header icons reference url(#histg)/url(#gearg). Keeping
+         them in a permanent, always-rendered SVG (instead of inside a button that can be hidden,
+         e.g. History on the Web tab) so the icons never lose their colour and turn invisible. -->
+    <svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
+      <linearGradient id="histg" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--top-icon-1, var(--accent))"/><stop offset="0.55" style="stop-color:var(--top-icon-1, var(--accent))"/><stop offset="1" style="stop-color:var(--top-icon-2, var(--accent-2))"/></linearGradient>
+      <linearGradient id="gearg" x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--top-icon-1, var(--accent))"/><stop offset="0.55" style="stop-color:var(--top-icon-1, var(--accent))"/><stop offset="1" style="stop-color:var(--top-icon-2, var(--accent-2))"/></linearGradient>
+    </defs></svg>
     <!-- Top bar: brand + global actions -->
     <header class="topbar">
       <button class="menu-btn" id="brandToggle" data-i18n-title="brand.toggle" title="Show / hide the menu">
-        <svg class="glyph-svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="url(#histg)" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        <svg class="glyph-svg" viewBox="0 0 24 24" width="22" height="22" fill="url(#histg)" aria-hidden="true"><rect x="4.25" y="2.25" width="15.5" height="3.5" rx="1.75"/><rect x="2" y="7.5" width="20" height="3.5" rx="1.75"/><rect x="3" y="12.75" width="18" height="3.5" rx="1.75"/><rect x="5.75" y="18" width="12.5" height="3.5" rx="1.75"/></svg>
       </button>
+      <span class="brand-word" id="brandWord" title="Click to lock the menu open">Hivey</span>
+      <div class="web-only-head" id="webHeadCtl"></div>
       <div class="row">
+        <div class="web-only-head" id="webToolsSlot"></div>
         <button id="searchBtn" class="icon icon-accent" data-i18n-title="search.title" title="Search in this conversation"><svg class="glyph-svg" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="url(#histg)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
-        <button id="historyBtn" class="icon icon-accent" data-i18n-title="history.title" title="History (local)"><svg class="glyph-svg" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="url(#histg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="histg" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="0.55" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent-2)"/></linearGradient></defs><path d="M3 3.5v5h5"/><path d="M3.5 13a9 9 0 1 0 2.4-6.4L3 8.5"/><path d="M12 7.5v5l3.5 2"/></svg></button>
+        <button id="historyBtn" class="icon icon-accent" data-i18n-title="history.title" title="History (local)"><svg class="glyph-svg" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="url(#histg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3.5v5h5"/><path d="M3.5 13a9 9 0 1 0 2.4-6.4L3 8.5"/><path d="M12 7.5v5l3.5 2"/></svg></button>
         <button id="newChat" class="icon icon-accent" data-i18n-title="newChat.title" title="New conversation"><svg class="glyph-svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="url(#histg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <button id="expandTab" class="icon icon-accent" data-i18n-title="expand.title" title="Open in a full-screen tab"><svg class="glyph-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="url(#histg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M21 3l-8 8"/><path d="M9 21H3v-6"/><path d="M3 21l8-8"/></svg></button>
-        <button id="openOptions" class="icon icon-accent" data-i18n-title="settings.title" title="Settings"><svg class="glyph-svg" viewBox="0 0 16 16" width="18" height="18" fill="url(#gearg)" aria-hidden="true"><defs><linearGradient id="gearg" x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="0.55" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent-2)"/></linearGradient></defs><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.16.291a1.873 1.873 0 0 0 1.116 2.693l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.16a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.16-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.16a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/></svg></button>
+        <button id="openOptions" class="icon icon-accent" data-i18n-title="settings.title" title="Settings"><svg class="glyph-svg" viewBox="0 0 16 16" width="18" height="18" fill="url(#gearg)" aria-hidden="true"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.16.291a1.873 1.873 0 0 0 1.116 2.693l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.16a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.16-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.16a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/></svg></button>
       </div>
     </header>
-
-    <!-- History panel -->
-    <div id="historyPanel" class="panel hidden">
-      <div class="panel-head">
-        <span><span class="hd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span> <span data-i18n="history.head">History</span> <span class="muted" data-i18n="history.local">(local, private)</span></span>
-        <div class="panel-head-actions">
-          <button id="deleteSelected" class="link-btn danger hidden" data-i18n-title="history.deleteSelTitle" title="Delete the selected conversations">🗑 Delete selected (0)</button>
-          <button id="clearHistory" class="link-btn" data-i18n="history.clearAll" data-i18n-title="history.clearAllTitle" title="Clear everything">Clear all</button>
-          <button id="closeHistory" class="icon" data-i18n-title="close.title" title="Close">✕</button>
-        </div>
-      </div>
-      <ul id="historyList" class="historylist"></ul>
-    </div>
-
-    <!-- Page chip + multi-tab picker -->
-    <div id="pageBar" class="pagebar hidden" data-i18n-title="pagebar.title" title="Page seen by the AI">
-      <span class="eye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span>
-      <span id="pageTitle" class="page-title"></span>
-      <button id="captureRegion" class="icon" data-i18n-title="region.title" title="Capture an area of the page (screenshot) as context"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 3" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2"/></svg></button>
-      <button id="pickEl" class="icon" data-i18n-title="pick.title" title="Pick an element on the page to ask about it"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg></button>
-      <button id="tabsBtn" class="icon" data-i18n-title="tabs.btnTitle" title="Choose which tabs to give the AI"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3.5"/></svg></button>
-    </div>
-    <div id="tabsPanel" class="panel hidden">
-      <div class="panel-head">
-        <span class="muted" data-i18n="tabs.hint">Tick tabs to add them to the context</span>
-        <div class="panel-head-actions">
-          <button id="tabsClear" class="hidden" data-i18n="tabs.clear" data-i18n-title="tabs.clearTitle" title="Deselect all tabs">Reset</button>
-          <button id="tabsClose" class="icon tabs-close" data-i18n-title="close.title" title="Close"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-        </div>
-      </div>
-      <ul id="tabsList" class="tabslist"></ul>
-    </div>
 
     <!-- Workspace = left activity rail (always-visible workspace switcher) + work area.
          The rail scales cleanly to many workspaces where a horizontal tab bar can't,
@@ -59,18 +38,25 @@
     <div id="workspace">
       <nav class="rail" id="rail" data-i18n-title="workspace.label" aria-label="Workspaces">
         <button class="railtab active" data-mode="chat" data-i18n-title="rail.chatTitle" title="Chat"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+        <button class="railtab" data-mode="web" data-i18n-title="rail.webTitle" title="Web chats — Gemini, Claude, ChatGPT… (no API)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/></svg></button>
         <button class="railtab" data-mode="agent" data-i18n-title="rail.agentTitle" title="Agent — the AI acts in the browser"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M9 13v2"/><path d="M15 13v2"/></svg></button>
         <button class="railtab" data-mode="translate" data-i18n-title="rail.translateTitle" title="Translate"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
         <button class="railtab" data-mode="improve" data-i18n-title="rail.improveTitle" title="Improve a text"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.94 14.06 12 21l2.06-6.94L21 12l-6.94-2.06L12 3 9.94 9.94 3 12z"/></svg></button>
         <button class="railtab" data-mode="image" data-i18n-title="rail.imageTitle" title="Generate an image"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg></button>
         <button class="railtab" data-mode="pdf" data-i18n-title="rail.pdfTitle" title="Read a PDF and ask questions"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></button>
-        <button class="railtab" data-mode="code" data-i18n-title="rail.codeTitle" title="AI code workshop (preview, terminal, Expo Go…)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></button>
+        <button class="railtab" data-mode="security" data-i18n-title="rail.securityTitle" title="Defensive security assistant"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
+        <button class="railtab" data-mode="wisebase" data-i18n-title="rail.wisebaseTitle" title="Wisebase — your local knowledge base (RAG)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7"/><path d="M9 11h5"/></svg></button>
+        <button class="railtab" data-mode="code" data-i18n-title="rail.codeTitle" title="AI code workshop (preview, terminal, Expo Go…)"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><rect x="4.25" y="2.25" width="15.5" height="3.5" rx="1.75"/><rect x="2" y="7.5" width="20" height="3.5" rx="1.75"/><rect x="3" y="12.75" width="18" height="3.5" rx="1.75"/><rect x="5.75" y="18" width="12.5" height="3.5" rx="1.75"/></svg></button>
+        <button class="railtab rail-add" id="railAddBtn" type="button" data-i18n-title="rail.add" title="Show hidden tabs"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
       </nav>
+      <div class="rail-resize" id="railResize" title="Drag to resize the menu bar"></div>
+      <div id="railAddMenu" class="rail-add-menu hidden" role="menu"></div>
 
       <div id="workArea">
 
-    <!-- In-conversation search: find terms in the messages and jump between hits
-         instead of re-prompting. Hidden until the 🔍 header button is clicked. -->
+    <!-- In-conversation search: find terms in the messages and jump between hits instead of
+         re-prompting. Placed ABOVE the page/selection tools (pageBar) so the search bar never
+         wedges between those icons and the answers. Hidden until the 🔍 header button is clicked. -->
     <div id="searchBar" class="searchbar hidden">
       <span class="search-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
       <input id="searchInput" type="text" autocomplete="off" spellcheck="false" data-i18n-ph="search.ph" placeholder="Search in the conversation…" />
@@ -83,9 +69,48 @@
          contains the searched term, most matches first. Click one to open it. -->
     <ul id="searchResults" class="search-results hidden"></ul>
 
+    <!-- Page chip + multi-tab picker — inside the work area so they never overlap the menu rail. -->
+    <div id="pageBar" class="pagebar hidden" data-i18n-title="pagebar.title" title="Page seen by the AI">
+      <!-- 🛡 Security-tab only: analyze the current page's security headers (kept on the LEFT, apart from
+           the selection tools on the right). -->
+      <button id="secHeadersBtn" class="icon sec-headers-btn hidden" type="button" data-i18n-title="secHeaders.tip" title="Analyze this page's security headers (CSP, HSTS, cookies…)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></button>
+      <button id="pageToggle" class="eye eye-btn" type="button" aria-pressed="true" data-i18n-title="pagebar.toggle" title="Toggle page mode (selection tools)"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.42"/><path d="M6.6 6.6A13 13 0 0 0 2 12s3.6 7 10 7a9 9 0 0 0 5.4-1.6"/><path d="m2 2 20 20"/></svg></button>
+      <span id="pageTitle" class="page-title"></span>
+      <button id="captureRegion" class="icon" data-i18n-title="region.title" title="Capture an area of the page (screenshot) as context"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 3" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2"/></svg></button>
+      <button id="pickEl" class="icon" data-i18n-title="pick.title" title="Pick an element on the page to ask about it"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg></button>
+      <button id="tabsBtn" class="icon" data-i18n-title="tabs.btnTitle" title="Choose which tabs to give the AI"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3.5"/></svg></button>
+      <button id="watchBtn" class="icon watch-btn" data-i18n-title="watch.title" title="Notify me when this page changes"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+    </div>
+    <div id="tabsPanel" class="panel hidden">
+      <div class="panel-head">
+        <span class="muted" data-i18n="tabs.hint">Tick tabs to add them to the context</span>
+        <div class="panel-head-actions">
+          <button id="tabsClear" class="hidden" data-i18n="tabs.clear" data-i18n-title="tabs.clearTitle" title="Deselect all tabs">Reset</button>
+          <button id="tabsClose" class="icon tabs-close" data-i18n-title="close.title" title="Close"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+      </div>
+      <ul id="tabsList" class="tabslist"></ul>
+    </div>
+
+    <!-- History panel — overlays the work area only (never the menu rail). -->
+    <div id="historyPanel" class="panel hidden">
+      <div class="panel-head">
+        <span><span class="hd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span> <span data-i18n="history.head">History</span> <span class="muted" data-i18n="history.local">(local, private)</span></span>
+        <div class="panel-head-actions">
+          <button id="deleteSelected" class="link-btn danger hidden" data-i18n-title="history.deleteSelTitle" title="Delete the selected conversations">Delete selected (0)</button>
+          <button id="clearHistory" class="link-btn" data-i18n="history.clearAll" data-i18n-title="history.clearAllTitle" title="Clear everything">Clear all</button>
+          <button id="closeHistory" class="icon" data-i18n-title="close.title" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="hist-search-wrap">
+        <input id="historySearch" type="text" class="hist-search" data-i18n-ph="history.searchPh" placeholder="Search conversations…" autocomplete="off" spellcheck="false" />
+      </div>
+      <ul id="historyList" class="historylist"></ul>
+    </div>
+
     <main id="messages" class="messages">
       <div class="empty" id="empty">
-        <div class="empty-logo"><svg viewBox="0 0 96 96" role="img" aria-label="Hivey AI"><defs><linearGradient id="hiveLogoA" x1="12" y1="10" x2="84" y2="86" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="0.55" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent-2)"/></linearGradient></defs><g fill="url(#hiveLogoA)"><rect x="17" y="9" width="62" height="14" rx="7"/><rect x="8" y="30" width="80" height="14" rx="7"/><rect x="12" y="51" width="72" height="14" rx="7"/><rect x="23" y="72" width="50" height="14" rx="7"/></g></svg></div>
+        <div class="empty-logo" id="emptyLogo"><svg viewBox="0 0 96 96" role="img" aria-label="Hivey AI"><defs><linearGradient id="hiveLogoA" x1="12" y1="10" x2="84" y2="86" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="0.55" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent-2)"/></linearGradient></defs><g fill="url(#hiveLogoA)"><rect x="17" y="9" width="62" height="14" rx="7"/><rect x="8" y="30" width="80" height="14" rx="7"/><rect x="12" y="51" width="72" height="14" rx="7"/><rect x="23" y="72" width="50" height="14" rx="7"/></g></svg></div>
         <!-- Shown when no provider is connected (onboarding) -->
         <div id="emptyOnboard">
           <p class="empty-title" data-i18n="onboard.title">Hivey AI — plug in your AI</p>
@@ -103,8 +128,9 @@
             free) or a <b>local</b> model (Ollama / LM Studio).
           </p>
         </div>
-        <!-- Shown when a provider IS connected (friendly greeting) -->
+        <!-- Shown when a provider IS connected (friendly greeting + per-tab feature summary) -->
         <p id="emptyGreeting" class="empty-title hidden" data-i18n="greeting">How can I help you?</p>
+        <p id="emptyFeatures" class="empty-features muted hidden"></p>
       </div>
     </main>
 
@@ -117,20 +143,20 @@
          key so both share one and the same service. -->
     <section id="codeView" class="codeview hidden">
       <div class="code-launch">
-        <div class="cl-logo"><svg viewBox="0 0 96 96" role="img" aria-label="Hivey AI"><defs><linearGradient id="hiveLogoB" x1="12" y1="10" x2="84" y2="86" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="0.55" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent-2)"/></linearGradient></defs><g fill="url(#hiveLogoB)"><rect x="17" y="9" width="62" height="14" rx="7"/><rect x="8" y="30" width="80" height="14" rx="7"/><rect x="12" y="51" width="72" height="14" rx="7"/><rect x="23" y="72" width="50" height="14" rx="7"/></g></svg></div>
+        <div class="cl-logo"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></div>
         <h2 class="cl-title" data-i18n="code.title">Hivey Code</h2>
         <p class="cl-sub muted" data-i18n-html="code.sub">
           Build web &amp; mobile apps with AI: code generation, <b>live preview</b>,
           a built-in terminal and <b>Expo Go</b> to test on mobile. Self-hosted,
           and it shares this sidebar's OpenRouter key — one and the same service.
         </p>
-        <button id="openCodeApp" class="btn-grad" data-i18n="code.open">🚀 Open the workshop in a new tab</button>
+        <button id="openCodeApp" class="btn-grad"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg><span data-i18n="code.open">Open the workshop in a new tab</span></button>
         <p class="cl-url muted" id="codeAppUrlLabel"></p>
         <ul class="cl-feats">
-          <li data-i18n-html="code.feat1">⚡ AI code generation &amp; editing</li>
-          <li data-i18n-html="code.feat3">📱 Expo Go to test on your phone</li>
-          <li data-i18n-html="code.feat2">👁 Live preview (web) in the browser</li>
-          <li data-i18n-html="code.feat4">⌨️ Built-in terminal &amp; file management</li>
+          <li><span class="clf-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg></span><span data-i18n="code.feat1">AI code generation &amp; editing</span></li>
+          <li><span class="clf-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></span><span data-i18n="code.feat3">Expo Go to test on your phone</span></li>
+          <li><span class="clf-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span data-i18n="code.feat2">Live preview (web) in the browser</span></li>
+          <li><span class="clf-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg></span><span data-i18n="code.feat4">Built-in terminal &amp; file management</span></li>
         </ul>
         <p class="cl-sec muted" data-i18n-html="code.sec">
           🔒 The workshop opens in an isolated tab. It uses the same providers as
@@ -151,45 +177,119 @@
     <!-- Adaptive control row (per-mode controls: translate / improve / image / PDF).
          The chat toggles (Thinking / Web / Page) now live inside the composer below. -->
     <div class="controls" id="controls">
+      <!-- The label now lives INSIDE the dropdown as a disabled placeholder (its resting display),
+           with a hover description on the <select> itself — no separate label text. -->
       <div class="ctl-group hidden" id="translateControls">
-        <label><span data-i18n="translate.to">Translate to</span>
-          <select id="translateLang">
-            <option value="French" data-i18n="lang.French">French</option>
-            <option value="English" data-i18n="lang.English">English</option>
-            <option value="Spanish" data-i18n="lang.Spanish">Spanish</option>
-            <option value="German" data-i18n="lang.German">German</option>
-            <option value="Italian" data-i18n="lang.Italian">Italian</option>
-            <option value="Portuguese" data-i18n="lang.Portuguese">Portuguese</option>
-            <option value="Dutch" data-i18n="lang.Dutch">Dutch</option>
-            <option value="Arabic" data-i18n="lang.Arabic">Arabic</option>
-            <option value="Chinese" data-i18n="lang.Chinese">Chinese</option>
-            <option value="Japanese" data-i18n="lang.Japanese">Japanese</option>
-            <option value="Russian" data-i18n="lang.Russian">Russian</option>
-          </select>
-        </label>
+        <select id="translateLang" class="ctl-select" data-i18n-title="translate.toTitle" title="Choose the language to translate into">
+          <option value="" disabled selected data-i18n="translate.to">Translate to</option>
+          <option value="French" data-i18n="lang.French">French — Français</option>
+          <option value="English" data-i18n="lang.English">English</option>
+          <option value="Spanish" data-i18n="lang.Spanish">Spanish — Español</option>
+          <option value="German" data-i18n="lang.German">German — Deutsch</option>
+          <option value="Italian" data-i18n="lang.Italian">Italian — Italiano</option>
+          <option value="Portuguese" data-i18n="lang.Portuguese">Portuguese — Português</option>
+          <option value="Dutch" data-i18n="lang.Dutch">Dutch — Nederlands</option>
+          <option value="Arabic" data-i18n="lang.Arabic">Arabic — العربية</option>
+          <option value="Chinese" data-i18n="lang.Chinese">Chinese (Simplified) — 简体中文</option>
+          <option value="Traditional Chinese">Chinese (Traditional) — 繁體中文</option>
+          <option value="Japanese" data-i18n="lang.Japanese">Japanese — 日本語</option>
+          <option value="Korean">Korean — 한국어</option>
+          <option value="Russian" data-i18n="lang.Russian">Russian — Русский</option>
+          <option value="Hindi">Hindi — हिन्दी</option>
+          <option value="Bengali">Bengali — বাংলা</option>
+          <option value="Turkish">Turkish — Türkçe</option>
+          <option value="Polish">Polish — Polski</option>
+          <option value="Ukrainian">Ukrainian — Українська</option>
+          <option value="Romanian">Romanian — Română</option>
+          <option value="Greek">Greek — Ελληνικά</option>
+          <option value="Czech">Czech — Čeština</option>
+          <option value="Swedish">Swedish — Svenska</option>
+          <option value="Danish">Danish — Dansk</option>
+          <option value="Norwegian">Norwegian — Norsk</option>
+          <option value="Finnish">Finnish — Suomi</option>
+          <option value="Hungarian">Hungarian — Magyar</option>
+          <option value="Hebrew">Hebrew — עברית</option>
+          <option value="Thai">Thai — ไทย</option>
+          <option value="Vietnamese">Vietnamese — Tiếng Việt</option>
+          <option value="Indonesian">Indonesian — Bahasa Indonesia</option>
+          <option value="Malay">Malay — Bahasa Melayu</option>
+          <option value="Filipino">Filipino — Tagalog</option>
+          <option value="Persian">Persian — فارسی</option>
+          <option value="Urdu">Urdu — اردو</option>
+          <option value="Swahili">Swahili — Kiswahili</option>
+          <option value="Catalan">Catalan — Català</option>
+          <option value="Croatian">Croatian — Hrvatski</option>
+          <option value="Serbian">Serbian — Српски</option>
+          <option value="Slovak">Slovak — Slovenčina</option>
+          <option value="Slovenian">Slovenian — Slovenščina</option>
+          <option value="Bulgarian">Bulgarian — Български</option>
+          <option value="Lithuanian">Lithuanian — Lietuvių</option>
+          <option value="Latvian">Latvian — Latviešu</option>
+          <option value="Estonian">Estonian — Eesti</option>
+          <option value="Icelandic">Icelandic — Íslenska</option>
+          <option value="Irish">Irish — Gaeilge</option>
+          <option value="Welsh">Welsh — Cymraeg</option>
+          <option value="Afrikaans">Afrikaans</option>
+          <option value="Tamil">Tamil — தமிழ்</option>
+          <option value="Telugu">Telugu — తెలుగు</option>
+          <option value="Marathi">Marathi — मराठी</option>
+          <option value="Gujarati">Gujarati — ગુજરાતી</option>
+          <option value="Punjabi">Punjabi — ਪੰਜਾਬੀ</option>
+          <option value="Kannada">Kannada — ಕನ್ನಡ</option>
+          <option value="Malayalam">Malayalam — മലയാളം</option>
+          <option value="Nepali">Nepali — नेपाली</option>
+          <option value="Sinhala">Sinhala — සිංහල</option>
+          <option value="Khmer">Khmer — ខ្មែរ</option>
+          <option value="Lao">Lao — ລາວ</option>
+          <option value="Burmese">Burmese — မြန်မာ</option>
+          <option value="Mongolian">Mongolian — Монгол</option>
+          <option value="Kazakh">Kazakh — Қазақ</option>
+          <option value="Azerbaijani">Azerbaijani — Azərbaycan</option>
+          <option value="Georgian">Georgian — ქართული</option>
+          <option value="Armenian">Armenian — Հայերեն</option>
+          <option value="Albanian">Albanian — Shqip</option>
+          <option value="Macedonian">Macedonian — Македонски</option>
+          <option value="Belarusian">Belarusian — Беларуская</option>
+          <option value="Basque">Basque — Euskara</option>
+          <option value="Galician">Galician — Galego</option>
+          <option value="Esperanto">Esperanto</option>
+          <option value="Latin">Latin — Latina</option>
+        </select>
       </div>
 
       <div class="ctl-group hidden" id="improveControls">
-        <label><span data-i18n="improve.style">Writing style</span>
-          <select id="improvePreset"></select>
-        </label>
+        <div class="improve-seg">
+          <select id="improvePreset" class="ctl-select" data-i18n-title="improve.styleTitle" title="Choose the writing style"></select>
+          <select id="improveTone" class="ctl-select" data-i18n-title="improve.toneTitle" title="Choose the tone of voice"></select>
+        </div>
       </div>
 
       <div class="ctl-group hidden" id="imageControls">
-        <label><span data-i18n="image.size">Size</span>
-          <select id="imageSize" data-i18n-title="image.sizeTitle" title="Sizes depend on the model. Native 4K/1440p doesn't exist on current image models — upscale the image afterwards."></select>
-        </label>
+        <select id="imageSize" class="ctl-select" data-i18n-title="image.sizeTitle" title="Sizes depend on the model. Native 4K/1440p doesn't exist on current image models — upscale the image afterwards."></select>
       </div>
 
       <div class="ctl-group hidden" id="pdfControls">
-        <button id="pdfLoad" class="chip" data-i18n="pdf.load" data-i18n-title="pdf.loadTitle" title="Choose a PDF file to read">📄 Load PDF</button>
         <input type="file" id="pdfFile" accept="application/pdf,.pdf" multiple hidden />
         <span class="muted" id="pdfInfo"></span>
         <button id="pdfSummarize" class="chip hidden" data-i18n="pdf.summarize">📝 Summarize</button>
         <button id="pdfImages" class="chip hidden" data-i18n="pdf.images">🖼 Page images</button>
         <button id="pdfText" class="chip hidden" data-i18n="pdf.text">📄 Extract text</button>
       </div>
+      <!-- 📚 Wisebase (local RAG): pick the collection(s) to search in, manage sources, quick-add
+           the current page. The management panel is built dynamically (see renderWbPanel). -->
+      <div class="ctl-group hidden" id="wisebaseControls">
+        <select id="wbScope" class="ctl-select" data-i18n-title="wb.searchInTitle" title="Search in"></select>
+        <button id="wbManageBtn" class="icon wb-ctl-btn" type="button" data-i18n-title="wb.manageTitle" title="Manage collections & sources" aria-label="Manage"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+        <button id="wbAddPageBtn" class="icon wb-ctl-btn" type="button" data-i18n-title="wb.addPageTitle" title="Add the current page to a collection" aria-label="Add current page"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></button>
+      </div>
+      <!-- Page tools toggle (translate/improve/image/pdf): opens a popup with the current page
+           reading + capture tools (screenshot / element), like the Chat tab's Page bar. -->
+      <button id="selPageToggle" class="ctoggle ctl-page-btn hidden" type="button" data-i18n-title="pagebar.selToggle" title="Show page tools (read page, screenshot, element)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg></button>
     </div>
+
+    <!-- 🛡 Defensive-security recipes (Security tab only): one-tap analysis actions, sits ABOVE the
+         model picker for a clean, prominent layout. -->
+    <div id="secRecipes" class="sec-recipes hidden"></div>
 
     <!-- Model picker (API mode): a searchable combobox just above the chat input.
          Type to filter the list (e.g. "gemi" → Gemini models). Hidden in site mode. -->
@@ -199,7 +299,7 @@
         <span class="combo-caret">▾</span>
       </div>
       <button id="modelFilterBtn" class="model-filter-btn" data-i18n-title="filter.title" title="Filter models (provider / price)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg></button>
-      <button id="modelConnect" class="btn-grad hidden" data-i18n="model.connect">🔌 Connect a provider</button>
+      <button id="modelConnect" class="btn-grad hidden"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v6"/></svg><span data-i18n="model.connect">Connect a provider</span></button>
     </div>
     <!-- Floating list of models for the searchable combobox. -->
     <div id="modelMenu" class="combo-menu hidden"></div>
@@ -231,33 +331,94 @@
       <div id="dropOverlay" class="drop-overlay hidden"><span>📎 <span data-i18n="drop.hint">Drop files here to attach them</span></span></div>
       <!-- Attachment preview strip (files / images fed to the AI as context). -->
       <div id="attachStrip" class="attach-strip hidden"></div>
+      <div id="cmdChips" class="cmd-chips hidden"></div>
       <!-- One rounded input box: the "+" sits to the LEFT of the text on the first row,
            the chat toggles + stop on a bottom row at the right. No send button — Enter sends. -->
       <div class="composer-box">
+        <div id="cmdPalette" class="cmd-palette hidden" role="listbox"></div>
         <div class="composer-main" id="composerMain">
           <button id="attachBtn" class="attach-btn" data-i18n-title="attach.title" title="Attach files or images"><svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
           <textarea id="input" rows="1" data-i18n-ph="composer.ph" placeholder="Write a message…"></textarea>
+          <!-- Voice dictation (local speech-to-text) — available on every chat-capable tab. -->
+          <button type="button" id="dictateBtn" class="mic-btn" aria-pressed="false" data-i18n-title="chip.dictateTitle" title="Dictation — speak your message (local speech-to-text)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8 21h8"/></svg></button>
         </div>
         <div class="composer-tools">
           <!-- On the Chat tab, the "+" is moved here (bottom-left, beside the toggles).
                On every other tab it stays next to the text in .composer-main above. -->
           <div class="tools-left" id="toolsLeft"></div>
           <div class="tools-right">
+            <button type="button" id="optsToggle" class="ctool opts-toggle" data-i18n-title="opts.title" title="Options" aria-label="Options" aria-expanded="false"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
             <div class="chat-toggles" id="chatControls">
-              <label class="ctoggle" data-i18n-title="chip.webTitle" title="Web search (Perplexity / OpenRouter / Claude)"><input type="checkbox" id="webSearch" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/></svg></label>
-              <label class="ctoggle" data-i18n-title="chip.verifyTitle" title="Verify — double-check &amp; auto-fix the answer (uses extra tokens)"><input type="checkbox" id="verifyAnswers" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l7 4v6c0 4.4-3 7.4-7 8-4-.6-7-3.6-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg></label>
-              <label class="ctoggle" data-i18n-title="chip.thinkingTitle" title="Thinking — show the model's reasoning"><input type="checkbox" id="thinking" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></label>
-              <label class="ctoggle" data-i18n-title="chip.artifactTitle" title="Artifacts — build runnable apps, games & diagrams"><input type="checkbox" id="artifactMode" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5"/><path d="M12 12v9"/><path d="M12 12L4 7.5"/></svg></label>
-              <label class="ctoggle" data-i18n-title="chip.pageTitle" title="Page — the AI sees the current page"><input type="checkbox" id="pageCtx" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg></label>
-              <label class="ctoggle" data-i18n-title="chip.autoscrollTitle" title="Auto-scroll — follow the AI's answer"><input type="checkbox" id="autoScroll" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v13"/><path d="M6 11l6 6 6-6"/><path d="M5 21h14"/></svg></label>
+              <div class="opts-head" data-i18n="opts.title">Options</div>
+              <label class="ctoggle" data-i18n-title="chip.verifyTitle" title="Verify — double-check &amp; auto-fix the answer (uses extra tokens)"><input type="checkbox" id="verifyAnswers" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l7 4v6c0 4.4-3 7.4-7 8-4-.6-7-3.6-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg><span class="ct-name">Verify</span></label>
+              <label class="ctoggle" data-i18n-title="chip.webTitle" title="Web search (Perplexity / OpenRouter / Claude)"><input type="checkbox" id="webSearch" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/></svg><span class="ct-name">Web</span></label>
+              <label class="ctoggle deep-row" data-i18n-title="chip.deepTitle" title="DeepSearch — multi-step web research with cited report"><input type="checkbox" id="deepSearch" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg><span class="ct-name">DeepSearch</span></label>
+              <div class="deep-seg-row" id="deepSeg" hidden><button type="button" class="ts-btn" data-depth="fast" data-i18n="deep.fast">Fast</button><button type="button" class="ts-btn" data-depth="standard" data-i18n="deep.standard">Standard</button><button type="button" class="ts-btn" data-depth="deep" data-i18n="deep.deep">Deep</button></div>
+              <label class="ctoggle" data-i18n-title="chip.artifactTitle" title="Artifacts — build runnable apps, games & diagrams"><input type="checkbox" id="artifactMode" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5"/><path d="M12 12v9"/><path d="M12 12L4 7.5"/></svg><span class="ct-name">Artifacts</span></label>
+              <label class="ctoggle" data-i18n-title="chip.pageTitle" title="Page — the AI sees the current page"><input type="checkbox" id="pageCtx" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg><span class="ct-name">Page</span></label>
+              <label class="ctoggle" data-i18n-title="chip.autoscrollTitle" title="Auto-scroll — follow the AI's answer"><input type="checkbox" id="autoScroll" /><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v13"/><path d="M6 11l6 6 6-6"/><path d="M5 21h14"/></svg><span class="ct-name">Auto-scroll</span></label>
+              <div class="ctoggle think-row" data-i18n-title="chip.thinkingTitle" title="Thinking — off / on / max"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><span class="ct-name">Thinking</span><span class="think-seg" role="group" aria-label="Thinking level"><button type="button" class="ts-btn" data-lvl="off">Off</button><button type="button" class="ts-btn" data-lvl="high">On</button><button type="button" class="ts-btn" data-lvl="max">Max</button></span><button type="button" id="thinking" class="think-state" data-level="off" hidden aria-hidden="true"><span class="lvl"></span></button></div>
             </div>
             <button id="stop" class="ctool stop hidden" data-i18n-title="stop.title" title="Stop">■</button>
           </div>
         </div>
       </div>
-      <input type="file" id="attachInput" multiple accept="image/*,.pdf,.zip,.txt,.md,.markdown,.csv,.json,.log,.html,.xml,.yaml,.yml,.js,.ts,.py,.java,.c,.cpp,.cs,.go,.rb,.rs,.php,.sh,.css" hidden />
+      <input type="file" id="attachInput" multiple accept="image/*,.pdf,.zip,.txt,.md,.markdown,.csv,.json,.log,.html,.xml,.yaml,.yml,.js,.ts,.py,.java,.c,.cpp,.cs,.go,.rb,.rs,.php,.sh,.css,.pcap,.cap" hidden />
     </footer>
 
+    <!-- Web chats panel — embed the provider web UIs (use your logged-in web session, no API tokens). -->
+    <div id="webPanel" class="panel hidden webpanel">
+      <div class="panel-head webchats-head">
+        <div class="webhead-left">
+          <div class="webhivey" id="webHivey">
+            <button type="button" class="icon webhivey-btn" id="webHiveyBtn" aria-haspopup="true" aria-expanded="false" data-i18n-title="web.menuTitle" title="Menu Hivey — revenir à un onglet"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+            <div class="webhivey-menu hidden" id="webHiveyMenu" role="menu"></div>
+          </div>
+        <div class="webprov" id="webProv">
+          <button id="webProvBtn" class="webprov-btn" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="webprov-dot" id="webProvDot"></span>
+            <span id="webProvLabel">Claude</span>
+            <svg class="webprov-caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div id="webProvMenu" class="webprov-menu hidden" role="menu">
+            <button type="button" class="wc-opt" role="menuitem" data-prov="gemini" data-url="https://gemini.google.com/app"><span class="webprov-dot" style="background:#4285f4"></span>Gemini</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="claude" data-url="https://claude.ai/new"><span class="webprov-dot" style="background:#d97757"></span>Claude</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="chatgpt" data-url="https://chatgpt.com/"><span class="webprov-dot" style="background:#10a37f"></span>ChatGPT</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="copilot" data-url="https://copilot.microsoft.com/"><span class="webprov-dot" style="background:#0a6cff"></span>Copilot</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="mistral" data-url="https://chat.mistral.ai/chat"><span class="webprov-dot" style="background:#fa520f"></span>Mistral</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="deepseek" data-url="https://chat.deepseek.com/"><span class="webprov-dot" style="background:#4d6bfe"></span>DeepSeek</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="qwen" data-url="https://chat.qwen.ai/"><span class="webprov-dot" style="background:#615ced"></span>Qwen</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="kimi" data-url="https://www.kimi.com/"><span class="webprov-dot" style="background:#ffffff"></span>Kimi</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="zai" data-url="https://chat.z.ai/"><span class="webprov-dot" style="background:#4f46e5"></span>Z.ai (GLM)</button>
+            <button type="button" class="wc-opt" role="menuitem" data-prov="huggingchat" data-url="https://huggingface.co/chat/"><span class="webprov-dot" style="background:#ffd21e"></span>HuggingChat</button>
+          </div>
+        </div>
+        </div>
+        <div class="panel-head-actions">
+          <button type="button" class="icon" id="webNewChat" data-i18n-title="web.newChat" title="Nouvelle conversation"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          <div class="web-overlay" id="webOverlay">
+            <button type="button" class="icon web-ov-toggle" id="webOvToggle" aria-haspopup="true" aria-expanded="false" data-i18n-title="web.toolsTitle" title="Hivey — outils de page (déplier)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v5"/><path d="M9.5 14.5h5"/></svg></button>
+            <div class="web-ov-menu hidden" id="webOvMenu">
+              <button type="button" class="web-ov-btn" id="webInjectPage" data-i18n-title="web.pageTitle" title="Send the current open tab's page to this chat"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg><span data-i18n="web.page">Page (onglet en cours)</span></button>
+              <button type="button" class="web-ov-btn" id="webInjectEl" data-i18n-title="web.elTitle" title="Pick an element on the page and send it to this chat"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg><span data-i18n="web.el">Élément</span></button>
+              <button type="button" class="web-ov-btn" id="webInjectShot" data-i18n-title="web.shotTitle" title="Send a screenshot selection of the current page to this chat"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span data-i18n="web.shot">Capture</span></button>
+              <button type="button" class="web-ov-btn" id="webInjectTabs" data-i18n-title="web.tabsTitle" title="Pick open tabs and send them to this chat"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3.5"/></svg><span data-i18n="web.tabs">Onglets</span></button>
+            </div>
+            <div class="web-ov-menu hidden" id="webTabsMenu">
+              <div class="web-tabs-list" id="webTabsList"></div>
+              <button type="button" class="web-ov-btn web-tabs-send" id="webTabsSend"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg><span data-i18n="web.tabsSend">Envoyer la sélection</span></button>
+            </div>
+          </div>
+          <button id="webOpenTab" class="icon" data-i18n-title="web.openTab" title="Open in a full tab"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M21 3l-8 8"/><path d="M9 21H3v-6"/><path d="M3 21l8-8"/></svg></button>
+          <button id="closeWeb" class="webclose" data-i18n-title="close.title" title="Close web chats"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        </div>
+      </div>
+      <div class="webframe-wrap">
+        <iframe id="webFrame" class="webframe" title="Web chat" allow="clipboard-write; microphone; camera"></iframe>
+        <!-- Empty by default (no description); reused as a transient toast for page-injection actions. Hidden while empty. -->
+        <div id="webHint" class="webhint"></div>
+      </div>
+    </div>
       </div><!-- /#workArea -->
     </div><!-- /#workspace -->
 

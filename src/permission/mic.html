@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hivey AI — Microphone</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        background: #0f111a; color: #e7e9f3; font: 15px/1.55 system-ui, -apple-system, sans-serif; padding: 24px;
+      }
+      .wrap { max-width: 460px; text-align: center; }
+      h1 { font-size: 22px; margin: 0 0 12px; }
+      p { margin: 10px 0; color: #aeb4cc; }
+      button {
+        margin-top: 8px; padding: 11px 20px; border: 0; border-radius: 10px; cursor: pointer;
+        background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; font: 600 15px system-ui, sans-serif;
+      }
+      button:hover { filter: brightness(1.08); }
+      #status { font-weight: 600; min-height: 22px; }
+      #status.ok { color: #4ade80; }
+      #status.err { color: #f87171; }
+      .hint { font-size: 13px; color: #7e85a3; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>🎙 Autoriser le microphone</h1>
+      <p>
+        La dictée vocale a besoin d'accéder à ton micro. Clique sur le bouton, puis dans la demande du
+        navigateur choisis <b>Autoriser</b> et coche <b>« Mémoriser cette décision »</b> (Firefox) /
+        <b>« Toujours autoriser »</b> (Chrome).
+      </p>
+      <button id="grant" type="button">Autoriser le micro</button>
+      <p id="status"></p>
+      <p class="hint">Une fois autorisé, reviens dans la sidebar et clique sur le micro 🎙 — ça marchera.</p>
+    </div>
+    <script src="mic.js"></script>
+  </body>
+</html>

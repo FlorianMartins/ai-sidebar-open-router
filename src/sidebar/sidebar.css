@@ -1,3 +1,13 @@
+/* No-FOUC guard: init() awaits async storage before it applies the saved theme, font, language
+   and layout, so the panel would briefly paint with the DEFAULT theme + English strings + wrong
+   layout. We keep <body> invisible (layout still computed, no reflow flash) until JS adds
+   `theme-ready` to <html> — then a 120ms fade reveals the already-styled UI. init() also reveals
+   it from a .finally() backstop if it ever errors, so the UI can't get stuck invisible. */
+html:not(.theme-ready) body { visibility: hidden; }
+html.theme-ready body { animation: hvReveal .12s ease-out both; }
+@keyframes hvReveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { html.theme-ready body { animation: none; } }
+
 /* ============================================================================
    Hivey AI — design system (default "dark" theme: blue → purple gradient)
    These :root values are the default-theme fallback; theme.js overwrites them
@@ -12,12 +22,13 @@
   --border-soft: #222538;
   --text: #f8fafc;
   --muted: #9b9db5;
+  --on-surface: #f8fafc; --on-accent: #ffffff;
   --accent: #8b5cf6;
   --accent-2: #6366f1;
   --accent-3: #6366f1;
-  --grad: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 40%, #6366f1 100%);
-  --grad-soft: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(99, 102, 241, 0.16));
-  --user: linear-gradient(135deg, #8b5cf6, #6366f1);
+  --grad: linear-gradient(135deg, #6366f1 0%, #6366f1 40%, #8b5cf6 100%);
+  --grad-soft: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.16));
+  --user: linear-gradient(135deg, #6366f1, #8b5cf6);
   --tool: #1c1f30;
   --error: #3a1d24;
   --radius: 12px;
@@ -31,22 +42,47 @@ html, body {
      (matches a Firefox-native-sidebar-like minimum); narrower drags scroll. */
   min-width: 320px;
   font: 13.5px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: var(--bg); color: var(--text);
+  font-family: var(--ui-font, system-ui, -apple-system, "Segoe UI", sans-serif); /* user-chosen UI font (Settings) */
+  /* A single accent glow in the TOP-LEFT corner (dynamic — follows the theme / custom accents),
+     over a deep neutral gradient. */
+  background:
+    /* Top-LEFT aura — EXACT mirror of Hivey Code's top-RIGHT aura (same violet --aura-2, diameter
+       0.86×, softness transparent 42%, opacity ×66%) centred on the top-left corner (0% 0%). That
+       corner is the SAME physical point as Hivey Code's top-right corner when the sidebar is docked to
+       its right, so the two halves form ONE continuous glow across the seam. */
+    radial-gradient(calc(var(--aura-size, 720px) * 0.86) circle at 0% 0%, color-mix(in srgb, var(--aura-2, #8b5cf6) calc(var(--aura-op, 0.12) * 66%), transparent), transparent 42%),
+    /* Deeper base gradient matching Hivey Code (55% → #000 at the bottom) so the sidebar isn't lighter
+       /greyer than app.hivey.be. Theme-derived → the Light theme overrides this to a solid light bg. */
+    linear-gradient(180deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 55%, #000) 100%);
+  color: var(--text);
 }
 body { display: flex; flex-direction: column; height: 100vh; }
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb { background: #2c3142; border-radius: 8px; }
+/* Modern, theme-aware scrollbars everywhere. Firefox (thin + no arrow buttons) via scrollbar-*,
+   Chromium via ::-webkit-scrollbar. Thumb tinted from the text colour so it works in dark & light. */
+html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22%, transparent) transparent; }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22%, transparent) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 20%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text) 34%, transparent); background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
 
 button, select, textarea, input { font: inherit; color: var(--text); }
 button { cursor: pointer; }
 
 /* ----- Top bar ----- */
 .topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 10px; border-bottom: 1px solid var(--border-soft);
-  background: var(--panel);
+  display: flex; align-items: center; justify-content: flex-start; gap: 8px;
+  padding: 7px 12px; min-height: 48px; border-bottom: 1px solid var(--border-soft);
+  /* taller + clean glass transparency (no gradient/shadow) */
+  background: rgba(255, 255, 255, 0.012);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  position: relative; z-index: 50; /* keep header dropdowns ABOVE the web iframe */
 }
+.topbar .row { margin-left: auto; } /* push the action icons to the right edge */
+/* On the Web tab, Search & History are irrelevant — hide them. */
+body.web-active #searchBtn, body.web-active #historyBtn { display: none; }
 /* Top-left menu toggle (hamburger) — shows/hides the workspace rail, like the menu
    button on claude.ai / gemini. Accent when the menu is open, neutral when collapsed. */
 .menu-btn {
@@ -54,9 +90,17 @@ button { cursor: pointer; }
   width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: 9px;
   background: transparent; color: var(--muted); transition: 0.15s; cursor: pointer;
 }
-.menu-btn svg { display: block; }
+.menu-btn svg { display: block; filter: drop-shadow(1.5px 1.5px 1.5px rgba(0, 0, 0, 0.5)); }
 .menu-btn:hover { background: var(--panel-2); color: var(--text); border-color: var(--border); }
 body:not(.rail-collapsed) .menu-btn { color: var(--accent); }
+/* Brand wordmark next to the logo — modern, premium, white. Hover peeks the menu, click locks it. */
+.brand-word {
+  font: 600 15px/1 "Inter", "SF Pro Display", "Segoe UI Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.015em; color: #fff; cursor: pointer; user-select: none;
+  margin-left: -3px; padding: 3px 2px; transition: opacity 0.15s;
+}
+.brand-word:hover { opacity: 0.82; }
+body.rail-pinned .brand-word { color: var(--accent); } /* tinted when locked open */
 /* Tabs rail hidden via the menu toggle. */
 body.rail-collapsed #rail { display: none; }
 /* Nudge the header icons right by half the width difference between the 34px accent
@@ -67,7 +111,7 @@ body.rail-collapsed #rail { display: none; }
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; padding: 0; line-height: 1; font-size: 14px;
   background: transparent; border: 1px solid transparent; border-radius: 9px;
-  color: var(--muted); transition: 0.15s;
+  color: var(--muted); transition: 0.15s; cursor: pointer;
 }
 .icon:hover { background: var(--panel-2); color: var(--text); border-color: var(--border); }
 /* Tabs-panel close (X): a touch larger than the other icon buttons. */
@@ -106,27 +150,95 @@ body.rail-collapsed #rail { display: none; }
 /* ----- Workspace: left activity rail + work area ----- */
 #workspace { flex: 1; min-height: 0; display: flex; }
 .rail {
-  flex: 0 0 48px; width: 48px; display: flex; flex-direction: column; gap: 4px;
-  padding: 8px 6px; background: var(--panel); border-right: 1px solid var(--border);
+  flex: 0 0 var(--rail-w, 56px); width: var(--rail-w, 56px); position: relative;
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 10px 8px;
+  background: rgba(255,255,255,.012); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-right: 1px solid var(--border);
   overflow-y: auto; overflow-x: hidden;
 }
+/* draggable divider to resize the rail width (persisted), clamped to sane bounds. */
+.rail-resize {
+  flex: 0 0 4px; position: relative; cursor: col-resize; align-self: stretch;
+}
+.rail-resize::after {
+  content: ""; position: absolute; inset: 0 1px; border-radius: 2px; background: var(--accent);
+  opacity: 0; transition: opacity .18s;
+}
+.rail-resize:hover::after { opacity: .5; }
 /* Icon-only activity tabs: monochrome line icons, unified grey when inactive.
    The label is gone — the native (translated) title attribute is the tooltip. */
 .railtab {
   position: relative; display: flex; align-items: center; justify-content: center;
-  width: 100%; height: 38px; padding: 0; border: 0; border-radius: 9px;
-  background: transparent; color: #6b7280; cursor: pointer; transition: 0.15s;
+  width: 100%; height: 42px; padding: 0; border: 0; border-radius: 11px;
+  background: transparent; color: var(--rail-icon-dim, #6b7280); cursor: pointer;
+  transition: color .15s, background .15s, transform .15s;
 }
+.railtab:active { transform: scale(.92); }
+.railtab svg { transition: transform .18s ease; }
+.railtab:hover svg { transform: scale(1.12); }
 .railtab svg { display: block; }
-.railtab:hover { color: var(--text); background: var(--panel-2); }
+.railtab:hover { color: var(--rail-icon, var(--text)); background: var(--panel-2); }
+/* Hidden via Settings (show/hide icons) and drag-to-reorder feedback. */
+.railtab.rail-tab-hidden { display: none; }
+.railtab.dragging { opacity: .45; cursor: grabbing; }
+.railtab[draggable="true"] { cursor: grab; }
+.railtab[draggable="true"]:active { cursor: grabbing; }
 /* Active state: subtle raised surface + a thin accent bar pinned to the far edge,
    no more violet bubble. */
-.railtab.active { color: var(--text); background: var(--panel-2); }
+.railtab.active { color: var(--rail-icon, var(--text)); background: var(--panel-2); }
 .railtab.active::before {
   content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px; width: 3px;
   border-radius: 0 3px 3px 0; background: var(--accent);
 }
-#workArea { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* "Answer ready" dot: shown on a workspace icon when its answer finished while the user was on
+   another tab (cleared when they open it). */
+.railtab.tab-done::after {
+  content: ""; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--accent); box-shadow: 0 0 7px var(--accent);
+  animation: hvDonePulse 1.6s ease-in-out infinite;
+}
+@keyframes hvDonePulse { 0%,100% { opacity: .55; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .railtab.tab-done::after { animation: none; } }
+/* The rail is a hover overlay, so mirror the "answer ready" dot onto the always-visible logo/menu. */
+.menu-btn { position: relative; }
+.menu-btn.has-done::after {
+  content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg), 0 0 8px var(--accent);
+  animation: hvDonePulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .menu-btn.has-done::after { animation: none; } }
+/* "+" at the bottom of the rail to re-show hidden tabs — hidden by default, shown ONLY when
+   some tabs are hidden (toggled via the .rail-add-show class, avoiding any [hidden] vs flex race). */
+.railtab.rail-add { display: none; margin-top: 4px; color: var(--muted); }
+.railtab.rail-add.rail-add-show { display: flex; }
+.railtab.rail-add:hover { color: var(--accent); }
+/* Floating menu listing the hidden workspaces to bring back. */
+.rail-add-menu {
+  position: fixed; z-index: 9997; min-width: 168px; max-height: 60vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(0,0,0,.45); padding: 6px; display: flex; flex-direction: column; gap: 2px;
+}
+.rail-add-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
+  background: none; border: 0; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; text-align: left;
+}
+.rail-add-item:hover { background: var(--panel-2); }
+.rail-add-empty { padding: 8px 10px; font-size: 12px; color: var(--muted); max-width: 180px; line-height: 1.4; }
+.rail-add-item svg { width: 18px; height: 18px; color: var(--accent); flex: 0 0 auto; }
+/* Confirm-before-hiding popup (right-click a tab). */
+.rail-confirm {
+  position: fixed; z-index: 9998; width: 210px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 34px rgba(0,0,0,.45); padding: 12px;
+}
+.rail-confirm-msg { font-size: 12.5px; color: var(--text); margin-bottom: 10px; line-height: 1.4; }
+.rail-confirm-row { display: flex; gap: 8px; justify-content: flex-end; }
+.rail-confirm-row button { padding: 6px 12px; font-size: 12.5px; font-weight: 600; border-radius: 8px; cursor: pointer; }
+.rail-confirm-row .rc-no { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+.rail-confirm-row .rc-yes { background: var(--grad); border: 0; color: var(--on-accent); }
+
+#workArea { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
 /* Tabs rail on the RIGHT (Settings → Appearance). Flips rail/work-area order. */
 body.rail-right #workspace { flex-direction: row-reverse; }
@@ -182,6 +294,14 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
   background: var(--panel-2); border-bottom: 1px solid var(--border);
   max-height: 240px; overflow-y: auto; padding: 8px 10px;
 }
+/* History & tabs picker float ABOVE every sidebar element (rail included): translucent glass +
+   a z-index well above the rail (2). */
+#historyPanel:not(.hidden), #tabsPanel:not(.hidden) {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+  background: color-mix(in srgb, var(--panel-2) 68%, transparent);
+  backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  border-radius: 0 0 12px 12px; box-shadow: 0 14px 30px rgba(0,0,0,.38);
+}
 .panel-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 12px; color: var(--muted); margin-bottom: 6px;
@@ -199,17 +319,141 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 
 .historylist, .tabslist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .histrow {
-  display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+  display: flex; align-items: center; gap: 4px; padding: 7px 8px;
   border-radius: 9px; cursor: pointer; font-size: 12.5px;
 }
 .histrow:hover { background: var(--panel); }
-.histrow .htitle { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.histrow .hmeta { color: var(--muted); font-size: 11px; flex: 0 0 auto; }
+.histrow .htitle { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 2px; }
+/* timestamp sits tight against the ✕ (rendered just before it), leaving max room for the title */
+.histrow .hmeta { color: var(--muted); font-size: 10.5px; flex: 0 0 auto; white-space: nowrap; margin-left: 2px; }
 .histrow .hdel { color: var(--muted); border: 0; background: none; padding: 2px 5px; border-radius: 6px; flex: 0 0 auto; }
 .histrow .hdel:hover { color: #ff8a8a; background: var(--panel-2); }
 .histrow .hrename { flex: 1; min-width: 0; font-size: 12.5px; padding: 3px 6px; background: var(--panel-2); border: 1px solid var(--accent); border-radius: 6px; color: var(--text); }
 .histrow .hrename:focus { outline: none; }
-.histrow .hsel { flex: 0 0 auto; accent-color: var(--accent); margin: 0 2px 0 0; cursor: pointer; }
+/* Selection checkbox — a clean custom control (not the OS default). Hidden by default so rows read
+   as plain titles; it fades in on row hover. Once it's CHECKED — or once ANY row is selected
+   (.has-sel on the list, so you can keep ticking more) — it stays fully visible and checked. */
+.histrow .hsel {
+  flex: 0 0 auto; margin: 0 4px 0 0; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 5px;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent);
+  background: transparent; display: inline-grid; place-content: center;
+  opacity: 0; transition: opacity .14s ease, border-color .14s ease, background .14s ease;
+}
+.histrow:hover .hsel,
+.historylist.has-sel .hsel,
+.histrow .hsel:checked { opacity: 1; }
+.histrow .hsel:hover { border-color: var(--accent); }
+.histrow .hsel:checked { background: var(--grad, var(--accent)); border-color: transparent; }
+.histrow .hsel:checked::after {
+  content: ""; width: 4px; height: 8px; margin-top: -1px;
+  border: solid var(--on-accent, #fff); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.cm-btn.cm-auto { font-size: 13px; }
+.cm-btn.cm-auto.on { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 55%, transparent)); }
+/* 🛡 Quick analysis (Security tab) — a CUSTOM dropdown that copies the sidebar's select look exactly
+   (translucent panel surface + blur + violet caret). The menu is fixed on <body> so it's never
+   clipped by the composer container (that clipping squished the rows). */
+.sec-recipes { padding: 2px 10px 8px; }
+/* Copies the model picker (.combo-input) EXACTLY: accent-tinted (violet) translucent surface + blur. */
+/* Base layout only — the SURFACE (transparent + violet ring) is applied by the shared rule below
+   (`.composer-box, .combo-input, .sec-analysis-btn, …`), identical to the model picker. */
+.sec-analysis-btn {
+  width: 100%; appearance: none; -webkit-appearance: none; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; color: var(--on-surface);
+  font-family: inherit; font-weight: 600; font-size: 13px; line-height: 1.2;
+  transition: border-color .12s, box-shadow .12s, background .12s;
+}
+.sec-analysis-btn:hover { border-color: var(--accent); }
+/* Themed dropdown overlaying a native <select> (translate lang / improve preset / image size). */
+.native-hidden { display: none !important; }
+.themed-sel-btn { width: auto; min-width: 130px; max-width: 260px; height: 34px; padding: 0 12px; font-size: 12.5px; }
+.themed-sel-btn .sa-label { color: var(--on-surface); }
+/* Improve tab = ONE button (the mode) that opens a single popup with TWO separate lists (Action | Tone). */
+.improve-seg { display: inline-flex; max-width: 100%; }
+.improve-pick-btn { width: auto; min-width: 0; max-width: 260px; height: 34px; padding: 0 12px; font-size: 12.5px; }
+.improve-pick-btn .sa-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.improve-pick-btn .sa-caret { flex: 0 0 auto; display: inline-flex; margin-left: 8px; color: var(--muted); }
+/* The two-column popup. */
+.improve-pick-menu {
+  position: fixed; z-index: 60; border: 1px solid var(--border); border-radius: 12px;
+  /* Same translucent glass as the model picker (.combo-menu) — opaque enough to not see through. */
+  background: color-mix(in srgb, var(--panel-2) 82%, transparent);
+  backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  box-shadow: 0 16px 40px rgba(0,0,0,.5); padding: 6px; min-width: 400px; max-width: 92vw;
+}
+.improve-pick-menu.hidden { display: none; }
+.imp-cols { display: flex; gap: 6px; }
+.imp-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.imp-col + .imp-col { border-left: 1px solid var(--border); padding-left: 6px; }
+.imp-col-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 4px 8px 6px; }
+.imp-col-list { display: flex; flex-direction: column; gap: 2px; max-height: min(56vh, 400px); overflow-y: auto; }
+/* Labels wrap instead of truncating (the writing-style column has longer text like "Improve (clarity
+   & grammar)"), and both columns share the exact same padding for a homogeneous, clean look. */
+.imp-item { text-align: left; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; line-height: 1.3; padding: 7px 9px; border-radius: 8px; cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.imp-item:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.imp-item.sel { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); font-weight: 600; }
+.sec-analysis-btn:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.sec-analysis-btn .sa-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-analysis-btn .sa-caret { flex: 0 0 auto; display: inline-flex; color: var(--muted); }
+/* Copies the model dropdown (.combo-menu): translucent glass floating above everything. */
+.sec-analysis-menu {
+  position: fixed; z-index: 1002; max-height: 70vh; overflow-y: auto; padding: 5px;
+  background: color-mix(in srgb, var(--panel-2) 82%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 34px rgba(0,0,0,.5);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sec-analysis-menu.hidden { display: none; }
+.sa-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  text-align: left; padding: 10px 11px; border-radius: 8px; border: 0; background: transparent;
+  color: var(--text); cursor: pointer; font-size: 13px; line-height: 1.2;
+}
+.sa-item .sa-ic { flex: 0 0 auto; font-size: 13px; opacity: .9; }
+.sa-item span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-item:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+/* 🛡 Security-headers action button — kept at the FAR LEFT of the page bar (Security tab only). */
+.pagebar .sec-headers-btn { order: -1; color: var(--accent); }
+.pagebar .sec-headers-btn:hover { color: var(--accent-2); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* "Add PDF" (and the other PDF action chips) — same accent-tinted (violet) surface as the model
+   picker. Higher specificity (.ctl-group#pdfControls .chip) + !important so the base
+   `.ctl-group .chip { background: transparent }` can never win. */
+.ctl-group#pdfControls .chip {
+  appearance: none; -webkit-appearance: none;
+  color: var(--on-surface) !important;
+  border: 1px solid var(--border) !important; border-radius: 10px;
+  font-weight: 600; font-size: 13px; padding: 8px 12px !important;
+}
+.ctl-group#pdfControls .chip:hover { border-color: var(--accent) !important; }
+.watch-btn.on { color: var(--accent); }
+.watch-btn.on svg { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 60%, transparent)); }
+.export-menu {
+  position: fixed; z-index: 1002; min-width: 160px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.45); display: flex; flex-direction: column;
+}
+.export-item { text-align: left; padding: 8px 10px; border-radius: 7px; border: 0; background: transparent; color: var(--text); cursor: pointer; font-size: 12.5px; }
+.export-item:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.histrow .hexport { color: var(--muted); border: 0; background: none; padding: 2px 4px; border-radius: 6px; flex: 0 0 auto; display: inline-flex; opacity: 0; }
+.histrow:hover .hexport { opacity: 1; }
+.histrow .hexport:hover { color: var(--accent); background: var(--panel-2); }
+.histrow .hpin { color: var(--muted); border: 0; background: none; padding: 2px 4px; border-radius: 6px; flex: 0 0 auto; display: inline-flex; opacity: 0; }
+.histrow:hover .hpin, .histrow .hpin.on { opacity: 1; }
+.histrow .hpin:hover { color: var(--accent); background: var(--panel-2); }
+.histrow .hpin.on { color: var(--accent); }
+.histrow.pinned { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+/* History full-text search box */
+.hist-search-wrap { padding: 4px 8px 6px; }
+.hist-search {
+  width: 100%; box-sizing: border-box; padding: 6px 9px; font-size: 12.5px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; outline: none;
+}
+.hist-search:focus { border-color: var(--accent); }
+.hist-search::placeholder { color: color-mix(in srgb, var(--muted) 80%, transparent); }
 .link-btn.danger { color: #ff8a8a; }
 .link-btn.danger:hover { color: #ffb3b3; }
 .tabrow { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
@@ -219,9 +463,13 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 
 /* ----- Page chip ----- */
 .pagebar {
-  display: flex; align-items: center; gap: 7px; padding: 5px 10px;
-  font-size: 11.5px; color: var(--muted); cursor: pointer;
-  background: var(--grad-soft); border-bottom: 1px solid var(--border-soft);
+  display: flex; align-items: center; gap: 7px; padding: 6px 10px;
+  /* Default cursor on the bar itself: only the tool buttons are clickable now, so the empty
+     gap / page-title must not look like a button (it used to open the tabs picker on any click). */
+  font-size: 11.5px; font-weight: 600; color: var(--text); cursor: default;
+  /* Clearly visible (not a faint translucent wash) so it's obvious page-reading is ON. */
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  border-bottom: 0; /* no bottom border (cleaner) */
 }
 .pagebar:hover { color: var(--text); }
 .pagebar .icon { width: 24px; height: 24px; font-size: 12px; }
@@ -230,6 +478,16 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 #captureRegion svg { display: block; }
 #captureRegion.active { color: #fff; }
 .page-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Eye = page-mode toggle on the selector tabs. */
+.eye-btn { border: 0; background: none; padding: 2px; cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; border-radius: 6px; }
+.eye-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 10%, transparent); }
+.eye-btn.hidden { display: none; }
+.pagebar .eye-btn svg.eye-off { display: none; }
+.pagebar.page-off .eye-btn { color: var(--muted); }
+.pagebar.page-off .eye-btn svg.eye-on { display: none; }
+.pagebar.page-off .eye-btn svg.eye-off { display: block; }
+/* When page mode is OFF, keep only the eye (to switch it back on); hide the tools + title. */
+.pagebar.page-off #pickEl, .pagebar.page-off #captureRegion, .pagebar.page-off .page-title { display: none; }
 
 /* ----- Messages ----- */
 .messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 11px; }
@@ -239,29 +497,121 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 /* Big, borderless logo in the response area — the mark stands on its own (no box,
    no glow, no rounded frame), just larger so it reads from across the room. */
 .empty-logo img, .empty-logo svg { width: 92px; height: 92px; display: block; }
+/* Per-tab icon (cloned from the rail) shown as the centre logo — slightly smaller than the
+   brand mark and painted with the brand gradient (url(#histg), defined persistently in the
+   HTML) so it matches the rest of the UI; `color` is the solid fallback if the def is absent. */
+.empty-logo svg.tab-ic { width: 74px; height: 74px; color: var(--accent); stroke: url(#histg); stroke-width: 1.7; }
+.empty-features { font-size: 13px; line-height: 1.55; margin: 2px 0 0; color: var(--muted); max-width: 272px; }
 .empty-title { font-size: 16px; font-weight: 700; margin: 4px 0 0;
   background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+/* TRUE neon-tube effect on the response-area title + icon ("Neon outline" option, OFF by
+   default). Not a big blurry 2010s glow: the letters BECOME bright neon tubes — a bright core
+   (neon colour blended toward white) with a tight, layered, small-radius glow (≤6px). Colour =
+   the outline colour picker (--msg-border) or the accent, so "black on black" with a white
+   neon reads cleanly. */
+body.text-outline { --ol-col: var(--msg-border, var(--accent)); }
+body.text-outline .empty-title,
+body.text-outline .code-launch .cl-title {
+  background: none; -webkit-text-stroke: 0;
+  -webkit-text-fill-color: color-mix(in srgb, var(--ol-col) 72%, white);
+  color: color-mix(in srgb, var(--ol-col) 72%, white);
+  text-shadow:
+    0 0 1px var(--ol-col),
+    0 0 2px var(--ol-col),
+    0 0 4px color-mix(in srgb, var(--ol-col) 40%, transparent); }
+/* FULL neon on the icon AND the brand logo: line icons get a bright neon stroke; the brand
+   logo's gradient fill is overridden to the neon colour (CSS `fill` beats the SVG attribute).
+   Tight glow (≤4px) so it reads as a crisp neon tube, not a blurry 2010s halo. */
+body.text-outline .empty-logo svg.tab-ic,
+body.text-outline .code-launch .cl-logo svg.tab-ic {
+  /* Neon mode: drop the brand gradient so the single neon colour (currentColor) shows. */
+  color: color-mix(in srgb, var(--ol-col) 70%, white); stroke: currentColor; stroke-width: 2; }
+body.text-outline .empty-logo svg g, body.text-outline .empty-logo svg path[fill],
+body.text-outline .code-launch .cl-logo svg g, body.text-outline .code-launch .cl-logo svg path[fill] {
+  fill: color-mix(in srgb, var(--ol-col) 72%, white); }
+body.text-outline .empty-logo svg, body.text-outline .empty-logo img,
+body.text-outline .code-launch .cl-logo svg, body.text-outline .code-launch .cl-logo img {
+  filter:
+    drop-shadow(0 0 1px var(--ol-col))
+    drop-shadow(0 0 2px var(--ol-col))
+    drop-shadow(0 0 4px color-mix(in srgb, var(--ol-col) 40%, transparent)); }
+/* CONTOUR — a separate "Outline" option (its own colour). Not a continuous edge: a modern
+   OFFSET, FADED drop-shadow (a soft "inverted shadow" toward the bottom-right) — a touch wider
+   than a hairline. A near layer gives definition, a blurred far layer gives the fade. Combinable
+   with neon. Drives `--contour-shadow` so the title and icon share one definition. */
+body.title-contour {
+  --contour-col: var(--contour-color, var(--text));
+  --contour-shadow:
+    drop-shadow(1px 1px 1.5px color-mix(in srgb, var(--contour-col) 82%, transparent))
+    drop-shadow(2px 2px 6px color-mix(in srgb, var(--contour-col) 40%, transparent));
+}
+body.title-contour .empty-title,
+body.title-contour .code-launch .cl-title { -webkit-text-stroke: 0; filter: var(--contour-shadow); }
+body.title-contour .empty-logo svg, body.title-contour .empty-logo img,
+body.title-contour .code-launch .cl-logo svg, body.title-contour .code-launch .cl-logo img {
+  filter: var(--contour-shadow); }
+/* Both on → the offset contour shadow AND the neon glow on the icon (one filter per element). */
+body.text-outline.title-contour .empty-logo svg, body.text-outline.title-contour .empty-logo img,
+body.text-outline.title-contour .code-launch .cl-logo svg, body.text-outline.title-contour .code-launch .cl-logo img {
+  filter: var(--contour-shadow)
+    drop-shadow(0 0 2px var(--ol-col)) drop-shadow(0 0 4px color-mix(in srgb, var(--ol-col) 40%, transparent)); }
 /* The friendly greeting (once a provider is connected) is the focal point — make it big. */
 #emptyGreeting { font-size: 27px; line-height: 1.2; margin-top: 10px; }
 .empty-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 6px; }
 
 .btn-grad {
-  background: var(--grad); color: #fff; border: 0; border-radius: 10px;
+  background: var(--grad); color: var(--on-accent); border: 0; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   padding: 9px 14px; font-weight: 600; font-size: 13px;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 32%, transparent); transition: 0.15s;
 }
+.btn-grad svg { display: block; flex: 0 0 auto; }
 .btn-grad:hover { filter: brightness(1.08); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent); }
 .btn-ghost {
-  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--on-surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 9px 14px; font-weight: 600; font-size: 13px;
 }
 .btn-ghost:hover { border-color: var(--accent); }
 
 .msg { padding: 9px 12px; border-radius: var(--radius); word-wrap: break-word; max-width: 92%; }
-.msg.user { background: var(--user); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
-.msg.assistant { background: var(--panel); border: 1px solid var(--border); align-self: flex-start; width: 100%; max-width: 100%; }
+/* User message: the COLOURED bubble is the text span itself, so the hover action bar (copy / edit /
+   resend / delete) sits BELOW it, outside the bubble — cleaner, like HiveyCode. */
+.msg.user { background: transparent; color: var(--on-accent); align-self: flex-end; padding: 0; border-radius: 0; display: flex; flex-direction: column; align-items: flex-end; }
+.msg.user > .umsg-text { display: inline-block; max-width: 100%; background: var(--user); color: var(--on-accent); padding: 9px 12px; border-radius: var(--radius); border-bottom-right-radius: 4px; }
+.msg.user > .umsg-edit { align-self: stretch; }
+/* The reply bubble's outline is customisable (Settings → Appearance): default hairline, a
+   custom colour, or no border at all. Driven by `--msg-border`. */
+/* Assistant answers are BORDERLESS (no card / no background), like HiveyCode — the answer is plain
+   flowing text, so the hover action bar + Compare row read as being BELOW / outside the message. */
+.msg.assistant { background: transparent; border: 0; align-self: flex-start; width: 100%; max-width: 100%; padding: 2px 0; transition: none; }
+body.msg-noborder .msg.assistant { border-color: transparent; }
 .msg.tool { background: var(--tool); font-size: 11.5px; color: var(--muted); font-family: ui-monospace, monospace; align-self: flex-start; }
-.msg.error { background: var(--error); border: 1px solid #5a2a36; align-self: stretch; }
+.msg.error { background: var(--error); border: 1px solid #5a2a36; align-self: stretch; position: relative; padding-right: 48px; }
+/* Error notices carry a top-right toolbar: copy the message + dismiss (✕). */
+/* ----- In-place message edit + version switcher ----- */
+.umsg-text { white-space: pre-wrap; }
+.umsg-edit { margin-top: 4px; }
+.umsg-edit-ta {
+  width: 100%; box-sizing: border-box; min-height: 60px; resize: vertical;
+  background: var(--panel); color: var(--text); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 8px 10px; font: inherit; font-size: 13px;
+}
+.umsg-edit-ta:focus { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.umsg-edit-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.umsg-edit-btn {
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  border-radius: 7px; padding: 5px 11px; font-size: 12px; cursor: pointer;
+}
+.umsg-edit-btn:hover { border-color: var(--accent); }
+.umsg-edit-btn.save { background: var(--grad); color: #fff; border-color: transparent; font-weight: 600; }
+.umsg-vers { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; opacity: 0.85; }
+.umsg-vers .mact { width: 18px; height: 18px; font-size: 12px; }
+.umsg-vers-n { font-size: 11px; color: var(--muted); min-width: 26px; text-align: center; }
+
+.mact-bar.err { position: absolute; top: 6px; right: 6px; margin: 0; gap: 4px; opacity: 0.9; }
+.msg.error:hover .mact-bar.err, .mact-bar.err:focus-within { opacity: 1; }
+.mact-bar.err .mact { width: 20px; height: 20px; font-size: 11px; }
+.mact-bar.err .mact.mclose { font-weight: 700; }
 /* Keep code blocks INSIDE the bubble while streaming (scroll horizontally instead of
    pushing the message off to the right). Flex items need min-width:0 to be allowed to
    shrink below their content's intrinsic width. */
@@ -271,9 +621,17 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .msg pre code { white-space: pre; }
 .msg .model-badge {
   display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
-  color: var(--text); margin: -2px 0 6px; padding: 2px 8px; border-radius: 999px;
+  color: var(--text); margin: 0; padding: 2px 8px; border-radius: 999px;
   background: var(--grad-soft); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 }
+/* Answer header: model pill (left) + Copy-answer button pinned to the FAR RIGHT of the embed. */
+.msg .answer-head { display: flex; align-items: center; gap: 8px; margin: -2px 0 6px; }
+.msg .answer-head .answer-copy { margin-left: auto; flex: 0 0 auto; width: 26px; height: 24px; font-size: 14px; border-radius: 6px; color: var(--muted); opacity: .8; }
+.msg .answer-head .answer-copy:hover { opacity: 1; color: var(--text); background: var(--panel-2); }
+.msg .answer-head .answer-del { flex: 0 0 auto; width: 26px; height: 24px; border-radius: 6px; opacity: .85; }
+/* Delete action = red, everywhere (assistant answer-head + hover action bars). */
+.mdel { color: #ef6b6b !important; }
+.mdel:hover { color: #ff6161 !important; background: color-mix(in srgb, #ff6161 15%, transparent) !important; opacity: 1; }
 
 /* ----- Confirm bar ----- */
 .confirm {
@@ -285,18 +643,38 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 #confirmText { flex: 1 1 100%; overflow-wrap: anywhere; }
 .confirm-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .confirm button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }
-.confirm .ok { background: var(--grad); border-color: transparent; color: #fff; font-weight: 600; }
+.confirm .ok { background: var(--grad); border-color: transparent; color: var(--on-accent); font-weight: 600; }
 
 /* ----- Adaptive control row ----- */
-.controls { padding: 7px 10px; background: var(--panel); border-top: 1px solid var(--border-soft); }
+.controls { padding: 7px 10px; background: var(--panel); border-top: 1px solid var(--border-soft); display: flex; align-items: center; gap: 8px; }
+.controls[hidden] { display: none !important; } /* our display:flex would otherwise beat the UA [hidden] rule */
 .ctl-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* Page-tools toggle sits right next to its tab control on the controls row (selector tabs),
+   not pushed to the far right. Reuses the chat composer's .ctoggle chip design. */
+.ctl-page-btn { flex: 0 0 auto; }
 .ctl-group label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+/* The translate language picker holds long labels (e.g. "Chinese (Simplified) — 简体中文") — give it
+   room so neither the selected value nor the dropdown options are truncated. */
+#translateLang { min-width: 240px; max-width: 100%; }
+#translateLang option { padding-right: 12px; }
 .ctl-group select {
-  appearance: none; -webkit-appearance: none; padding: 6px 24px 6px 9px;
-  background: var(--panel-2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><path d='M1 3l4 4 4-4' stroke='%239aa0b4' fill='none' stroke-width='1.5'/></svg>") no-repeat right 8px center;
-  border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12.5px; max-width: 220px;
+  appearance: none; -webkit-appearance: none; height: 34px; line-height: 1; padding: 0 28px 0 12px;
+  /* Caret on top of a translucent surface (like the model picker, but more transparent) — soft grey text. */
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><path d='M1 3l4 4 4-4' stroke='%23a78bfa' fill='none' stroke-width='1.5'/></svg>") no-repeat right 10px center,
+    color-mix(in srgb, var(--panel-2) 50%, transparent);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid var(--border); border-radius: 10px; color: var(--on-surface);
+  font-family: inherit; font-size: 12.5px; font-weight: 600; max-width: 260px; cursor: pointer;
+  transition: border-color .12s, box-shadow .12s, color .12s, background .12s;
 }
-.ctl-group select:focus { outline: none; border-color: var(--accent); }
+.ctl-group select:hover { color: var(--text); }
+.ctl-group select:hover { border-color: var(--accent); filter: brightness(1.1); }
+.ctl-group select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--grad-soft); }
+/* The dropdown's options — themed surface, accent on the active one (instead of the OS grey). */
+.ctl-group select option { background: var(--panel); color: var(--text); font-weight: 500; }
+.ctl-group select option:checked { background: var(--accent); color: #fff; }
+.ctl-group select option[value=""] { color: var(--muted); }
 
 /* Control chips (Réflexion / Web / Agent / Page) — toggle buttons like the tabs:
    coloured + framed when active, neutral when inactive. */
@@ -309,7 +687,7 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
   user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: 0.15s;
 }
 .ctl-group .chip input { position: absolute; opacity: 0; width: 0; height: 0; }
-.ctl-group .chip:hover { color: var(--text); border-color: var(--accent-2); }
+.ctl-group .chip:hover { color: var(--text); border-color: var(--accent); }
 .ctl-group .chip:has(input:checked) {
   color: var(--text); background: var(--grad-soft); border-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
@@ -317,7 +695,21 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 /* ----- PDF workspace controls ----- */
 #pdfControls { gap: 6px; flex-wrap: wrap; }
 #pdfControls .chip { flex: 0 0 auto; padding: 6px 10px; }
-#pdfInfo { font-size: 11.5px; flex: 1 1 100%; color: var(--muted); }
+#pdfInfo { font-size: 11.5px; flex: 1 1 100%; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pdf-count { color: var(--muted); }
+/* Loaded-PDF chip with a ✕ to drop it from the context list. */
+.pdf-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 180px;
+  padding: 3px 4px 3px 9px; border-radius: 999px; background: var(--panel-2);
+  border: 1px solid var(--border); font-size: 11.5px; color: var(--text);
+}
+.pdf-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-chip-x {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 18px; height: 18px; border: 0; border-radius: 50%; cursor: pointer;
+  background: transparent; color: var(--muted); padding: 0;
+}
+.pdf-chip-x:hover { background: var(--danger, #f87171); color: #fff; }
 /* When no PDF is loaded the info line is empty — collapse it so it doesn't add a
    blank full-width row (the gap between "Load PDF" and the model picker below). */
 #pdfInfo:empty { display: none; }
@@ -328,21 +720,53 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
   border-top: 1px solid var(--border-soft); background: var(--panel);
 }
 .composer-box {
-  border: 1px solid var(--border); border-radius: 18px; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 18px;
+  /* transparent violet tint */
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   padding: 6px 8px 7px; transition: border-color 0.15s, box-shadow 0.15s;
 }
-.composer-box:focus-within {
-  border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+/* Hover = a lighter animated violet frame; focus/typing = the full, deeper violet + a stronger glow.
+   The `.composer-box`'s existing transition animates both, for a premium, consistent feel. */
+.composer-box:hover:not(:focus-within) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
 }
+.composer-box:focus-within {
+  border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+/* A control whose dropdown/popover is DEPLOYED (open) keeps the violet frame + a gentle animated glow,
+   matching the input-zone focus — so the whole UI feels consistent and premium. */
+@keyframes hvPulse {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent); }
+}
+button[aria-expanded="true"], .combo-input:focus {
+  border-color: var(--accent) !important;
+  animation: hvPulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { button[aria-expanded="true"], .combo-input:focus { animation: none; } }
 /* First row: the "+" on the left (vertically centred) and the text right next to it. */
 .composer-main { display: flex; align-items: center; gap: 2px; }
 .composer textarea {
-  flex: 1 1 auto; min-width: 0; box-sizing: border-box; resize: none; min-height: 40px; max-height: 220px;
-  padding: 9px 6px 5px; background: transparent; border: 0; color: var(--text); display: block;
+  flex: 1 1 auto; min-width: 0; box-sizing: border-box; resize: none; min-height: 88px; max-height: 280px;
+  padding: 10px 8px; background: transparent; border: 0; color: var(--text); display: block;
+  font-size: 15px; line-height: 1.45;
+  /* default: vertically centred (agent / translate / improve / image / PDF) */
+  align-content: center;
 }
+/* On the CHAT tab only, the text starts on the FIRST line (top). */
+body.mode-chat .composer textarea, body.mode-wisebase .composer textarea { align-content: start; }
 .composer textarea:focus { outline: none; }
-/* Brighter, WCAG-friendlier placeholder (lifted off the muted grey toward the text colour). */
-.composer textarea::placeholder { color: color-mix(in srgb, var(--muted) 45%, var(--text)); opacity: 1; }
+/* Discreet grey placeholder. */
+.composer textarea::placeholder { color: color-mix(in srgb, var(--muted) 72%, transparent); opacity: 1; }
+/* Centre the DESCRIPTIVE placeholder text (agent / translate / improve / image / PDF / security) —
+   only while the field is empty, so what the user TYPES stays left-aligned as normal. The typing tabs
+   (chat / wisebase / code) keep their placeholder left-aligned. */
+.composer textarea:placeholder-shown { text-align: center; }
+body.mode-chat .composer textarea:placeholder-shown,
+body.mode-wisebase .composer textarea:placeholder-shown,
+body.mode-code .composer textarea:placeholder-shown { text-align: left; }
 /* Second row: an optional left slot (the "+" on the Chat tab) and the chat toggles +
    stop on the right. */
 .composer-tools { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 2px 0; min-height: 0; }
@@ -375,23 +799,156 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 /* On the Chat tab the "+" sits in the bottom row next to the toggles: match their
    32px box so every interactive element shares the same baseline (pixel-perfect). */
 .tools-left .attach-btn { width: 32px; height: 32px; border-radius: 9px; }
+.tools-left .mic-btn { width: 32px; height: 32px; border-radius: 9px; }
+/* On the non-typing tabs (agent/translate/improve/image/pdf/security) the "+" sits on the input
+   row, to the LEFT of the textarea, and the mic sits to its RIGHT. For the CENTERED descriptive
+   placeholder to look truly centred in the box, those two gutters must be equal — so the "+" here
+   matches the mic's 34px (it was 38px, which pushed the centred text ~4px to the right). */
+.composer-main .attach-btn { width: 34px; height: 34px; }
+
+/* 🎙 Dictation mic — sits at the right end of the composer's first row, on every chat-capable
+   tab. Filled with the brand gradient while listening for a clear "recording" state. */
+.mic-btn {
+  flex: 0 0 auto; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 10px;
+  background: transparent; color: color-mix(in srgb, var(--text) 80%, var(--muted));
+  cursor: pointer; transition: 0.15s; display: inline-flex; align-items: center; justify-content: center;
+}
+.mic-btn svg { display: block; }
+.mic-btn:hover { color: var(--text); background: var(--panel); }
+.mic-btn:active { transform: scale(0.94); }
+.mic-btn.active {
+  color: var(--on-accent); background: var(--grad);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent);
+  animation: micPulse 1.3s ease-in-out infinite;
+}
+@keyframes micPulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+/* While the clip is being transcribed by Whisper. */
+.mic-btn.transcribing { color: var(--accent); background: var(--grad-soft); animation: pulse-dim 1s ease-in-out infinite; }
+/* Top-bar 🔔 sound toggle: when ON, tint it with the accent so the state is visible. */
+.icon-accent.on svg { stroke: var(--accent); }
+.icon-accent.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
 /* Chat toggles (Thinking / Web / Page) — ghost icon buttons: no border at rest,
    subtle background on hover, soft accent tint when active. All the same size. */
 .chat-toggles { display: flex; align-items: center; gap: 3px; min-width: 0; }
+/* Resting state reads as a real (subtle) button — a faint surface + border + a slightly
+   stronger icon colour — so the Web / Thinking / Verify… toggles are clearly visible, not
+   ghost icons. When ON they fill with the brand gradient (white icon) for an unmistakable state. */
 .ctoggle {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border: 1px solid transparent; border-radius: 9px;
-  background: transparent; color: var(--muted); cursor: pointer; transition: 0.15s; user-select: none;
+  width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--panel-2); color: var(--on-surface); opacity: .92;
+  cursor: pointer; transition: 0.15s; user-select: none;
 }
 .ctoggle svg { display: block; }
 .ctoggle input { position: absolute; opacity: 0; width: 0; height: 0; }
-.ctoggle:hover { color: var(--text); background: var(--panel); }
+.ctoggle:hover { color: var(--accent); border-color: var(--accent); background: var(--panel); opacity: 1; }
 .ctoggle:has(input:checked) {
-  color: var(--accent); background: var(--grad-soft); border-color: transparent;
+  color: var(--on-accent); background: var(--grad); border-color: transparent; opacity: 1;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent);
 }
-.ctoggle:has(input:checked):hover { background: var(--grad-soft); color: var(--accent); }
+.ctoggle:has(input:checked):hover { background: var(--grad); color: var(--on-accent); }
+/* Cycling chip (Thinking: off → high → max) — uses an `.active` class instead of an input. */
+.ctoggle.cycle { position: relative; }
+.ctoggle.active {
+  color: var(--on-accent); background: var(--grad); border-color: transparent; opacity: 1;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.ctoggle.active:hover { background: var(--grad); color: var(--on-accent); }
+.ctoggle .lvl {
+  position: absolute; right: 1px; bottom: 1px; font-size: 8px; font-weight: 800;
+  line-height: 1; letter-spacing: .02em; color: var(--accent); pointer-events: none;
+}
+.ctoggle.active .lvl { color: var(--on-accent); } /* on the filled gradient the level badge must be white */
 
+/* 🐝 Slash-commands: active skill/goal/enhance chips + the "/" command palette. */
+.cmd-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.cmd-chips.hidden { display: none; }
+.cmd-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 9px; font-size: 12px;
+  border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--grad-soft); color: var(--accent); font-weight: 600;
+}
+.cmd-chip .cx { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; padding: 0 2px; opacity: .7; }
+.cmd-chip .cx:hover { opacity: 1; }
+.cmd-palette {
+  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); z-index: 50;
+  max-height: 280px; overflow-y: auto; padding: 5px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.4);
+}
+.cmd-palette.hidden { display: none; }
+
+/* 📚 Prompt library panel — floats above the composer, same visual language as the palette. */
+.plib-panel {
+  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); z-index: 51;
+  max-height: 440px; overflow-y: auto; padding: 8px;
+  /* Fully OPAQUE (composite the possibly-translucent --panel over the solid --bg) so the empty-state
+     text behind never bleeds through. */
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--panel), var(--panel));
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.5);
+}
+.plib-head-row { position: sticky; top: -8px; z-index: 2; background-color: var(--bg); background-image: linear-gradient(var(--panel), var(--panel)); padding: 4px 0 6px; margin: -2px 0 2px; }
+.plib-head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plib-newbtn { border: 1px solid var(--border); background: transparent; color: var(--accent); font: inherit; font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 8px; cursor: pointer; }
+.plib-newbtn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.plib-catsel {
+  width: 100%; box-sizing: border-box; margin: 6px 0; appearance: none; -webkit-appearance: none;
+  background: var(--tool); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
+  padding: 7px 30px 7px 10px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M1 3l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.6'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+.plib-catsel:focus { outline: none; border-color: var(--accent); }
+.plib-search { width: 100%; box-sizing: border-box; margin: 2px 0 6px; background: var(--tool); color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12.5px; }
+.plib-search:focus { outline: none; border-color: var(--accent); }
+.plib-form { display: flex; flex-direction: column; gap: 6px; padding: 8px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.plib-form-title, .plib-form-cat, .plib-form-text { background: var(--tool); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 12.5px; }
+.plib-form-text { resize: vertical; line-height: 1.45; }
+.plib-form-actions { display: flex; gap: 6px; }
+.plib-form-save { flex: 1; border: 0; border-radius: 8px; padding: 7px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; color: #fff; background: var(--hivey-grad, linear-gradient(135deg, var(--accent), var(--accent-2))); }
+.plib-form-cancel { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.plib-fav { flex: 0 0 auto; width: 26px; border-radius: 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.plib-fav.on { color: #f5b301; }
+.plib-fav:hover { background: color-mix(in srgb, #f5b301 16%, transparent); }
+.plib-edit { flex: 0 0 auto; width: 26px; border-radius: 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+.plib-edit:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.plib-panel.hidden { display: none; }
+.plib-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 4px 8px 6px; }
+.plib-save {
+  display: block; width: 100%; text-align: left; cursor: pointer; margin-bottom: 4px;
+  padding: 8px 10px; border-radius: 8px; border: 1px dashed var(--border); background: transparent;
+  color: var(--accent); font-weight: 600; font-size: 12px;
+}
+.plib-save:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.plib-empty { padding: 10px 8px; font-size: 12px; color: var(--muted); }
+.plib-list { display: flex; flex-direction: column; gap: 2px; }
+.plib-item { display: flex; align-items: stretch; gap: 4px; }
+.plib-ins {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; cursor: pointer;
+  padding: 7px 10px; border-radius: 8px; background: transparent; border: 0; color: var(--text);
+}
+.plib-ins:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.plib-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plib-text { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plib-del {
+  flex: 0 0 auto; width: 26px; border-radius: 8px; border: 0; background: transparent;
+  color: var(--muted); cursor: pointer; font-size: 12px;
+}
+.plib-del:hover { color: #f87171; background: color-mix(in srgb, #f87171 14%, transparent); }
+.cmd-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px 3px; }
+.cmd-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
+  padding: 8px 10px; border-radius: 8px; background: transparent; border: 0; color: var(--text);
+}
+.cmd-item .ci-emoji { font-size: 15px; flex: 0 0 auto; width: 20px; text-align: center; }
+.cmd-item .ci-name { font-size: 13px; font-weight: 600; }
+.cmd-item .ci-desc { font-size: 11px; color: var(--muted); }
+.cmd-item .ci-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.cmd-item:hover, .cmd-item.sel { background: var(--panel-2); }
+.cmd-item.sel { outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 /* Attachment preview strip */
 .attach-strip { display: flex; flex-wrap: wrap; gap: 6px; }
 .attach-strip.hidden { display: none; }
@@ -409,9 +966,11 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .attach-chip.context-chip:hover { background: var(--panel-2); }
 .attach-chip .ctx-caret { color: var(--muted); font-size: 11px; }
 .ctx-panel {
-  position: fixed; z-index: 400; max-height: 46vh; display: flex; flex-direction: column;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.35); overflow: hidden;
+  position: fixed; z-index: 1000; max-height: 46vh; display: flex; flex-direction: column;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.34); overflow: hidden;
 }
 .ctx-panel.hidden { display: none; }
 .ctx-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--border); }
@@ -421,6 +980,8 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .ctx-delsel { color: #f87171; border-color: color-mix(in srgb, #f87171 45%, transparent); }
 .ctx-delsel.hidden { display: none; }
 .ctx-x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; }
+.ctx-note { padding: 6px 11px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); line-height: 1.45; }
+.ctx-cb { accent-color: var(--accent); }
 .ctx-list { overflow-y: auto; padding: 4px; }
 .ctx-row { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 8px; }
 .ctx-row:hover { background: var(--panel-2); }
@@ -442,12 +1003,14 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
   background: var(--panel-2); color: var(--accent); cursor: pointer; padding: 7px 10px;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.model-filter-btn.active { color: #fff; background: var(--grad); }
+.model-filter-btn.active { color: var(--on-accent); background: var(--grad); }
 .model-filter-btn:hover { color: #fff; }
 .filter-panel {
-  position: fixed; z-index: 60; width: 250px; max-width: calc(100vw - 20px);
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  position: fixed; z-index: 1000; width: 250px; max-width: calc(100vw - 20px);
+  background: color-mix(in srgb, var(--panel-2) 82%, transparent);
+  backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.4);
   padding: 10px; display: flex; flex-direction: column; gap: 10px;
 }
 .filter-panel.hidden { display: none; }
@@ -461,37 +1024,78 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 
 /* ----- Searchable model combobox ----- */
 .combo {
-  position: relative; flex: 1 1 140px; min-width: 0; border-radius: var(--radius-sm);
-  padding: 1px; background: var(--grad); display: flex;
+  position: relative; flex: 1 1 140px; min-width: 0; display: flex;
 }
+/* Clean single-border field (was a gradient-border wrapper that looked "cut" at the edges);
+   accent ring on focus/open for a modern, tidy look. */
 .combo-input {
-  width: 100%; appearance: none; border: 0; border-radius: calc(var(--radius-sm) - 1px);
-  padding: 8px 26px 8px 11px; background: var(--panel-2); color: var(--text);
+  width: 100%; appearance: none; border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 28px 8px 12px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent); color: var(--on-surface);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   font-weight: 600; font-size: 13px; min-width: 0;
+  transition: border-color .12s, box-shadow .12s, background .12s;
 }
-.combo-input:focus { outline: none; }
+.combo-input:hover { border-color: var(--accent); }
+.combo-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.combo-input[readonly] { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .combo-input::placeholder { color: var(--muted); font-weight: 500; }
 .combo-caret { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; font-size: 11px; }
 .combo-menu {
-  position: fixed; z-index: 70; width: 300px; max-width: calc(100vw - 20px);
-  max-height: 320px; overflow-y: auto; background: var(--panel-2);
-  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,.5); padding: 5px;
+  position: fixed; z-index: 1000; width: 300px; max-width: calc(100vw - 20px);
+  max-height: 70vh;
+  /* translucent glass so it floats ABOVE every sidebar element (rail included) */
+  background: color-mix(in srgb, var(--panel-2) 82%, transparent);
+  backdrop-filter: blur(22px) saturate(1.3); -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 14px 34px rgba(0,0,0,.42); padding: 5px;
 }
 .combo-menu.hidden { display: none; }
+/* Search box INSIDE the popup (filters the list below it). */
+.combo-search {
+  width: 100%; box-sizing: border-box; margin: 2px 0 5px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text);
+  font: inherit; font-size: 12.5px;
+}
+.combo-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.combo-list { overflow-y: auto; min-height: 0; }
 .combo-group {
   font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em;
   padding: 6px 8px 2px; position: sticky; top: 0; background: var(--panel-2);
 }
+.ci-sep { color: var(--muted); }
 .combo-item {
   padding: 7px 9px; border-radius: 8px; font-size: 12.5px; cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.combo-item:hover { background: var(--panel); }
-.combo-item.sel { outline: 1px solid var(--accent); }
+.combo-item:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.combo-item.sel { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); font-weight: 600; outline: none; }
 .combo-empty { padding: 10px; color: var(--muted); font-size: 12.5px; text-align: center; }
-.term-combo { flex: 0 1 200px; min-width: 110px; }
-.term-combo .combo-input { padding: 4px 22px 4px 9px; font-size: 12px; }
-.term-combo .combo-caret { right: 9px; }
+/* Metric toggle header (🎯 Précision / 💰 Prix) pinned at the top of the model picker. */
+.combo-metric {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; padding: 1px 2px 6px; margin-bottom: 4px;
+  background: var(--panel-2); border-bottom: 1px solid var(--border);
+}
+.cm-seg {
+  display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--border);
+}
+.cm-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 6px; line-height: 1.4;
+}
+.cm-btn svg { display: block; }
+.cm-btn.icon-only { padding: 5px 9px; } /* icon-only: tooltip carries the wording */
+.cm-btn:hover { color: var(--text); }
+.cm-btn.on { background: var(--grad); color: var(--on-accent); }
+/* Quick-sort controls at the top-right of the model list (sort by active metric + reset). */
+.cm-sort { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); }
+/* Two-column model row: name (flex, ellipsised) + right-aligned metric badge. */
+.combo-item.has-badge { display: flex; align-items: center; gap: 8px; }
+.ci-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-badge { flex: 0 0 auto; font-weight: 700; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
 /* ============================================================================
    Markdown rendering (assistant messages)
@@ -540,7 +1144,7 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 .artifact-open-icon {
   flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--grad); color: #fff; font-size: 14px;
+  background: var(--grad); color: var(--on-accent); font-size: 14px;
 }
 .artifact-open-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .artifact-open-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
@@ -625,12 +1229,6 @@ body.rail-right .railtab.active::before { left: auto; right: -6px; border-radius
 /* ----- Dedicated Terminal workspace (OpenClaude) ----- */
 /* In terminal/code mode the chat UI is hidden and the dedicated pane fills the work
    area; the left rail stays visible so the user can switch workspace in one click. */
-body.mode-terminal #messages,
-body.mode-terminal #controls,
-body.mode-terminal .modelbar,
-body.mode-terminal .composer,
-body.mode-terminal #pageBar,
-body.mode-terminal #tabsPanel,
 body.mode-code #messages,
 body.mode-code #controls,
 body.mode-code .modelbar,
@@ -640,14 +1238,24 @@ body.mode-code #confirmBar { display: none !important; }
 /* ----- Code workspace (AI app builder launcher) ----- */
 .codeview { flex: 1; min-height: 0; overflow-y: auto; display: flex; }
 .code-launch {
-  margin: auto; max-width: 300px; padding: 22px 18px; text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  margin: auto; max-width: 290px; padding: 22px 18px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
-.code-launch .cl-logo img, .code-launch .cl-logo svg { width: 64px; height: 64px; display: block; }
+/* Match the Chat empty-state design (same logo size & title type) across tabs. */
+.code-launch .cl-logo img, .code-launch .cl-logo svg { width: 92px; height: 92px; display: block; }
+/* Per-tab line icon (matches the other tabs' empty state) instead of the brand block logo. */
+.code-launch .cl-logo svg.tab-ic { width: 74px; height: 74px; color: var(--accent); stroke: url(#histg); }
+.code-launch .cl-feats li { display: flex; align-items: center; gap: 9px; }
+.code-launch .clf-ic { flex: 0 0 18px; display: inline-flex; color: var(--accent); }
+.code-launch .clf-ic svg { width: 18px; height: 18px; }
+.code-launch .btn-grad svg { flex: 0 0 auto; }
 .code-launch .cl-title {
-  margin: 0; font-size: 19px; font-weight: 800;
+  /* Same size as the image tab's greeting (#emptyGreeting) so the Hivey Code title reads as a peer.
+     Pull the title up tight under the icon (the flex container already adds an 8px gap). */
+  margin: -4px 0 0; font-size: 27px; line-height: 1.2; font-weight: 700;
   background: var(--grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
+/* Neon outline for .cl-title / .cl-logo is defined once alongside .empty-title (consolidated). */
 .code-launch .cl-sub { margin: 0; font-size: 12.5px; line-height: 1.5; }
 .code-launch .btn-grad { width: 100%; }
 .code-launch .btn-grad:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
@@ -659,53 +1267,6 @@ body.mode-code #confirmBar { display: none !important; }
 }
 .code-launch .cl-sec { margin: 0; font-size: 11px; line-height: 1.45; }
 
-.terminal {
-  flex: 1; min-height: 0; display: flex; flex-direction: column;
-  background: #0a0c12;
-  font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Code", monospace;
-}
-.term-head {
-  display: flex; align-items: center; gap: 7px; padding: 7px 10px;
-  background: #0c0e15; border-bottom: 1px solid #1b2030;
-}
-.term-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
-.term-dot.r { background: #ff5f56; } .term-dot.y { background: #ffbd2e; } .term-dot.g { background: #27c93f; }
-.term-title { font-size: 11.5px; color: #8b93a7; margin-left: 4px; }
-.term-model {
-  margin-left: auto; max-width: 150px; appearance: none; -webkit-appearance: none;
-  background: #11141d; border: 1px solid #232838; border-radius: 6px;
-  color: #cdd3e1; font-size: 11px; padding: 3px 7px; min-width: 0;
-}
-.term-btn {
-  background: #11141d; border: 1px solid #232838; border-radius: 6px;
-  color: #9aa0b4; font-size: 11px; padding: 3px 9px; flex: 0 0 auto;
-}
-.term-btn:hover { color: #e7e8ef; border-color: var(--accent); }
-.term-log {
-  flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px;
-  font-size: 12.5px; line-height: 1.5; color: #c9d1e3;
-}
-.term-line { white-space: pre-wrap; word-break: break-word; margin: 0 0 2px; }
-.term-line.banner { color: #7aa2ff; font-weight: 600; }
-.term-line.sys { color: #6b7280; }
-.term-line.term-err { color: #ff7b72; margin: 2px 0 9px; }
-.term-cmd { color: #e7e8ef; margin: 6px 0 1px; }
-.term-cmd .term-prompt { color: #27c93f; font-weight: 700; margin-right: 6px; }
-/* Markdown answer block rendered inside the terminal (monospace, dark). */
-.term-out { margin: 1px 0 12px; color: #cdd3e1; }
-.term-out > *:first-child { margin-top: 0; }
-.term-out p, .term-out li { margin: 4px 0; }
-.term-out h1, .term-out h2, .term-out h3 { font-size: 13px; margin: 9px 0 4px; color: #e7e8ef; }
-.term-inputline {
-  display: flex; align-items: flex-start; gap: 8px; padding: 9px 12px;
-  border-top: 1px solid #1b2030; background: #0c0e15;
-}
-.term-inputline .term-prompt { color: #27c93f; font-weight: 700; padding-top: 2px; flex: 0 0 auto; }
-.term-input {
-  flex: 1; resize: none; background: transparent; border: none; outline: none;
-  color: #e7e8ef; font-family: inherit; font-size: 12.5px; line-height: 1.5;
-  max-height: 120px; min-width: 0;
-}
 
 /* ----- Per-message compare bar (on the latest answer) ----- */
 .msg-actions {
@@ -724,21 +1285,195 @@ body.mode-code #confirmBar { display: none !important; }
 }
 .cmp-btn:hover { border-color: var(--accent); }
 .cmp-btn:disabled { opacity: 0.5; cursor: default; }
+/* "＋" that reveals a second comparison model — stretches to the row height so it lines up exactly
+   with the model select and the Compare button. */
+/* "＋" — same look as the compare model combo: transparent surface + soft violet ring, violet on hover. */
+.cmp-add {
+  align-self: stretch; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px; line-height: 1; width: 32px; border-radius: 10px; flex: 0 0 auto;
+  border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+  transition: color .12s, box-shadow .12s, border-color .12s;
+}
+/* The "−" (active) state stays the SAME light colour as the "+" — accent only appears on real hover. */
+.cmp-add:hover { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cmp-select.hidden { display: none; }
+/* Searchable compare model combobox (the search lives inside the dropdown list). */
+.cmp-combo { position: relative; flex: 1 1 150px; min-width: 0; max-width: 200px; display: flex; }
+.cmp-combo.hidden { display: none; }
+.cmp-combo-input { padding: 5px 22px 5px 10px !important; font-size: 11.5px; cursor: pointer; }
+/* Compare = a small icon in the answer actions → opens this floating popup (model picker + Compare). */
+.cmp-popup {
+  position: fixed; z-index: 1002; min-width: 300px; max-width: 92vw; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: color-mix(in srgb, var(--panel-2) 84%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 34px rgba(0,0,0,.5);
+}
+.cmp-popup.hidden { display: none; }
+.cmp-popup-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.cmp-popup-row { display: flex; align-items: stretch; gap: 6px; }
+.cmp-popup .cmp-combo { max-width: none; flex: 1 1 0; }
+.cmp-popup .cmp-btn { width: 100%; justify-content: center; }
+.cmp-combo .combo-caret { right: 9px; font-size: 10px; }
+/* 👍/👎 rate-this-answer buttons (feed the 🏆 Auto model picker). */
+.cmp-rate { display: inline-flex; gap: 2px; }
+.cmp-vote {
+  width: 24px; height: 24px; border-radius: 6px; border: 1px solid transparent; background: transparent;
+  color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.cmp-vote svg { display: block; }
+.cmp-vote:hover { background: var(--panel-2); color: var(--text); }
+.cmp-like.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.cmp-dislike.on { color: #f87171; border-color: color-mix(in srgb, #f87171 55%, transparent); background: color-mix(in srgb, #f87171 12%, transparent); }
+.cmp-vote:disabled { opacity: 0.4; cursor: default; }
 /* Share button on the compare row, pushed to the far right. */
 .cmp-acts { margin-left: auto; display: inline-flex; gap: 4px; }
 .cmp-acts .mact { width: 26px; height: 24px; font-size: 14px; border-radius: 6px; }
 
 /* ----- Per-message hover actions (copy / resend / edit · copy answer) ------- */
 /* "Jump to latest" button — shown when the user has scrolled up. */
+/* Discreet, centered glass overlay near the bottom of the conversation. */
+/* "Jump to latest" — sits on the LEFT (the AI-answer side, where replies are read), well above the
+   composer, and is brand-coloured + larger so it's clearly visible (it used to be a faint grey
+   circle centered over the user's messages). */
+/* Floats centred, just ABOVE the model picker (bottom of the message list) — out of the input. */
+/* Floats at the bottom-RIGHT of the message list, just above the model picker — clear of the centred
+   content (compare bar, model picker) so it never overlaps anything, on every tab. */
+/* "Jump to latest" — fixed to <body>, JS pins it to the bottom-right corner of the #messages
+   viewport (positionScrollBtn). Discreet at rest (muted, translucent), clearer on hover. Hidden
+   until the user scrolls up, then fades/scales in via .show. */
 .scroll-bottom-btn {
-  position: absolute; right: 16px; bottom: 92px; z-index: 30;
-  width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; font-size: 18px; line-height: 1;
-  color: #fff; background: var(--accent); border: 1px solid var(--accent-2, var(--accent));
-  box-shadow: 0 3px 12px rgba(0,0,0,.35); transition: opacity .15s ease, transform .15s ease;
+  position: fixed; z-index: 60; left: 0; top: 0;
+  width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,.22);
+  opacity: 0; transform: translateY(6px) scale(.9); pointer-events: none;
+  transition: opacity .18s ease, transform .2s cubic-bezier(.16,1,.3,1), color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.scroll-bottom-btn:hover { transform: translateY(-1px); }
-.scroll-bottom-btn.hidden { display: none; }
+.scroll-bottom-btn.show { opacity: 1; transform: none; pointer-events: auto; }
+.scroll-bottom-btn svg { display: block; width: 15px; height: 15px; }
+.scroll-bottom-btn:hover {
+  color: var(--accent); border-color: var(--accent);
+  box-shadow: 0 7px 18px rgba(0,0,0,.3); transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: reduce) { .scroll-bottom-btn { transition: opacity .12s ease; transform: none; } }
+
+/* ----- 📚 Wisebase (local KB + RAG) ---------------------------------------- */
+.wb-overlay {
+  position: fixed; inset: 0; z-index: 80; display: flex; align-items: stretch; justify-content: center;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(4px);
+  padding: 10px;
+}
+.wb-overlay.hidden { display: none; }
+.wb-card {
+  display: flex; flex-direction: column; width: 100%; max-width: 720px; margin: auto; max-height: 100%;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0,0,0,.4);
+}
+.wb-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.wb-head-title { flex: 1 1 auto; min-width: 0; }
+.wb-title { font-weight: 600; font-size: 14px; }
+.wb-back { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; padding: 4px 2px; }
+.wb-back:hover { color: var(--text); }
+.wb-close { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; width: 28px; height: 28px; border-radius: 8px; }
+.wb-close:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.wb-body { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.wb-intro { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0; }
+.wb-col-heading, .wb-col-name { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.wb-col-heading { padding-bottom: 2px; }
+.wb-newrow, .wb-addbar, .wb-form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wb-input, .wb-textarea, .wb-search {
+  flex: 1 1 auto; min-width: 0; background: var(--tool); color: var(--text);
+  border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; font: inherit; font-size: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+/* Same premium hover/focus as the chat composer: animated violet frame on hover, deeper on focus. */
+.wb-input:hover:not(:focus), .wb-textarea:hover:not(:focus), .wb-search:hover:not(:focus) { border-color: var(--accent); }
+.wb-input:focus, .wb-textarea:focus, .wb-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.wb-textarea { width: 100%; resize: vertical; line-height: 1.5; }
+.wb-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--tool); color: var(--text); border: 1px solid var(--border); border-radius: 9px;
+  padding: 7px 12px; font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.wb-btn:hover { border-color: var(--accent); color: var(--accent); }
+.wb-btn-ic { display: inline-flex; color: var(--muted); }
+.wb-btn:hover .wb-btn-ic { color: var(--accent); }
+.wb-btn-ic svg { display: block; }
+.wb-btn-primary { background: var(--hivey-grad, linear-gradient(135deg, var(--accent), var(--accent-2))); color: #fff; border: 0; }
+.wb-btn-primary:hover { color: #fff; filter: brightness(1.06); }
+.wb-list { display: flex; flex-direction: column; gap: 6px; }
+.wb-col-row, .wb-src-row { display: flex; align-items: center; gap: 6px; }
+.wb-col-open {
+  flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  background: var(--tool); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; cursor: pointer;
+}
+.wb-col-open:hover { border-color: var(--accent); }
+.wb-col-stat, .wb-src-meta { font-size: 11px; color: var(--muted); }
+.wb-src-info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; background: var(--tool); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; }
+.wb-src-title { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-icon { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer; width: 30px; height: 30px; color: var(--muted); flex: 0 0 auto; transition: color .14s, border-color .14s, background .14s; }
+.wb-icon svg { display: block; }
+.wb-icon:hover { color: var(--text); border-color: var(--border); background: color-mix(in srgb, var(--text) 6%, transparent); }
+.wb-icon-del:hover { color: #ff6161; border-color: color-mix(in srgb, #ff6161 40%, transparent); background: color-mix(in srgb, #ff6161 12%, transparent); }
+.wb-empty { color: var(--muted); font-size: 12.5px; padding: 8px 2px; }
+.wb-progress { font-size: 12px; color: var(--accent); padding: 6px 10px; border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 9px; }
+.wb-progress.hidden { display: none; }
+.wb-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 11px; background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.wb-search-count { font-size: 11px; color: var(--muted); margin: 4px 0; }
+.wb-search-hit { font-size: 12px; color: var(--text); background: var(--tool); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; margin-bottom: 5px; line-height: 1.45; }
+/* Cited sources under a RAG answer. */
+/* Wisebase controls-row icon buttons (Manage / +Page) — sidebar icon-button look + tooltip. */
+/* Match the sidebar's themed controls (combo / analysis picker): soft violet ring at rest, accent on
+   hover, smooth transitions. */
+.wb-ctl-btn { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); background: transparent; cursor: pointer; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent); transition: color .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease; }
+.wb-ctl-btn:hover { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: 0 0 0 1px var(--accent); }
+.wb-ctl-btn:active { transform: translateY(1px); }
+.wb-col-headrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wb-typefilter { display: flex; flex-wrap: wrap; gap: 5px; }
+.wb-type-chip { border: 1px solid var(--border); background: transparent; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+.wb-type-chip:hover { color: var(--text); }
+.wb-type-chip.on { color: var(--on-accent, #fff); background: color-mix(in srgb, var(--accent) 62%, transparent); border-color: transparent; }
+.wb-answer-sources { margin: 4px 0 2px; border-top: 1px solid var(--border); padding-top: 8px; }
+.wb-answer-sources-h { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.wb-cite { background: var(--tool); border: 1px solid var(--border); border-radius: 9px; margin-bottom: 5px; }
+.wb-cite > summary { cursor: pointer; padding: 7px 10px; font-size: 12.5px; color: var(--accent); list-style: none; }
+.wb-cite > summary::-webkit-details-marker { display: none; }
+.wb-cite-text { padding: 4px 10px 10px; font-size: 12px; color: var(--text); line-height: 1.5; white-space: pre-wrap; }
+
+/* ----- 🔎 DeepSearch --------------------------------------------------------- */
+/* Depth segment under the Options toggles (reuses .ts-btn styling from Thinking). */
+.deep-seg-row { display: flex; gap: 2px; padding: 2px; margin: 2px 0 0 auto; border-radius: 8px; background: color-mix(in srgb, var(--text) 7%, transparent); align-self: flex-end; }
+.deep-seg-row[hidden] { display: none; }
+/* Live-progress trace (collapsible reasoning-panel style). */
+.deep-progress .deep-step { font-size: 12px; color: var(--muted); padding: 3px 0; line-height: 1.45; border-left: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); padding-left: 8px; margin: 2px 0; }
+.deep-progress .deep-step:last-child { color: var(--text); }
+
+/* ----- 🧠 Mindmap / Flowchart (Mermaid) ------------------------------------- */
+.mm-overlay { position: fixed; inset: 0; z-index: 82; display: flex; padding: 10px; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(4px); }
+.mm-overlay.hidden { display: none; }
+.mm-card { display: flex; flex-direction: column; margin: auto; width: 100%; max-width: 860px; max-height: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.4); }
+.mm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+.mm-title { font-weight: 600; font-size: 14px; }
+.mm-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mm-btn { border: 1px solid var(--border); background: var(--tool); color: var(--text); font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 8px; cursor: pointer; transition: border-color .14s, color .14s; }
+.mm-btn:hover { border-color: var(--accent); color: var(--accent); }
+.mm-close { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; width: 28px; height: 28px; border-radius: 8px; }
+.mm-close:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.mm-body { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.mm-diagram { overflow: auto; text-align: center; min-height: 120px; display: flex; align-items: center; justify-content: center; }
+.mm-diagram svg { max-width: 100%; height: auto; }
+.mm-msg { color: var(--muted); font-size: 13px; padding: 24px; }
+.mm-msg.mm-err { color: #f87171; }
+.mm-codewrap { display: flex; flex-direction: column; gap: 6px; }
+.mm-code { width: 100%; box-sizing: border-box; min-height: 130px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; background: var(--tool); color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; }
+.mm-code:focus { outline: none; border-color: var(--accent); }
+.mm-render { align-self: flex-start; }
 
 .msg { position: relative; }
 /* 🐝 Hivey background fact-check verdict shown under an answer. */
@@ -772,24 +1507,35 @@ body.mode-code #confirmBar { display: none !important; }
 .msg:hover > .mact-bar.user, .mact-bar.user:focus-within {
   opacity: 1; pointer-events: auto; max-height: 32px; margin-top: 6px;
 }
-/* Assistant answer Copy: at the BOTTOM-RIGHT, visible by default (a touch dim → full on hover). */
-.mact-bar.assistant { justify-content: flex-end; opacity: 0.55; transition: opacity .12s ease; }
-.msg:hover > .mact-bar.assistant, .mact-bar.assistant:focus-within { opacity: 1; }
+/* Assistant answer actions: SAME behaviour as the user bar — collapsed until the message is hovered,
+   then the row (copy / copy-md / mindmap / delete) slides in BELOW the answer, on the left. */
+.mact-bar.assistant {
+  justify-content: flex-start; opacity: 0; pointer-events: none;
+  max-height: 0; margin-top: 0; overflow: hidden;
+  transition: opacity .12s ease, max-height .15s ease, margin-top .15s ease;
+}
+.msg:hover > .mact-bar.assistant, .mact-bar.assistant:focus-within {
+  opacity: 1; pointer-events: auto; max-height: 32px; margin-top: 6px;
+}
 /* Slightly larger, more legible icons on both message types (shown on hover). */
 .mact-bar.user .mact, .mact-bar.assistant .mact { width: 26px; height: 24px; font-size: 13px; border-radius: 6px; }
 /* The ↻ "resend" glyph reads smaller than the others because of its shape — bump it. */
 .mact.mresend { font-size: 16px; }
 .mact-bar.user .mact.mresend { font-size: 17px; }
+/* "M↓" markdown-copy glyph: two chars, so shrink + tighten so it reads as one compact badge. */
+.mact.mcopymd { font-size: 11px; font-weight: 700; letter-spacing: -0.5px; }
+/* FLAT icons (no border, no background) for a clean HiveyCode-like look — a subtle tinted pad appears
+   only on hover. Applies to both the user and assistant action bars. */
 .mact {
   width: 19px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 10px; line-height: 1; border-radius: 5px; cursor: pointer;
-  border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
-  transition: color .12s, border-color .12s, background .12s;
+  font-size: 10px; line-height: 1; border-radius: 6px; cursor: pointer;
+  border: 0; background: transparent; color: var(--muted);
+  transition: color .12s, background .12s;
 }
-.mact:hover { color: var(--text); border-color: var(--accent); }
-.mact.ok { color: #fff; background: var(--accent); border-color: var(--accent); }
-.mact-bar.user .mact { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); color: #fff; }
-.mact-bar.user .mact:hover { background: rgba(255,255,255,.3); border-color: rgba(255,255,255,.5); }
+.mact:hover { color: var(--text); background: color-mix(in srgb, var(--text) 12%, transparent); }
+.mact.ok { color: var(--accent); background: transparent; }
+/* Delete reads RED (on hover) on both message types. */
+.mact.mdel:hover { color: #f87171; background: color-mix(in srgb, #f87171 16%, transparent); }
 
 /* ----- Cross-conversation search results ----------------------------------- */
 .search-results {
@@ -802,7 +1548,7 @@ body.mode-code #confirmBar { display: none !important; }
 .sr-item.current { background: var(--grad-soft); }
 .sr-top { display: flex; align-items: center; gap: 8px; }
 .sr-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text); font-weight: 600; }
-.sr-count { flex: 0 0 auto; font-size: 11px; min-width: 18px; text-align: center; padding: 1px 6px; border-radius: 9px; background: var(--accent); color: #fff; }
+.sr-count { flex: 0 0 auto; font-size: 11px; min-width: 18px; text-align: center; padding: 1px 6px; border-radius: 9px; background: var(--accent); color: var(--on-accent); }
 .sr-snippet { font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ----- Agent: collapsible "Actions" block ---------------------------------- */
@@ -817,6 +1563,10 @@ body.mode-code #confirmBar { display: none !important; }
 .agent-actions-sum::-webkit-details-marker { display: none; }
 .agent-actions-label { flex: 1 1 auto; }
 .agent-actions.done .agent-actions-label { color: var(--text); }
+/* While running, the summary reads as a live "button" showing the CURRENT step (updates each step). */
+.agent-actions.running { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--grad-soft); }
+.agent-actions.running .agent-actions-sum { font-weight: 600; }
+.agent-actions.running .agent-actions-label { color: var(--text); }
 .agent-actions-caret { width: 14px; height: 14px; opacity: 0.6; transition: transform .15s ease; }
 .agent-actions[open] .agent-actions-caret { transform: rotate(90deg); }
 .agent-spin {
@@ -831,6 +1581,14 @@ body.mode-code #confirmBar { display: none !important; }
 .agent-act-head { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--text); word-break: break-word; }
 .agent-act-res { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .agent-act-res.err { color: #e06c75; }
+/* Step in progress (e.g. a navigate waiting for the page to finish loading): a soft pulsing "…"
+   so the user sees it's working, not stuck. */
+.agent-act.pending .agent-act-head::after {
+  content: " …"; color: var(--accent); font-weight: 700;
+  animation: agent-pending 1s ease-in-out infinite;
+}
+@keyframes agent-pending { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .agent-act.pending .agent-act-head::after { animation: none; } }
 
 /* ----- Thinking / waiting indicator (shown until the first token) ---------- */
 .pending-msg .typing { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); }
@@ -863,6 +1621,110 @@ body.mode-code #confirmBar { display: none !important; }
   border-bottom: 1px solid var(--border);
 }
 .searchbar .search-ic { display: inline-flex; align-items: center; color: var(--muted); }
+/* ----- Web chats panel (embedded provider UIs) ----- */
+/* Web panel fills only the conversation area (#workArea) — the top bar (search/history/menu)
+   and the workspaces rail stay visible & usable, integrated like a normal sidebar tab. */
+.webpanel {
+  position: absolute; inset: 0; z-index: 40; max-height: none; padding: 0; overflow: hidden;
+  display: flex; flex-direction: column; background: var(--bg); border: 0;
+}
+/* Web controls relocated INTO the global header — visible only on the Web tab. */
+.web-only-head { display: none; align-items: center; gap: 6px; }
+body.web-active .web-only-head { display: inline-flex; }
+.web-only-head .web-ov-toggle { width: 30px; height: 30px; border-radius: 9px; color: var(--accent); }
+.webchats-head { padding: 7px 9px; gap: 8px; align-items: center; flex-shrink: 0; }
+.webhead-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.webhivey { position: relative; display: inline-flex; align-items: center; }
+.webhivey-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 10; min-width: 190px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.34); padding: 5px; display: flex; flex-direction: column; gap: 2px;
+}
+.webhivey-menu.hidden { display: none; }
+.webhivey-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; cursor: pointer;
+  padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--text);
+  background: transparent; border: 0; transition: .12s;
+}
+.webhivey-item:hover { background: var(--panel-2); color: var(--accent); }
+.webhivey-item svg { flex: 0 0 auto; }
+.webhivey-sep { height: 1px; background: var(--border); margin: 3px 4px; }
+/* Provider chooser — clean modern button + dropdown (like the native FF sidebar). */
+.webprov { position: relative; flex: 0 0 auto; }
+.webprov-btn {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 6px 10px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  color: var(--text); background: var(--panel); border: 1px solid var(--border); transition: .15s;
+}
+.webprov-btn:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.webprov-caret { color: var(--muted); }
+.webprov-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--accent); }
+.webprov-menu {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 5; min-width: 180px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); padding: 5px; display: flex; flex-direction: column; gap: 2px;
+}
+.webprov-menu.hidden { display: none; }
+.wc-opt {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; cursor: pointer;
+  padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--text);
+  background: transparent; border: 0; transition: .12s;
+}
+.wc-opt:hover { background: var(--panel-2); }
+.wc-opt.active { background: var(--grad-soft); color: var(--accent); }
+/* Bigger, clearer close button for web mode. */
+.webclose {
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  width: 34px; height: 34px; border-radius: 10px; color: var(--muted);
+  background: transparent; border: 1px solid transparent; transition: .15s;
+}
+.webclose:hover { color: #f87171; background: var(--panel); border-color: var(--border); }
+.webframe-wrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.webframe { flex: 1 1 auto; width: 100%; border: 0; background: var(--panel); }
+/* Claude wide-render: the frame is laid out wide & scaled down so its desktop nav shows. */
+.webframe.scaled { position: absolute; top: 0; left: 0; flex: none; }
+.wc-ext { margin-left: auto; color: var(--muted); font-size: 11px; }
+.webhint { font-size: 10.5px; color: var(--muted); padding: 5px 8px; background: var(--panel-2); border-top: 1px solid var(--border); text-align: center; flex-shrink: 0; transition: color .2s, background .2s; }
+/* No description by default — only takes space when it carries a transient toast. */
+.webhint:empty { display: none; }
+.webhint.flash { color: var(--accent); background: var(--grad-soft); font-weight: 600; }
+/* Hivey page tools — live in the panel HEADER (left of the open-in-tab icon) so they never
+   cover the provider's own UI. The toggle opens a small dropdown of the page tools. */
+.web-overlay { position: relative; display: inline-flex; align-items: center; }
+/* Uniform, aligned header action buttons (tools · open-in-tab · close). */
+.webchats-head .panel-head-actions { gap: 6px; }
+.webchats-head .panel-head-actions > .icon,
+.webchats-head .webhivey-btn,
+.webchats-head .web-ov-toggle,
+.webchats-head .webclose {
+  width: 32px; height: 32px; border-radius: 9px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.web-ov-toggle.icon.web-ov-toggle { color: var(--accent); }
+.web-overlay.open .web-ov-toggle { color: var(--accent); background: var(--grad-soft); }
+.web-ov-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 9;
+  display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 12px; min-width: 190px;
+  background: var(--panel); border: 1px solid var(--border); box-shadow: 0 10px 28px rgba(0,0,0,.34);
+}
+.web-ov-menu.hidden { display: none; }
+.web-ov-btn {
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px;
+  height: 30px; padding: 0 12px 0 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600;
+  color: var(--text); background: var(--panel-2); border: 1px solid var(--border); transition: .15s; white-space: nowrap;
+}
+.web-ov-btn:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.web-ov-btn.active { color: var(--accent); background: var(--grad-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.web-ov-btn svg { display: block; flex: 0 0 auto; }
+.web-ov-sep { height: 1px; background: var(--border); margin: 2px 4px; }
+/* Web tabs picker (select open tabs to send as context). */
+#webTabsMenu { min-width: 230px; max-width: 300px; }
+.web-tabs-list { display: flex; flex-direction: column; gap: 1px; max-height: 240px; overflow-y: auto; }
+.web-tab-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+.web-tab-row:hover { background: var(--panel-2); }
+.web-tab-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text); }
+.web-tabs-empty { padding: 10px; font-size: 11.5px; color: var(--muted); text-align: center; }
+.web-tabs-send { justify-content: center; margin-top: 4px; }
 .panel-head .hd-ic, .pagebar .eye { display: inline-flex; align-items: center; vertical-align: -3px; color: var(--muted); }
 .panel-head .hd-ic svg, .pagebar .eye svg, .searchbar .search-ic svg { width: 15px; height: 15px; display: block; }
 .searchbar input {
@@ -875,15 +1737,38 @@ body.mode-code #confirmBar { display: none !important; }
 mark.search-hit { background: rgba(168, 85, 247, 0.35); color: inherit; border-radius: 3px; padding: 0 1px; }
 mark.search-hit.current { background: #f6c945; color: #1a1408; }
 
-/* ----- History row actions (rename · share · delete) + Current tag --------- */
-.histrow .hact { color: var(--muted); border: 0; background: none; padding: 2px 4px; border-radius: 6px; font-size: 13px; line-height: 1; flex: 0 0 auto; }
-.histrow .hact:hover { background: var(--panel-2); }
+/* ----- History row actions (rename · share · export · pin · delete) + Current tag --------- */
+/* Only PIN, EXPORT and "use as context" (share) reveal on hover — rename and delete stay always
+   visible (they don't change behaviour). A PINNED conversation keeps its pin icon lit. */
+/* Dynamic "deploy" reveal: when NOT hovering, the pin/export/share icons COLLAPSE to zero width (no
+   frozen blank gap) — the title/current-pill/timestamp use the full row. On hover the icons expand
+   in (pushing the other elements left) with a small stagger, so you clearly see them appear. */
+.histrow .hren, .histrow .hpin, .histrow .hexport, .histrow .hshare {
+  opacity: 0; width: 0; padding-left: 0; padding-right: 0; margin: 0 0 0 -4px; overflow: hidden;
+  pointer-events: none; white-space: nowrap;
+  transition: opacity .16s ease, width .2s cubic-bezier(.16, 1, .3, 1), padding .2s ease, margin .2s ease;
+}
+.histrow:hover .hren, .histrow:hover .hpin, .histrow:hover .hexport, .histrow:hover .hshare, .histrow .hpin.on {
+  opacity: 1; width: 20px; padding-left: 3px; padding-right: 3px; margin-left: 0; pointer-events: auto;
+}
+/* stagger them so they cascade in (rename leads, since it sits right after the title) */
+.histrow:hover .hren { transition-delay: 0s; }
+.histrow:hover .hpin { transition-delay: .04s; }
+.histrow:hover .hshare { transition-delay: .08s; }
+.histrow:hover .hexport { transition-delay: .12s; }
+.histrow .hact { color: var(--muted); border: 0; background: none; padding: 3px; border-radius: 6px; line-height: 0; flex: 0 0 auto; display: inline-flex; align-items: center; cursor: pointer; }
+.histrow .hact:hover { background: var(--panel-2); color: var(--text); }
+.histrow .hact svg, .histrow .hdel svg { display: block; }
+.histrow .hshare:hover { color: var(--accent); }
+/* "Delete selected" link button: icon + label aligned. */
+.link-btn { display: inline-flex; align-items: center; gap: 5px; }
+.link-btn svg { display: block; }
 .histrow .hren:hover { color: var(--text); }
 .histrow .hshare:hover { color: #8ab4ff; }
 .histrow.current { background: var(--grad-soft); }
 .hcur {
   flex: 0 0 auto; font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
-  text-transform: uppercase; color: #fff; background: var(--grad);
+  text-transform: uppercase; color: var(--on-accent); background: var(--grad);
   padding: 1px 6px; border-radius: 999px; white-space: nowrap;
 }
 .share-head { font-size: 12px; color: var(--muted); padding: 4px 6px 6px; }
@@ -894,3 +1779,369 @@ mark.search-hit.current { background: #f6c945; color: #1a1408; }
 .share-result.spinning { animation: pulse-dim 1s ease-in-out infinite; }
 
 .hidden { display: none !important; }
+
+/* Confirmation banner floating OVER the top of the response area (overlay — doesn't push the
+   content). Anchored to #workArea (position:relative). */
+.top-banner {
+  position: absolute; top: 46px; left: 50%; z-index: 30; max-width: calc(100% - 28px); /* below the Page bar */
+  background: var(--grad); color: var(--on-accent); font-size: 12.5px; font-weight: 600;
+  padding: 9px 14px; border-radius: 10px; box-shadow: 0 8px 22px rgba(0,0,0,.4);
+  text-align: center; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transform: translateX(-50%) translateY(-8px); transition: opacity .25s ease, transform .25s ease;
+}
+.top-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (prefers-reduced-motion: reduce) { .top-banner { transition: none; } }
+
+/* "Click on the page" banner shown while a selection tool (element pick / region capture) is active. */
+.pick-banner {
+  /* Overlay the top bar (the "Hivey AI" sidebar title) edge-to-edge while picking, rather than
+     a floating pill near the very top. min-height matches the .topbar height so it sits exactly
+     over it; z-index (9998) is above the topbar (50). */
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+  display: flex; align-items: center; justify-content: center; min-height: 39px;
+  background: var(--grad); color: var(--on-accent); font-size: 12.5px; font-weight: 600;
+  padding: 6px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.30);
+  pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pick-banner.hidden { display: none; }
+
+/* ============================================================================
+   MODERN MOTION — subtle, fast, GPU-friendly animations across the sidebar.
+   Everything here is purely cosmetic and fully disabled under reduced-motion.
+   ============================================================================ */
+@keyframes hvFadeRise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes hvPopIn   { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes hvPop     { 0% { transform: scale(.8); opacity: 0; } 60% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes hvSlideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@keyframes hvNavIn   { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+
+/* NAVIGATION: switching workspace tab slides the whole content area in (the main "navigation"
+   animation). Re-triggered from setMode() by toggling .nav-in on #messages and the controls. */
+.messages.nav-in,
+#controls.nav-in { animation: hvNavIn .28s cubic-bezier(.22,.61,.36,1) both; }
+
+/* Messages rise + fade in as they stream into the thread. */
+.msg { animation: hvFadeRise .26s cubic-bezier(.22,.61,.36,1) both; }
+/* Floating menus / popovers / palettes scale-fade in (content, not icons). */
+.combo-menu:not(.hidden),
+.filter-panel:not(.hidden),
+.cmd-palette:not(.hidden),
+.webprov-menu:not(.hidden),
+.webhivey-menu:not(.hidden),
+#tabsPanel:not(.hidden),
+#historyPanel:not(.hidden) { animation: hvPopIn .16s ease-out both; }
+/* Attachment chips & cmd chips pop in. */
+.attach-chip, .cmd-chip { animation: hvPop .22s cubic-bezier(.34,1.56,.64,1) both; }
+/* Empty-state text fades in (no icon/logo motion — per request). */
+.empty-title, .empty-features, #emptyGreeting { animation: hvFadeRise .4s ease-out both; }
+/* History rows slide in. */
+.histrow { animation: hvSlideIn .2s ease-out both; }
+
+/* MENU ICONS: tactile micro-interactions. Icons lift slightly on hover, dip on press, and
+   the icon that becomes ACTIVE on a tab switch "pops" (driven by .tab-pop from playNavAnim).
+   The active accent bar grows in. */
+@keyframes hvTabPop  { 0% { transform: scale(1); } 35% { transform: scale(1.24); } 70% { transform: scale(.93); } 100% { transform: scale(1); } }
+@keyframes hvBarGrow { from { transform: scaleY(0); opacity: 0; } to { transform: scaleY(1); opacity: 1; } }
+.railtab svg { transition: transform .16s cubic-bezier(.34, 1.56, .64, 1); }
+.railtab:hover svg { transform: scale(1.13); }
+.railtab:active svg { transform: scale(.92); }
+.railtab.tab-pop svg { animation: hvTabPop .42s cubic-bezier(.34, 1.56, .64, 1); }
+.railtab.active::before { transform-origin: center; animation: hvBarGrow .26s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .msg, .combo-menu, .filter-panel, .cmd-palette, .webprov-menu, .webhivey-menu,
+  #tabsPanel, #historyPanel, .attach-chip, .cmd-chip, .empty-title,
+  .empty-features, #emptyGreeting, .histrow, .messages.nav-in, #controls.nav-in,
+  .railtab.tab-pop svg, .railtab.active::before { animation: none !important; }
+  .railtab svg, .railtab:hover svg, .railtab:active svg { transition: none !important; transform: none !important; }
+}
+
+
+/* ── Subtle modern DEPTH — soft shadows so the sidebar feels layered, alive and professional
+   (kept light; nothing heavy). ── */
+/* .topbar / .composer / .rail: NO drop shadows — clean transparent glass. The rail keeps its
+   stacking position so popups (z-1000) float above it without a heavy seam. */
+.rail { position: relative; z-index: 2; }
+.msg.assistant { box-shadow: 0 1px 7px rgba(0, 0, 0, .1); }
+.btn-grad { box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent); }
+.railtab.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent); }
+.combo-input:focus, .composer-box:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+
+/* ── 2026 premium polish — glass + animated neon (matches Hivey Code) ───────── */
+/* soft glow that travels along the composer's edge (not a spinning frame). Shows while generating
+   (.is-busy) and softly on focus. */
+.composer-box { position: relative; background: color-mix(in srgb, var(--accent) 7%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+/* ROTATING gradient border: a colour→transparent arc with a bright point at the centre of the
+   colour, sweeping around the chat zone. The conic gradient is masked to the border ring only. */
+@property --hvAngle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.composer-box::before {
+  content: ""; position: absolute; inset: -1.5px; border-radius: 19px; padding: 1.5px;
+  pointer-events: none; z-index: 1; opacity: 0; transition: opacity .4s ease;
+  background: conic-gradient(from var(--hvAngle),
+      transparent 0deg,
+      color-mix(in srgb, var(--accent) 30%, transparent) 22deg,
+      var(--accent-2) 40deg,
+      color-mix(in srgb, var(--accent) 30%, transparent) 58deg,
+      transparent 80deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+}
+.composer-box:focus-within::before { opacity: 1; animation: hvSpin 4.5s linear infinite; }
+/* While the AI is working the rotating conic border KEEPS spinning even without focus (it just isn't
+   the focus state). Focus still overrides with its own (slower) spin above. */
+.composer-box.is-busy::before { opacity: 1; animation: hvSpin 2.8s linear infinite; }
+@keyframes hvSpin { to { --hvAngle: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .composer-box::before { animation: none; } }
+
+/* full-width glassy model bar + airier surfaces */
+.modelbar { position: relative; background: rgba(255,255,255,.014); backdrop-filter: blur(12px); padding: 10px 12px 11px; }
+.composer { background: rgba(255,255,255,.012); backdrop-filter: blur(12px); }
+.controls { background: rgba(255,255,255,.015); backdrop-filter: blur(12px); }
+
+/* glassy floating menus / dropdowns (those that exist; harmless otherwise) */
+.rail-add-menu, .rail-confirm, .menu, .dropdown, .pop, .hist-list, .cmp-menu {
+  background: rgba(26,24,38,.72) !important; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   RAIL = HOVER OVERLAY (hidden by default). The work area is ALWAYS full width
+   (the rail is taken OUT of flow), so the popups (tabs/history/search), the model
+   picker and the composer never get an empty left gap and never overflow when the
+   rail is closed. The rail floats IN on hover of the ☰ menu button
+   (body.rail-peek, set by JS) or stays open when pinned (body.rail-pinned).
+   ════════════════════════════════════════════════════════════════════════════ */
+#workspace { position: relative; }
+#workArea { width: 100%; }
+.rail-resize { display: none; }                 /* no in-flow resize handle in overlay mode */
+body.rail-collapsed #rail { display: flex; }    /* overlay handles visibility, not display:none */
+
+#rail {
+  position: absolute; top: 6px; left: 0; bottom: auto; z-index: 60; /* z-index 60 = ABOVE the web iframe (.webpanel z-40) */
+  width: var(--rail-w, 56px); flex: none;
+  /* TOTALLY transparent when deployed — just the floating icons, no surface/seam. Height fits the
+     icons (height:auto) so the bar STOPS well above the bottom controls (model picker / + / pdf…). */
+  height: auto; max-height: calc(100% - 12px); overflow-y: auto; overflow-x: hidden;
+  background: transparent !important;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  border: 0; box-shadow: none;
+  transform: translateX(-118%); opacity: 0;
+  transition: transform .34s cubic-bezier(.16,1,.3,1), opacity .26s ease;
+}
+body.rail-peek #rail, body.rail-pinned #rail, #rail:hover {
+  transform: none; opacity: 1;
+}
+/* right-docked variant */
+body.rail-right #rail { left: auto; right: 0; transform: translateX(118%); }
+body.rail-right.rail-peek #rail, body.rail-right.rail-pinned #rail, body.rail-right #rail:hover { transform: none; }
+/* the ☰ button reads as active while the rail is shown */
+body.rail-peek .menu-btn, body.rail-pinned .menu-btn { color: var(--accent); }
+
+/* When the rail is OPEN, the top popups RESIZE (their box shrinks) so they start after the rail
+   instead of sitting under the icons — left edge moves in, width adapts responsively. */
+body.rail-peek #tabsPanel:not(.hidden), body.rail-pinned #tabsPanel:not(.hidden),
+body.rail-peek #historyPanel:not(.hidden), body.rail-pinned #historyPanel:not(.hidden) {
+  left: calc(var(--rail-w, 56px) + 8px);          /* right:0 stays → width shrinks */
+  transition: left .3s cubic-bezier(.16,1,.3,1);
+}
+body.rail-peek #searchBar:not(.hidden), body.rail-pinned #searchBar:not(.hidden),
+body.rail-peek #pageBar:not(.hidden), body.rail-pinned #pageBar:not(.hidden) {
+  margin-left: calc(var(--rail-w, 56px) + 8px);   /* in-flow → width shrinks */
+  transition: margin-left .3s cubic-bezier(.16,1,.3,1);
+}
+body.rail-right.rail-peek #tabsPanel:not(.hidden), body.rail-right.rail-pinned #tabsPanel:not(.hidden),
+body.rail-right.rail-peek #historyPanel:not(.hidden), body.rail-right.rail-pinned #historyPanel:not(.hidden) {
+  left: 0; right: calc(var(--rail-w, 56px) + 8px);
+}
+body.rail-right.rail-peek #searchBar:not(.hidden), body.rail-right.rail-pinned #searchBar:not(.hidden),
+body.rail-right.rail-peek #pageBar:not(.hidden), body.rail-right.rail-pinned #pageBar:not(.hidden) {
+  margin-left: 0; margin-right: calc(var(--rail-w, 56px) + 8px);
+}
+
+/* WEB tab: when the rail opens, slide the iframe content right so the rail is visible beside it
+   (the rail is also raised above the iframe via z-index:60). */
+body.web-active.rail-peek .webpanel, body.web-active.rail-pinned .webpanel {
+  padding-left: var(--rail-w, 56px); transition: padding-left .3s cubic-bezier(.16,1,.3,1);
+}
+body.rail-right.web-active.rail-peek .webpanel, body.rail-right.web-active.rail-pinned .webpanel {
+  padding-left: 0; padding-right: var(--rail-w, 56px);
+}
+
+/* ── Composer toolbar buttons: transparent & modern (icons untouched) ───────────
+   The +, dictate, gear, web, page, refresh… chips lose their filled dark square for
+   a clean transparent look with a faint glass hover. ON / checked / active states
+   keep the brand gradient so toggles still read as "on". */
+.ctoggle, .ctool, .attach-btn, .mic-btn {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none;
+}
+.ctoggle:hover, .ctool:hover, .attach-btn:hover, .mic-btn:hover {
+  background: color-mix(in srgb, var(--text) 9%, transparent) !important;
+  border-color: color-mix(in srgb, var(--text) 14%, transparent) !important;
+}
+.ctoggle:has(input:checked), .ctoggle.active, .mic-btn.active {
+  background: var(--grad) !important; border-color: transparent !important; color: var(--on-accent) !important;
+}
+.ctoggle:has(input:checked):hover, .ctoggle.active:hover { background: var(--grad) !important; }
+
+/* #1 — Filter now lives INSIDE the model dropdown header (top-right). Hide the external one. */
+#modelFilterBtn { display: none !important; }
+/* the filter popup must float ABOVE the model dropdown */
+.filter-panel { z-index: 1001 !important; }
+.combo-metric .cm-filter.on { color: var(--accent); }
+
+/* #2 — HiveyCode launcher: bullet-proof centring (no left shift). */
+.codeview { align-items: center; justify-content: center; }
+
+/* ── #4 — All composer toggles collapsed behind ONE "Options" button ───────────
+   The Verify / Thinking / Web / Artifacts / Page / Auto-scroll chips now live in a
+   popup that opens above the ⚙ options button, each shown as icon + name + state. */
+.tools-right { position: relative; }
+#chatControls {
+  position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 200;
+  display: none; flex-direction: column; gap: 2px; min-width: 196px; padding: 6px;
+  background: color-mix(in srgb, var(--panel-2) 78%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3);
+  border: 1px solid var(--border); border-radius: 13px; box-shadow: 0 14px 34px rgba(0,0,0,.4);
+}
+body.opts-open #chatControls { display: flex; animation: hvPopIn .16s ease-out both; }
+.opts-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 4px 8px 3px; }
+/* each toggle becomes a full-width labelled row */
+#chatControls .ctoggle {
+  width: 100%; height: auto; min-height: 34px; justify-content: flex-start; gap: 10px;
+  padding: 6px 9px; border-radius: 9px;
+}
+#chatControls .ctoggle .ct-name { display: inline; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+#chatControls .ctoggle.cycle .lvl { margin-left: auto; }
+body.opts-open .opts-toggle { color: var(--accent); }
+.ct-name { display: none; } /* names only show inside the popup */
+
+/* ── #3 — Cleaner: remove fills + separator lines on the model / chat / option zones (all tabs) ── */
+.composer { background: transparent !important; border-top: 0 !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.modelbar { background: transparent !important; border: 0 !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.composer-tools, .composer-main { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.controls { background: transparent !important; border-top: 0 !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* Input / model-picker / tab-option selectors share HiveyCode's .composer-box surface: a soft violet
+   translucent tint + blur, border var(--border) (focus var(--accent)). The conic contour animation on
+   .composer-box::before is untouched. For the <select> we set background-COLOR only so the caret image
+   from its base rule survives. */
+/* Only the coloured BORDER (a soft violet 1px ring) — no background fill, no backdrop blur, no glow
+   behind. The conic focus animation on .composer-box::before stays intact. */
+.composer-box, .combo-input, .sec-analysis-btn, .ctl-group#pdfControls .chip {
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+.ctl-group select {
+  background-color: transparent !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+.pagebar { background: transparent !important; border: 0 !important; }
+.searchbar { background: transparent !important; }
+
+/* ── #5 — Softer active state on the option toggles (less saturated, via opacity) ── */
+#chatControls .ctoggle:has(input:checked), #chatControls .ctoggle.active {
+  background: color-mix(in srgb, var(--accent) 62%, transparent) !important;
+  box-shadow: none !important; color: var(--on-accent) !important;
+}
+/* The options (⚙) button shows on the Chat AND Wisebase tabs (both are full chat composers). */
+body:not(.mode-chat):not(.mode-wisebase) #optsToggle { display: none !important; }
+body:not(.mode-chat):not(.mode-wisebase).opts-open #chatControls { display: none !important; }
+
+/* #5 — Thinking 3-segment control (off / on / max) */
+.think-row { cursor: default; }
+.think-seg { margin-left: auto; display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: color-mix(in srgb, var(--text) 7%, transparent); }
+.ts-btn { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; cursor: pointer; transition: background .14s, color .14s; }
+.ts-btn:hover { color: var(--text); }
+.ts-btn.on { background: color-mix(in srgb, var(--accent) 62%, transparent); color: var(--on-accent); }
+.think-state { display: none !important; }
+
+
+/* #7 — emphasised terms in the new-conversation description (like the landing page) */
+.empty-features strong { color: var(--text); font-weight: 650; }
+
+/* On selector tabs the page bar is a permanent TOOLS bar (no page reading) — hide the page title
+   and push the tools (capture region / pick element / tab picker) to the TOP-RIGHT like Chat. */
+.pagebar.selectors-only .page-title { display: none; }
+.pagebar.selectors-only { justify-content: flex-end; }
+/* The "Page" option (auto page reading) is removed from the options popup — the page TOOLS bar
+   (pick element / capture region / tab picker) is always available at the top instead. */
+#chatControls .ctoggle:has(#pageCtx) { display: none !important; }
+
+/* When the tabs rail is deployed (hover peek or pinned), shift the AI response list to the right so
+   the rail icons never OVERLAP the messages. Bottom bar isn't shifted (the rail stops above it).
+   EXCEPTION: the "new conversation" screen (empty-state icon/title/description) must stay centered
+   and NOT move — only an ACTIVE conversation gets shifted. `#empty` is hidden once a conversation
+   starts, so `:has(> #empty.hidden)` targets exactly the message-list case, on every tab. The code
+   tab's `#codeView` is always a launch card (its own "new conversation" page) → never shifted. */
+#messages { transition: padding-left .3s cubic-bezier(.16,1,.3,1), padding-right .3s cubic-bezier(.16,1,.3,1); }
+body.rail-peek #messages:has(> #empty.hidden),
+body.rail-pinned #messages:has(> #empty.hidden) {
+  padding-left: calc(var(--rail-w, 56px) + 8px);
+}
+body.rail-right.rail-peek #messages:has(> #empty.hidden),
+body.rail-right.rail-pinned #messages:has(> #empty.hidden) {
+  padding-left: 12px; padding-right: calc(var(--rail-w, 56px) + 8px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME (Premium) refinements — ALL scoped under body.theme-light so the
+   dark themes are never touched. Goal: crisp, modern (Linear/Apple) — no glow,
+   white components on a light-grey canvas, neutral grey header icons, accent
+   only on focus/hover.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* 1 — kill the accent aura glow + any diffuse shadows behind the empty state. */
+body.theme-light {
+  --aura-op: 0;
+  background: var(--bg) !important;
+}
+body.theme-light #messages { background: transparent !important; }
+body.theme-light .empty-logo svg,
+body.theme-light .empty-logo img,
+body.theme-light .empty-greeting,
+body.theme-light .empty-features,
+body.theme-light .empty-title { filter: none !important; text-shadow: none !important; }
+body.theme-light .menu-btn svg { filter: none !important; } /* brand keeps its violet colour, no halo */
+
+/* 2 — white components, discreet grey border, NO violet ring at rest. */
+body.theme-light .composer-box,
+body.theme-light .combo-input,
+body.theme-light .cmp-combo-input,
+body.theme-light .sec-analysis-btn,
+body.theme-light .themed-sel-btn,
+body.theme-light .cmp-add,
+body.theme-light .ctl-group#pdfControls .chip {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+body.theme-light .ctl-group select {
+  background-color: #ffffff !important; /* keep the caret image */
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+/* accent returns ONLY on hover / focus */
+body.theme-light .combo-input:hover,
+body.theme-light .cmp-combo-input:hover,
+body.theme-light .ctl-group select:hover,
+body.theme-light .sec-analysis-btn:hover,
+body.theme-light .themed-sel-btn:hover,
+body.theme-light .cmp-add:hover,
+body.theme-light .ctl-group#pdfControls .chip:hover {
+  border-color: var(--accent) !important;
+}
+body.theme-light .composer-box:focus-within,
+body.theme-light .combo-input:focus,
+body.theme-light .ctl-group select:focus,
+body.theme-light .sec-analysis-btn:focus-visible,
+body.theme-light .cmp-combo-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent) !important;
+}
+
+/* 3 — header utility icons in neutral grey; brand + gradient buttons keep the accent. */
+body.theme-light .icon { color: #64748b; }
+body.theme-light .icon:hover { color: #475569; }

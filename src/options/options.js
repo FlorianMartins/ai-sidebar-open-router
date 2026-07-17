@@ -3,20 +3,78 @@ import { PROVIDERS, PROVIDER_ORDER, IMAGE_SIZES, WRITING_PRESETS, isConnected } 
 import { connectOpenRouter } from "../lib/auth.js";
 import { listModels } from "../lib/providers.js";
 import { clearConversations } from "../lib/history.js";
-import { THEMES, CUSTOM_KEYS, applyTheme, effectivePalette } from "../lib/theme.js";
+import { THEMES, CUSTOM_KEYS, applyTheme, effectivePalette, UI_FONTS, applyFont, withOpacity } from "../lib/theme.js";
 import { t, setLang, applyDom } from "../lib/i18n.js";
+import { SHORTCUT_ACTIONS, defaultShortcuts, comboFromEvent, isBindable } from "../lib/shortcuts.js";
+import { encryptSettings, decryptSettings } from "../lib/syncCrypto.js";
 
 const $ = (id) => document.getElementById(id);
+
+// Request host permission for a local server's origin (Firefox MV3 needs this before
+// the page can fetch http://localhost:… without CORS blocking). Covers the provider's
+// configured base URL plus both loopback hosts, so localhost/127.0.0.1 both work.
+async function requestLocalHostPermission(id, settings) {
+  try {
+    if (!(typeof browser !== "undefined" && browser.permissions && browser.permissions.request)) return true;
+    const origins = new Set(["http://localhost/*", "http://127.0.0.1/*"]);
+    const base = (settings.baseUrls && settings.baseUrls[id]) || (PROVIDERS[id] && PROVIDERS[id].baseUrl) || "";
+    try { if (base) origins.add(new URL(base).origin + "/*"); } catch (_) {}
+    return await browser.permissions.request({ origins: [...origins] });
+  } catch (_) { return false; }
+}
 
 // ----- Theme + custom colours -----------------------------------------------
 let curTheme = "dark";
 let curColors = {}; // overrides applied on top of the theme
-const COL_IDS = { accent: "col_accent", accent2: "col_accent2", bg: "col_bg", panel: "col_panel", text: "col_text" };
+const COL_IDS = { accent: "col_accent", accent2: "col_accent2", bg: "col_bg", panel: "col_panel", text: "col_text", muted: "col_muted" };
+// <input type="color"> only accepts "#rrggbb". Theme tokens can be rgb()/rgba() (e.g. panel,
+// muted) — convert to a 6-digit hex (alpha dropped) before assigning, or the input rejects it.
+function toHexColor(c) {
+  if (typeof c !== "string") return "#000000";
+  c = c.trim();
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+  if (/^#[0-9a-f]{3}$/i.test(c)) return "#" + c.slice(1).split("").map((x) => x + x).join("");
+  const m = c.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (m) {
+    const h = (n) => Math.max(0, Math.min(255, Math.round(parseFloat(n)))).toString(16).padStart(2, "0");
+    return "#" + h(m[1]) + h(m[2]) + h(m[3]);
+  }
+  return "#000000";
+}
 function syncColorPickers() {
   const pal = effectivePalette(curTheme, curColors);
-  for (const k of CUSTOM_KEYS) { const el = $(COL_IDS[k]); if (el) el.value = pal[k]; }
+  for (const k of CUSTOM_KEYS) { const el = $(COL_IDS[k]); if (el) el.value = toHexColor(pal[k]); }
 }
-function applyThemeLive() { applyTheme(curTheme, curColors); }
+function applyThemeLive() {
+  applyTheme(curTheme, curColors, {
+    gradientOn: settings.gradientOn !== false,
+    gradientSplit: (typeof settings.gradientSplit === "number") ? settings.gradientSplit : -1,
+  });
+  applyTopIconsLive(); // top-bar icon colours/gradient
+}
+// Clear the custom MENU-icon and TOP-BAR-icon colours so they follow the (newly picked) theme.
+function resetElementColors() {
+  const pal = effectivePalette(curTheme, curColors);
+  ["railIconColor", "topIconColor", "topIconColor2"].forEach((k) => { settings[k] = ""; try { setSettings({ [k]: "" }); } catch (_) {} });
+  const root = document.documentElement.style;
+  ["--rail-icon", "--rail-icon-dim", "--top-icon-1", "--top-icon-2"].forEach((v) => root.removeProperty(v));
+  if ($("railIconColor")) $("railIconColor").value = "#6b7280";
+  if ($("topIconColor")) $("topIconColor").value = toHexColor(pal.accent || "#8b5cf6");
+  if ($("topIconColor2")) $("topIconColor2").value = toHexColor(pal.accent2 || "#6366f1");
+  applyTopIconsLive();
+}
+// Drive the --top-icon-1/2 vars on the OPTIONS page so the (live) preview reflects choices, and
+// they take effect in the sidebar via the saved settings + its own applyTopIcons.
+function applyTopIconsLive() {
+  const root = document.documentElement.style;
+  const c1 = (settings.topIconColor || "").trim();
+  const grad = settings.topIconGradient !== false;
+  const c2 = (settings.topIconColor2 || "").trim();
+  if (c1) root.setProperty("--top-icon-1", c1); else root.removeProperty("--top-icon-1");
+  if (!grad) root.setProperty("--top-icon-2", c1 || "var(--accent)");
+  else if (c2) root.setProperty("--top-icon-2", c2);
+  else root.removeProperty("--top-icon-2");
+}
 
 function rgbToHex(r, g, b) {
   return "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
@@ -89,8 +147,21 @@ function buildThemeControls() {
     sel.addEventListener("change", () => {
       curTheme = sel.value;
       curColors = {}; // a fresh theme starts from its own palette
+      resetElementColors(); // the menu icons + top-bar icons follow the new theme too
       syncColorPickers(); applyThemeLive(); saveColorsNow();
     });
+  }
+  // UI font picker — bundled modern webfonts (see UI_FONTS in theme.js). Value persists via
+  // collectSettings; we apply it live on change for an instant preview.
+  const fsel = $("uiFont");
+  if (fsel) {
+    fsel.innerHTML = "";
+    for (const f of UI_FONTS) {
+      const o = document.createElement("option");
+      o.value = f.key; o.textContent = f.label; o.style.fontFamily = f.stack;
+      fsel.appendChild(o);
+    }
+    fsel.addEventListener("change", () => applyFont(fsel.value));
   }
   const hasEyeDropper = typeof window !== "undefined" && "EyeDropper" in window;
   for (const k of CUSTOM_KEYS) {
@@ -126,15 +197,197 @@ function buildThemeControls() {
     el.insertAdjacentElement("afterend", drop);
   }
   const reset = $("themeReset");
-  if (reset) reset.addEventListener("click", () => { curColors = {}; syncColorPickers(); applyThemeLive(); saveColorsNow(); });
+  if (reset) reset.addEventListener("click", () => { curColors = {}; resetElementColors(); syncColorPickers(); applyThemeLive(); saveColorsNow(); });
+  // Reply-bubble outline colour persists on its own (kept out of collectSettings so the
+  // "" = follow-theme default isn't overwritten by a swatch the user never touched).
+  const mbc = $("msgBorderColor");
+  if (mbc) mbc.addEventListener("input", () => {
+    try { setSettings({ msgBorderColor: mbc.value }); } catch (_) {}
+    document.documentElement.style.setProperty("--msg-border", mbc.value); // live-preview the neon title outline colour
+  });
+  // Menu (rail) icon colour persists on its own too ("" default kept out of collectSettings).
+  const setColor = (key, hex, after) => { settings[key] = hex; try { setSettings({ [key]: hex }); } catch (_) {} if (after) after(); };
+  const ric = $("railIconColor");
+  if (ric) ric.addEventListener("input", () => setColor("railIconColor", ric.value));
+  const cc = $("contourColor");
+  if (cc) cc.addEventListener("input", () => setColor("contourColor", cc.value, () => document.documentElement.style.setProperty("--contour-color", cc.value)));
+  // Top-bar icon colours (1 / 2) + gradient toggle — live preview via --top-icon-*.
+  const ti1 = $("topIconColor"), ti2 = $("topIconColor2"), tig = $("topIconGradient");
+  if (ti1) ti1.addEventListener("input", () => setColor("topIconColor", ti1.value, applyTopIconsLive));
+  if (ti2) ti2.addEventListener("input", () => setColor("topIconColor2", ti2.value, applyTopIconsLive));
+  if (tig) tig.addEventListener("change", () => { settings.topIconGradient = tig.checked; try { setSettings({ topIconGradient: tig.checked }); } catch (_) {} applyTopIconsLive(); });
+  const gOn = $("gradientOn");
+  if (gOn) gOn.addEventListener("change", () => { settings.gradientOn = gOn.checked; try { setSettings({ gradientOn: gOn.checked }); } catch (_) {} applyThemeLive(); });
+  const gSplit = $("gradientSplit");
+  if (gSplit) gSplit.addEventListener("input", () => {
+    const v = parseInt(gSplit.value, 10); settings.gradientSplit = v;
+    if ($("gradientSplitVal")) $("gradientSplitVal").textContent = v + "%";
+    try { setSettings({ gradientSplit: v }); } catch (_) {} applyThemeLive();
+  });
+  // Eyedropper on EVERY element colour swatch (like the theme swatches).
+  attachEyedropper($("railIconColor"), (hex) => setColor("railIconColor", hex, () => { if (ric) ric.value = hex; }));
+  attachEyedropper($("topIconColor"), (hex) => setColor("topIconColor", hex, () => { if (ti1) ti1.value = hex; applyTopIconsLive(); }));
+  attachEyedropper($("topIconColor2"), (hex) => setColor("topIconColor2", hex, () => { if (ti2) ti2.value = hex; applyTopIconsLive(); }));
+  attachEyedropper($("msgBorderColor"), (hex) => setColor("msgBorderColor", hex, () => { const e = $("msgBorderColor"); if (e) e.value = hex; document.documentElement.style.setProperty("--msg-border", hex); }));
+  attachEyedropper($("contourColor"), (hex) => setColor("contourColor", hex, () => { if (cc) cc.value = hex; document.documentElement.style.setProperty("--contour-color", hex); }));
+
+  // Background aura — colour / intensity / size. Saved for the sidebar (its applyAura reacts live) and
+  // mirrored into Hivey Code by the bridge. Also previewed on this page via the same CSS vars.
+  const applyAuraLive = () => {
+    const r = document.documentElement.style;
+    const pal = effectivePalette(curTheme, curColors);
+    r.setProperty("--aura-1", (settings.auraColor || "").trim() || toHexColor(pal.accent) || "#6366f1");
+    r.setProperty("--aura-2", toHexColor(pal.accent2) || "#8b5cf6");
+    r.setProperty("--aura-op", String(typeof settings.auraOpacity === "number" ? settings.auraOpacity : 0.12));
+    r.setProperty("--aura-size", (typeof settings.auraSize === "number" ? settings.auraSize : 720) + "px");
+  };
+  const auraC = $("auraColor"), auraO = $("auraOpacity"), auraS = $("auraSize");
+  if (auraC) {
+    auraC.value = (settings.auraColor || "").trim() || toHexColor(effectivePalette(curTheme, curColors).accent) || "#6366f1";
+    auraC.addEventListener("input", () => setColor("auraColor", auraC.value, applyAuraLive));
+    attachEyedropper(auraC, (hex) => setColor("auraColor", hex, () => { auraC.value = hex; applyAuraLive(); }));
+  }
+  if (auraO) {
+    const op0 = typeof settings.auraOpacity === "number" ? settings.auraOpacity : 0.12;
+    auraO.value = String(Math.round(op0 * 100));
+    if ($("auraOpacityVal")) $("auraOpacityVal").textContent = Math.round(op0 * 100) + "%";
+    auraO.addEventListener("input", () => {
+      const v = Math.round(parseInt(auraO.value, 10)) / 100; settings.auraOpacity = v;
+      if ($("auraOpacityVal")) $("auraOpacityVal").textContent = Math.round(v * 100) + "%";
+      try { setSettings({ auraOpacity: v }); } catch (_) {} applyAuraLive();
+    });
+  }
+  if (auraS) {
+    const sz0 = typeof settings.auraSize === "number" ? settings.auraSize : 720;
+    auraS.value = String(sz0);
+    if ($("auraSizeVal")) $("auraSizeVal").textContent = sz0 + "px";
+    auraS.addEventListener("input", () => {
+      const v = parseInt(auraS.value, 10); settings.auraSize = v;
+      if ($("auraSizeVal")) $("auraSizeVal").textContent = v + "px";
+      try { setSettings({ auraSize: v }); } catch (_) {} applyAuraLive();
+    });
+  }
+  applyAuraLive();
+
   syncColorPickers();
+}
+// Reusable eyedropper button placed after a <input type=color> — native EyeDropper on Chromium,
+// screen-capture fallback on Firefox. Calls onPick(hex) with the chosen colour.
+function attachEyedropper(el, onPick) {
+  if (!el) return;
+  const drop = document.createElement("button");
+  drop.type = "button"; drop.className = "eyedrop"; drop.title = t("opt.theme.pick");
+  drop.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>';
+  drop.addEventListener("click", async () => {
+    let hex = null;
+    if (typeof window !== "undefined" && "EyeDropper" in window) {
+      try { const res = await new window.EyeDropper().open(); hex = res && res.sRGBHex; } catch (_) {}
+    } else { hex = await screenEyedropper(); }
+    if (hex) { el.value = hex; onPick(hex); }
+  });
+  el.insertAdjacentElement("afterend", drop);
+}
+
+// Element-colour opacity popup: a slider per element colour (top bar / menu icons / reply
+// outline / title contour). Persists live; the sidebar re-applies via onSettingsChanged.
+function buildOpacityModal() {
+  const modal = $("opacityModal");
+  if (!modal) return;
+  const open = () => { syncOpacity(); modal.classList.remove("hidden"); };
+  const close = () => modal.classList.add("hidden");
+  if ($("opacityBtn")) $("opacityBtn").addEventListener("click", open);
+  if ($("opacityClose")) $("opacityClose").addEventListener("click", close);
+  modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
+  const map = { op_railIcon: "railIconOpacity", op_msgBorder: "msgBorderOpacity", op_contour: "contourOpacity" };
+  for (const [id, key] of Object.entries(map)) {
+    const el = $(id); if (!el) continue;
+    el.addEventListener("input", () => {
+      const v = parseInt(el.value, 10);
+      settings[key] = v; try { setSettings({ [key]: v }); } catch (_) {}
+      const val = el.parentElement.querySelector(".op-val"); if (val) val.textContent = v + "%";
+      previewOpacity();
+    });
+  }
+}
+function syncOpacity() {
+  const map = { op_railIcon: "railIconOpacity", op_msgBorder: "msgBorderOpacity", op_contour: "contourOpacity" };
+  for (const [id, key] of Object.entries(map)) {
+    const el = $(id); if (!el) continue;
+    const v = (typeof settings[key] === "number") ? settings[key] : 100;
+    el.value = v; const val = el.parentElement.querySelector(".op-val"); if (val) val.textContent = v + "%";
+  }
+}
+// Live-preview the opacities that affect elements present on the options page (the h1 contour/outline).
+function previewOpacity() {
+  const pal = effectivePalette(curTheme, curColors);
+  const root = document.documentElement.style;
+  if (settings.msgBorderColor) root.setProperty("--msg-border", withOpacity(settings.msgBorderColor, settings.msgBorderOpacity));
+  if (settings.contourColor) root.setProperty("--contour-color", withOpacity(settings.contourColor, settings.contourOpacity));
+}
+// Top-right one-tap toggles for the options people flip most. Each chip toggles a setting,
+// reflects its state (.on), keeps the detailed control in sync, and live-previews on this page.
+function buildQuickActions() {
+  const setOn = (el, on) => el && el.classList.toggle("on", !!on);
+  const neon = $("qaNeon"), contour = $("qaContour"), sound = $("qaSound"), rail = $("qaRail");
+  const smooth = $("qaSmooth"), replyOutline = $("qaReplyOutline"), tabNotif = $("qaTabNotif");
+  setOn(neon, settings.textOutlineOn === true);
+  setOn(contour, settings.contourOn === true);
+  setOn(sound, settings.soundOnDone === true);
+  setOn(smooth, settings.smoothStream !== false);
+  setOn(replyOutline, settings.msgBorderOn === true);
+  setOn(tabNotif, settings.tabDoneIndicator !== false);
+  setOn(rail, settings.railSide === "right");
+  if (smooth) smooth.addEventListener("click", () => {
+    const on = !(settings.smoothStream !== false); settings.smoothStream = on;
+    setSettings({ smoothStream: on }); setOn(smooth, on);
+    if ($("smoothStream")) $("smoothStream").checked = on;
+  });
+  if (replyOutline) replyOutline.addEventListener("click", () => {
+    const on = !(settings.msgBorderOn === true); settings.msgBorderOn = on;
+    setSettings({ msgBorderOn: on }); setOn(replyOutline, on);
+    if ($("msgBorderOn")) $("msgBorderOn").checked = on;
+  });
+  if (tabNotif) tabNotif.addEventListener("click", () => {
+    const on = !(settings.tabDoneIndicator !== false); settings.tabDoneIndicator = on;
+    setSettings({ tabDoneIndicator: on }); setOn(tabNotif, on);
+  });
+  if (neon) neon.addEventListener("click", () => {
+    const on = !(settings.textOutlineOn === true); settings.textOutlineOn = on;
+    setSettings({ textOutlineOn: on }); setOn(neon, on);
+    document.body.classList.toggle("text-outline", on);
+    if ($("textOutlineOn")) $("textOutlineOn").checked = on;
+  });
+  if (contour) contour.addEventListener("click", () => {
+    const on = !(settings.contourOn === true); settings.contourOn = on;
+    setSettings({ contourOn: on }); setOn(contour, on);
+    document.body.classList.toggle("title-contour", on);
+    if ($("contourOn")) $("contourOn").checked = on;
+  });
+  if (sound) sound.addEventListener("click", () => {
+    const on = !(settings.soundOnDone === true); settings.soundOnDone = on;
+    setSettings({ soundOnDone: on }); setOn(sound, on);
+    if ($("soundOnDone")) $("soundOnDone").checked = on;
+  });
+  if (rail) rail.addEventListener("click", () => {
+    const right = !(settings.railSide === "right"); settings.railSide = right ? "right" : "left";
+    setSettings({ railSide: settings.railSide }); setOn(rail, right);
+    if ($("railSide")) $("railSide").value = settings.railSide;
+  });
 }
 
 // Most-spoken languages for the AI response language (English first / default).
+// Canonical English names — MUST match the values of the Translate tab's language <select> so the
+// choice made there (saved as settings.targetLang) is reflected here, and vice-versa.
 const LANGUAGES = [
-  "English", "中文 (Chinese)", "हिन्दी (Hindi)", "Español", "Français", "العربية (Arabic)",
-  "বাংলা (Bengali)", "Português", "Русский (Russian)", "Bahasa Indonesia", "Deutsch",
-  "日本語 (Japanese)", "Türkçe", "한국어 (Korean)", "Italiano", "Tiếng Việt", "Nederlands", "Polski",
+  "French", "English", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Arabic", "Chinese",
+  "Traditional Chinese", "Japanese", "Korean", "Russian", "Hindi", "Bengali", "Turkish", "Polish",
+  "Ukrainian", "Romanian", "Greek", "Czech", "Swedish", "Danish", "Norwegian", "Finnish", "Hungarian",
+  "Hebrew", "Thai", "Vietnamese", "Indonesian", "Malay", "Filipino", "Persian", "Urdu", "Swahili",
+  "Catalan", "Croatian", "Serbian", "Slovak", "Slovenian", "Bulgarian", "Lithuanian", "Latvian",
+  "Estonian", "Icelandic", "Irish", "Welsh", "Afrikaans", "Tamil", "Telugu", "Marathi", "Gujarati",
+  "Punjabi", "Kannada", "Malayalam", "Nepali", "Sinhala", "Khmer", "Lao", "Burmese", "Mongolian",
+  "Kazakh", "Azerbaijani", "Georgian", "Armenian", "Albanian", "Macedonian", "Belarusian", "Basque",
+  "Galician", "Esperanto", "Latin",
 ];
 
 // Providers with a free tier (free API key / free models).
@@ -173,31 +426,6 @@ function category(id) {
   return "cloud";
 }
 
-function modelOptionsFor(id) {
-  const fetched = modelLists[id] || [];
-  const labels = new Map(PROVIDERS[id].models);
-  const ids = fetched.length ? fetched : PROVIDERS[id].models.map((m) => m[0]);
-  const seen = new Set();
-  const out = [["", t("opt.model.auto")]];
-  for (const m of ids) {
-    if (seen.has(m)) continue;
-    seen.add(m);
-    out.push([m, labels.get(m) || m]);
-  }
-  return out;
-}
-
-function fillModelSelect(sel, id) {
-  const chosen = (settings.models && settings.models[id]) || "";
-  sel.innerHTML = "";
-  for (const [val, label] of modelOptionsFor(id)) {
-    const o = document.createElement("option");
-    o.value = val;
-    o.textContent = label;
-    sel.appendChild(o);
-  }
-  sel.value = chosen;
-}
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -251,11 +479,27 @@ function buildCard(id) {
     inp.type = "checkbox";
     inp.id = `local_${id}`;
     inp.checked = !!(settings.localEnabled && settings.localEnabled[id]);
-    inp.addEventListener("change", () => applyConnState(inp.checked));
+    inp.addEventListener("change", async () => {
+      applyConnState(inp.checked);
+      // Firefox MV3 grants NO host permission at install, so a fetch from this page
+      // to http://localhost:11434 would be CORS-blocked. The toggle is a user gesture,
+      // so we can request access to the local origin right here (resolves instantly if
+      // already granted). Without this, local models silently fail.
+      if (inp.checked) {
+        const ok = await requestLocalHostPermission(id, settings);
+        if (!ok) {
+          inp.checked = false;
+          applyConnState(false);
+          alert(t("opt.local.permDenied"));
+        }
+      }
+    });
     lab.appendChild(inp);
     lab.appendChild(el("span", "track"));
     lab.appendChild(el("span", "lbl", t("opt.local.enable")));
     sec.appendChild(lab);
+    const hint = el("p", "hint", t("opt.local.hint"));
+    sec.appendChild(hint);
   }
 
   // API key.
@@ -303,6 +547,20 @@ function buildCard(id) {
     inp.value = (settings.baseUrls && settings.baseUrls[id]) || "";
     lab.appendChild(inp);
     sec.appendChild(lab);
+
+    // Manual model name(s) — so a local model can ALWAYS be imported even when the server
+    // can't be auto-listed (CORS-blocked Ollama, a custom endpoint with no /models route…).
+    const mlab = el("label", null, t("opt.models.label"));
+    const minp = el("input");
+    minp.type = "text";
+    minp.id = `models_${id}`;
+    minp.placeholder = "llama3.1, qwen2.5-coder, mistral…";
+    minp.value = ((settings.userModels && settings.userModels[id]) || []).join(", ");
+    mlab.appendChild(minp);
+    sec.appendChild(mlab);
+    const hint = el("p", "muted");
+    hint.textContent = t("opt.models.hint");
+    sec.appendChild(hint);
   }
 
   // No per-provider "default model" here: the model is chosen in the sidebar's own
@@ -310,6 +568,34 @@ function buildCard(id) {
   // default here would override that, so it has been removed on purpose.
 
   return sec;
+}
+
+// Filter the settings as you type: whole sections that match are kept; inside the (long)
+// AI providers section, individual provider cards are filtered too.
+function applySettingsFilter(q) {
+  q = (q || "").trim().toLowerCase();
+  document.querySelectorAll("main > section").forEach((sec) => {
+    const title = (sec.querySelector("h2") ? sec.querySelector("h2").textContent : "").toLowerCase();
+    const titleHit = !!q && title.includes(q);
+    const provDiv = sec.querySelector("#providers");
+    if (provDiv) {
+      let any = false;
+      provDiv.querySelectorAll(":scope > *").forEach((card) => {
+        const hit = !q || titleHit || (card.textContent || "").toLowerCase().includes(q);
+        card.style.display = hit ? "" : "none";
+        if (hit) any = true;
+      });
+      sec.style.display = !q || titleHit || any ? "" : "none";
+      return;
+    }
+    sec.style.display = !q || (sec.textContent || "").toLowerCase().includes(q) ? "" : "none";
+  });
+}
+function wireSettingsSearch() {
+  const inp = $("settingsSearch");
+  if (!inp || inp.dataset.wired) return;
+  inp.dataset.wired = "1";
+  inp.addEventListener("input", () => applySettingsFilter(inp.value));
 }
 
 function buildProviderFields() {
@@ -467,6 +753,119 @@ const SECTION_ICONS = {
 
 // Quick-navigation pins: one per settings section, with smooth scroll + a scroll-spy
 // that highlights the section currently in view. Built from <section id> + its <h2>.
+// Reorder the settings sections so the things people touch most / accessibility sit at the TOP
+// and the set-once / advanced stuff sinks to the BOTTOM. Done in JS (re-append in order, before
+// the footer note) so the markup stays simple and the quick-nav follows automatically.
+const SECTION_ORDER = [
+  "sec-quick",       // connect (onboarding) — hidden once a provider is connected
+  "sec-appearance",  // theme / font / colours / neon — accessibility, adjusted most
+  "sec-lang",        // language & writing
+  "sec-behavior",    // everyday behaviour
+  "sec-agent",       // per-feature configs…
+  "sec-web",
+  "sec-image",
+  "sec-efficiency",
+  "sec-security",
+  "sec-code",        // least-consulted → bottom
+  "sec-shortcuts",   // keyboard shortcuts
+  "sec-sync",        // encrypted backup / sync
+  "sec-providers",   // API keys → bottom
+];
+
+// Encrypted settings backup/sync (BYOK stays local — nothing is uploaded).
+function buildSyncSection() {
+  const main = document.querySelector("main");
+  if (!main || document.getElementById("sec-sync")) return;
+  const sec = el("section", null); sec.id = "sec-sync";
+  sec.appendChild(el("h3", null, t("opt.sync.title")));
+  sec.appendChild(el("p", "hint", t("opt.sync.hint")));
+  const row = el("div", "sync-row");
+
+  const exportBtn = el("button", "link-btn", t("opt.sync.export"));
+  exportBtn.addEventListener("click", async () => {
+    const pass = window.prompt(t("opt.sync.passSet"));
+    if (!pass) return;
+    try {
+      const fresh = await getSettings();
+      const blob = await encryptSettings(fresh, pass);
+      const b = new Blob([blob], { type: "application/json" });
+      const url = URL.createObjectURL(b);
+      const a = document.createElement("a");
+      a.href = url; a.download = "hivey-settings.hivey"; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { window.alert("Export failed: " + (e && e.message || e)); }
+  });
+
+  const importInput = el("input"); importInput.type = "file"; importInput.accept = ".hivey,application/json"; importInput.style.display = "none";
+  importInput.addEventListener("change", async () => {
+    const file = importInput.files && importInput.files[0];
+    importInput.value = "";
+    if (!file) return;
+    const pass = window.prompt(t("opt.sync.passEnter"));
+    if (!pass) return;
+    try {
+      const text = await file.text();
+      const obj = await decryptSettings(text, pass);
+      if (!obj || typeof obj !== "object") throw new Error("empty");
+      await setSettings(obj);
+      window.alert(t("opt.sync.imported"));
+      location.reload();
+    } catch (e) { window.alert(t("opt.sync.importFail") + " " + (e && e.message || e)); }
+  });
+  const importBtn = el("button", "link-btn", t("opt.sync.import"));
+  importBtn.addEventListener("click", () => importInput.click());
+
+  row.appendChild(exportBtn); row.appendChild(importBtn); row.appendChild(importInput);
+  sec.appendChild(row);
+  main.appendChild(sec);
+}
+
+// Build the "Keyboard shortcuts" section: one row per action; click a field then press a combo.
+function buildShortcutsSection() {
+  const main = document.querySelector("main");
+  if (!main || document.getElementById("sec-shortcuts")) return;
+  const map = { ...defaultShortcuts(), ...(settings.shortcuts || {}) };
+  const sec = el("section", null); sec.id = "sec-shortcuts";
+  const h3 = el("h3", null, t("opt.shortcuts.title")); sec.appendChild(h3);
+  const hint = el("p", "hint", t("opt.shortcuts.hint")); sec.appendChild(hint);
+  const save = () => { settings.shortcuts = map; setSettings({ shortcuts: map }); };
+  for (const a of SHORTCUT_ACTIONS) {
+    const row = el("div", "sc-row");
+    row.appendChild(el("span", "sc-label", t(a.labelKey)));
+    const inp = el("input", "sc-input");
+    inp.type = "text"; inp.readOnly = true; inp.value = map[a.id] || "";
+    inp.placeholder = t("opt.shortcuts.record");
+    inp.addEventListener("focus", () => { inp.value = t("opt.shortcuts.record"); });
+    inp.addEventListener("blur", () => { inp.value = map[a.id] || ""; });
+    inp.addEventListener("keydown", (e) => {
+      e.preventDefault();
+      if (e.key === "Backspace" || e.key === "Delete") { map[a.id] = ""; inp.value = ""; save(); inp.blur(); return; }
+      const combo = comboFromEvent(e);
+      if (!combo || !isBindable(combo)) return; // ignore modifier-only / non-modified keys
+      map[a.id] = combo; inp.value = combo; save(); inp.blur();
+    });
+    const clear = el("button", "sc-clear", "✕");
+    clear.title = "Disable"; clear.addEventListener("click", () => { map[a.id] = ""; inp.value = ""; save(); });
+    row.appendChild(inp); row.appendChild(clear);
+    sec.appendChild(row);
+  }
+  const reset = el("button", "link-btn", t("opt.shortcuts.reset"));
+  reset.addEventListener("click", () => { Object.assign(map, defaultShortcuts()); save(); sec.remove(); buildShortcutsSection(); reorderSections(); });
+  sec.appendChild(reset);
+  main.appendChild(sec);
+}
+function reorderSections() {
+  const main = document.querySelector("main");
+  if (!main) return;
+  const anchor = main.querySelector(".actions"); // keep sections above the "changes saved" footer
+  SECTION_ORDER.forEach((id) => { const sec = document.getElementById(id); if (sec) main.insertBefore(sec, anchor); });
+  // Quick connect is onboarding-only: once any provider is connected, hide it entirely.
+  const quick = document.getElementById("sec-quick");
+  if (quick) quick.style.display = anyConnected() ? "none" : "";
+}
+function anyConnected() {
+  try { return (PROVIDER_ORDER || []).some((id) => isConnected(id, settings)); } catch (_) { return false; }
+}
 function buildQuickNav() {
   const nav = $("quicknav");
   if (!nav) return;
@@ -474,6 +873,7 @@ function buildQuickNav() {
   nav.appendChild(el("span", "qn-label", t("opt.nav.label")));
   const links = [];
   document.querySelectorAll("main > section[id]").forEach((sec) => {
+    if (sec.style.display === "none") return; // skip hidden sections (e.g. Quick connect once connected)
     const h = sec.querySelector("h2");
     if (!h) return;
     const label = h.textContent.trim();
@@ -524,25 +924,72 @@ async function load() {
   setLang(settings.uiLang || "en");       // English default; other languages via the uiLang setting
   applyDom(document);                      // fill all data-i18n static markup
   document.documentElement.lang = settings.uiLang || "en";
+  buildShortcutsSection();                 // configurable keyboard shortcuts (built before reorder)
+  buildSyncSection();                      // encrypted settings backup / sync
+  reorderSections();                       // most-used / accessibility at top, advanced at bottom
   buildThemeControls();
-  buildQuickNav();                         // jump pins to each section
+  buildOpacityModal();                     // element-colour opacity popup (Settings → Appearance)
+  buildQuickActions();                     // top-right one-tap toggles (neon / contour / sound / menu side)
+  buildQuickNav();                         // jump pins to each section (follows the new order)
   addSectionIcons();                       // same line icons on each section title
   modelLists = { ...(settings.modelLists || {}) };
   buildProviderFields();
   buildImageProvider();
   buildSearchModelSelect();
   buildAgentModelSelect();
+  wireSettingsSearch();
   buildUtilityModelSelect();
   fillSelect($("responseLang"), [["Auto", t("opt.lang.respAuto")], ...LANGUAGES.map((l) => [l, l])], settings.responseLang || "Auto");
+  fillSelect($("targetLang"), LANGUAGES.map((l) => [l, l]), settings.targetLang || "French");
   fillSelect($("improvePreset"), WRITING_PRESETS.map((p) => [p[0], t("preset." + p[0])]), settings.improvePreset || "improve");
   updateQuickConnect(isConnected("openrouter", settings));
   $("imageModel").value = settings.imageModel || "";
   $("uiLang").value = settings.uiLang || "en";
+  if ($("uiFont")) $("uiFont").value = settings.uiFont || "";
+  applyFont(settings.uiFont); // apply the saved UI font to the options page itself
   $("railSide").value = settings.railSide === "right" ? "right" : "left";
-  $("targetLang").value = settings.targetLang || "French";
+  buildRailTabsList();
+  // Reply-bubble outline customisation.
+  if ($("msgBorderOn")) $("msgBorderOn").checked = settings.msgBorderOn !== false;
+  // Neon title outline is its own option (decoupled from icon boxes) — live-preview the h1 outline.
+  if ($("textOutlineOn")) {
+    $("textOutlineOn").checked = settings.textOutlineOn === true;
+    document.body.classList.toggle("text-outline", settings.textOutlineOn === true);
+    $("textOutlineOn").addEventListener("change", () => document.body.classList.toggle("text-outline", $("textOutlineOn").checked));
+  }
+  // Crisp contour is its own option (own colour), combinable with neon — live-preview the h1.
+  if ($("contourOn")) {
+    $("contourOn").checked = settings.contourOn === true;
+    document.body.classList.toggle("title-contour", settings.contourOn === true);
+    $("contourOn").addEventListener("change", () => document.body.classList.toggle("title-contour", $("contourOn").checked));
+  }
+  if ($("smoothStream")) $("smoothStream").checked = settings.smoothStream !== false;
+  if ($("soundOnDone")) $("soundOnDone").checked = settings.soundOnDone === true;
+  if ($("tabDoneIndicator")) $("tabDoneIndicator").checked = settings.tabDoneIndicator !== false;
+  // Preview the chosen neon colour on the title outline (falls back to accent when unset).
+  if (settings.msgBorderColor) document.documentElement.style.setProperty("--msg-border", settings.msgBorderColor);
+  if (settings.contourColor) document.documentElement.style.setProperty("--contour-color", settings.contourColor);
+  if ($("msgBorderColor")) $("msgBorderColor").value = toHexColor(settings.msgBorderColor || effectivePalette(curTheme, curColors).border || "#30334d");
+  if ($("contourColor")) $("contourColor").value = toHexColor(settings.contourColor || effectivePalette(curTheme, curColors).text || "#f8fafc");
+  if ($("railIconColor")) $("railIconColor").value = toHexColor(settings.railIconColor || "#6b7280");
+  const pal0 = effectivePalette(curTheme, curColors);
+  if ($("topIconColor")) $("topIconColor").value = toHexColor(settings.topIconColor || pal0.accent || "#8b5cf6");
+  if ($("topIconColor2")) $("topIconColor2").value = toHexColor(settings.topIconColor2 || pal0.accent2 || "#6366f1");
+  if ($("topIconGradient")) $("topIconGradient").checked = settings.topIconGradient !== false;
+  applyTopIconsLive();
+  if ($("gradientOn")) $("gradientOn").checked = settings.gradientOn !== false;
+  if ($("gradientSplit")) {
+    const sp = (typeof settings.gradientSplit === "number" && settings.gradientSplit >= 0) ? settings.gradientSplit : Math.round(((effectivePalette(curTheme, curColors).split ?? 0.4)) * 100);
+    $("gradientSplit").value = sp;
+    if ($("gradientSplitVal")) $("gradientSplitVal").textContent = sp + "%";
+  }
+  if ($("targetLang")) $("targetLang").value = settings.targetLang || "French";
   $("webSearch").checked = settings.webSearch;
+  $("webDefault").checked = !!settings.webDefault;
   $("orFreeOnly").checked = settings.orFreeOnly !== false;
   $("agentPermission").value = settings.agentPermission || "manual";
+  if ($("agentVerify")) $("agentVerify").checked = settings.agentVerify === true;
+  if ($("agentInteractive")) $("agentInteractive").checked = !!settings.agentInteractive;
   $("codeAppUrl").value = settings.codeAppUrl != null ? settings.codeAppUrl : "";
   $("judge0Endpoint").value = settings.judge0Endpoint != null ? settings.judge0Endpoint : "";
   $("judge0Key").value = settings.judge0Key != null ? settings.judge0Key : "";
@@ -559,6 +1006,40 @@ async function load() {
   refreshModelLists();
 }
 
+// Workspace icons to show/hide in the sidebar's tabs rail (Appearance section).
+const RAIL_TABS = [
+  ["chat", "Chat"], ["web", "Web"], ["agent", "Agent"], ["translate", "Traduire"],
+  ["improve", "Améliorer"], ["image", "Image"], ["pdf", "PDF"], ["code", "Code"],
+];
+function railTabLabel(mode, fallback) {
+  const k = "rail." + mode;
+  const v = t(k);
+  return v && v !== k ? v : fallback;
+}
+function buildRailTabsList() {
+  const host = $("railTabsList");
+  if (!host) return;
+  host.innerHTML = "";
+  const hidden = new Set(Array.isArray(settings.railTabsHidden) ? settings.railTabsHidden : []);
+  for (const [mode, fallback] of RAIL_TABS) {
+    const lab = document.createElement("label");
+    lab.className = "rail-tab-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = mode; cb.checked = !hidden.has(mode); cb.dataset.railtab = "1";
+    const sp = document.createElement("span");
+    sp.textContent = railTabLabel(mode, fallback);
+    lab.appendChild(cb); lab.appendChild(sp);
+    host.appendChild(lab);
+  }
+}
+function collectRailTabsHidden() {
+  const host = $("railTabsList");
+  if (!host) return Array.isArray(settings.railTabsHidden) ? settings.railTabsHidden : [];
+  const hidden = [];
+  host.querySelectorAll('input[data-railtab="1"]').forEach((cb) => { if (!cb.checked) hidden.push(cb.value); });
+  return hidden;
+}
+
 // Read every control into a settings object. `models` is intentionally NOT written —
 // the sidebar remembers the last-used model per provider, and overwriting it here
 // would undo that.
@@ -566,6 +1047,7 @@ function collectSettings() {
   const keys = {};
   const baseUrls = {};
   const localEnabled = {};
+  const userModels = {};
   for (const id of PROVIDER_ORDER) {
     const k = $(`key_${id}`);
     if (k && k.value.trim()) keys[id] = k.value.trim();
@@ -573,9 +1055,11 @@ function collectSettings() {
     if (u && u.value.trim()) baseUrls[id] = u.value.trim();
     const lc = $(`local_${id}`);
     if (lc && lc.checked) localEnabled[id] = true;
+    const mm = $(`models_${id}`);
+    if (mm && mm.value.trim()) userModels[id] = mm.value.split(",").map((s) => s.trim()).filter(Boolean);
   }
   return {
-    keys, baseUrls, localEnabled,
+    keys, baseUrls, localEnabled, userModels,
     imageProvider: $("imageProvider").value,
     imageModel: $("imageModel").value.trim() || "gpt-image-1",
     imageSize: $("imageSize").value,
@@ -584,14 +1068,25 @@ function collectSettings() {
     theme: curTheme,
     themeColors: curColors,
     railSide: $("railSide").value === "right" ? "right" : "left",
+    uiFont: $("uiFont") ? $("uiFont").value : "",
+    railTabsHidden: collectRailTabsHidden(),
+    msgBorderOn: $("msgBorderOn") ? $("msgBorderOn").checked : true,
+    textOutlineOn: $("textOutlineOn") ? $("textOutlineOn").checked : false,
+    contourOn: $("contourOn") ? $("contourOn").checked : false,
+    smoothStream: $("smoothStream") ? $("smoothStream").checked : true,
+    soundOnDone: $("soundOnDone") ? $("soundOnDone").checked : false,
+    tabDoneIndicator: $("tabDoneIndicator") ? $("tabDoneIndicator").checked : true,
     responseLang: $("responseLang").value,
     targetLang: $("targetLang").value.trim() || "French",
     webSearch: $("webSearch").checked,
+    webDefault: $("webDefault").checked,
     orFreeOnly: $("orFreeOnly").checked,
     searchModel: $("searchModel").value,
     agentModel: $("agentModel").value,
     agentPermission: $("agentPermission").value,
     confirmActions: $("agentPermission").value !== "auto",
+    agentVerify: $("agentVerify") ? $("agentVerify").checked : false,
+    agentInteractive: $("agentInteractive") ? $("agentInteractive").checked : false,
     codeAppUrl: $("codeAppUrl").value.trim(),
     judge0Endpoint: $("judge0Endpoint").value.trim(),
     judge0Key: $("judge0Key").value.trim(),
@@ -688,6 +1183,7 @@ $("quickConnect").addEventListener("click", async () => {
   flash($("quickStatus"), t("opt.dyn.connecting"));
   await connectAccount("openrouter");
   flash($("quickStatus"), isConnected("openrouter", settings) ? t("opt.quick.savedNote") : "");
+  if (isConnected("openrouter", settings)) { reorderSections(); buildQuickNav(); } // hide the now-pointless Quick connect
 });
 $("clearHistoryBtn").addEventListener("click", async () => {
   await clearConversations();

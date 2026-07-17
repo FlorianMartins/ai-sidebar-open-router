@@ -3,18 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../../vendor/fonts/fonts.css" />
     <link rel="stylesheet" href="options.css" />
     <title data-i18n="opt.title">Hivey AI — Settings</title>
   </head>
   <body>
-    <!-- Quick navigation: vertical jump pins to each settings section (built in options.js). -->
-    <nav id="quicknav" class="quicknav" aria-label="Settings sections"></nav>
+    <!-- Left column: jump-to nav, then the Quick actions panel underneath it. -->
+    <div class="leftcol">
+      <nav id="quicknav" class="quicknav" aria-label="Settings sections"></nav>
+      <div class="quick-actions" id="sec-quickactions">
+        <span class="qa-label" data-i18n="opt.qa.h">Quick actions</span>
+        <span class="qa-cat" data-i18n="opt.qa.catDesign">Design</span>
+        <button class="qa-chip" id="qaNeon" type="button"><span class="qa-ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></span><span class="qa-txt" data-i18n="opt.qa.neon">Neon glow</span></button>
+        <button class="qa-chip" id="qaContour" type="button"><span class="qa-ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span><span class="qa-txt" data-i18n="opt.qa.contour">Title outline</span></button>
+        <button class="qa-chip" id="qaReplyOutline" type="button"><span class="qa-ic"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/></svg></span><span class="qa-txt" data-i18n="opt.qa.replyOutline">Reply outline</span></button>
+        <span class="qa-cat" data-i18n="opt.qa.catAccess">Accessibility &amp; feedback</span>
+        <button class="qa-chip" id="qaSmooth" type="button"><span class="qa-ic"><svg viewBox="0 0 24 24"><path d="M3 12h3l2-6 4 14 3-9 2 4h4"/></svg></span><span class="qa-txt" data-i18n="opt.qa.smooth">Smooth replies</span></button>
+        <button class="qa-chip" id="qaSound" type="button"><span class="qa-ic"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></span><span class="qa-txt" data-i18n="opt.qa.sound">Done sound</span></button>
+        <button class="qa-chip" id="qaTabNotif" type="button"><span class="qa-ic"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span><span class="qa-txt" data-i18n="opt.qa.tabNotif">Tab notifications</span></button>
+        <span class="qa-cat" data-i18n="opt.qa.catLayout">Layout</span>
+        <button class="qa-chip" id="qaRail" type="button"><span class="qa-ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></span><span class="qa-txt" data-i18n="opt.qa.rail">Menu side</span></button>
+      </div>
+    </div>
     <main>
       <h1 data-i18n="opt.title">Hivey AI — Settings</h1>
       <p class="muted" data-i18n-html="opt.intro">
         100% <b>BYOK</b>: your keys are stored <b>locally</b> in this browser
         (<code>storage.local</code>), never synced, and sent only to the API you choose.
       </p>
+      <input type="search" id="settingsSearch" class="settings-search" data-i18n-ph="opt.search.ph" placeholder="Search settings…" autocomplete="off" />
 
       <section class="quickconnect" id="sec-quick">
         <h2 style="margin-top:0" data-i18n="opt.quick.h">Quick connect</h2>
@@ -25,13 +42,6 @@
         <span id="quickStatus" class="muted"></span>
       </section>
 
-      <section id="sec-providers">
-        <h2 data-i18n="opt.providers.h">AI providers</h2>
-        <p class="muted" data-i18n-html="opt.providers.p">
-          Click « 🔐 Connect » on a provider to open its sign-in page.
-        </p>
-        <div id="providers"></div>
-      </section>
 
       <section id="sec-agent">
         <h2 data-i18n="opt.agent.h">Agent mode</h2>
@@ -50,6 +60,8 @@
         <p class="muted" data-i18n-html="opt.agent.p2">
           With manual approval (recommended), every state-changing action asks for consent.
         </p>
+        <label class="switch" style="margin-top:10px"><input type="checkbox" id="agentVerify" /><span class="track"></span><span class="lbl" data-i18n="opt.agent.verify">Independent verification at the end of a task (more reliable, uses a few extra tokens)</span></label>
+        <label class="switch" style="margin-top:10px"><input type="checkbox" id="agentInteractive" /><span class="track"></span><span class="lbl" data-i18n="opt.agent.interactive">Interaction mode — the internet agent reads the page + researches the web, then the agent PROPOSES several options in the chat and asks you which to pick instead of acting on its own</span></label>
       </section>
 
       <section id="sec-web">
@@ -84,7 +96,7 @@
           The Code tab opens Hivey Code in a new tab.
         </p>
         <label><span data-i18n="opt.code.url">Code workshop URL</span>
-          <input type="text" id="codeAppUrl" placeholder="https://code.hivey.be" />
+          <input type="text" id="codeAppUrl" placeholder="https://app.hivey.be" />
         </label>
         <h3 style="margin:18px 0 4px" data-i18n="opt.judge0.h">Judge0 — compile &amp; run</h3>
         <p class="muted" data-i18n="opt.judge0.p">
@@ -117,7 +129,7 @@
           <select id="improvePreset"></select>
         </label>
         <label><span data-i18n="opt.lang.target">Translation target language</span>
-          <input type="text" id="targetLang" placeholder="French" />
+          <select id="targetLang"></select>
         </label>
       </section>
 
@@ -127,15 +139,56 @@
           <select id="theme"></select>
         </label>
         <p class="muted" data-i18n="opt.theme.note">Pick a theme, then optionally fine-tune individual colours on top of it.</p>
-        <div class="theme-colors">
-          <label class="colpick"><span data-i18n="opt.theme.accent">Accent</span><input type="color" id="col_accent" /></label>
-          <label class="colpick"><span data-i18n="opt.theme.accent2">Accent 2 (gradient)</span><input type="color" id="col_accent2" /></label>
-          <label class="colpick"><span data-i18n="opt.theme.bg">Background</span><input type="color" id="col_bg" /></label>
-          <label class="colpick"><span data-i18n="opt.theme.panel">Surface</span><input type="color" id="col_panel" /></label>
-          <label class="colpick"><span data-i18n="opt.theme.text">Text</span><input type="color" id="col_text" /></label>
+        <div class="color-group">
+          <span class="lbl-strong" data-i18n="opt.colors.base">Base colours</span>
+          <!-- Logical order: the canvas first (background → surface), then the text on it
+               (primary → secondary), then the brand accents (accent → its gradient end). -->
+          <div class="theme-colors">
+            <label class="colpick"><span data-i18n="opt.theme.bg">Background</span><input type="color" id="col_bg" /></label>
+            <label class="colpick"><span data-i18n="opt.theme.panel">Surface</span><input type="color" id="col_panel" /></label>
+            <label class="colpick"><span data-i18n="opt.theme.text">Text</span><input type="color" id="col_text" /></label>
+            <label class="colpick"><span data-i18n="opt.theme.muted">Secondary text</span><input type="color" id="col_muted" /></label>
+            <label class="colpick"><span data-i18n="opt.theme.accent">Accent</span><input type="color" id="col_accent" /></label>
+            <label class="colpick"><span data-i18n="opt.theme.accent2">Accent 2 (gradient)</span><input type="color" id="col_accent2" /></label>
+          </div>
+        </div>
+        <div class="color-group">
+          <span class="lbl-strong" data-i18n="opt.colors.elements">Element colours</span>
+          <!-- Logical order: top→bottom of the sidebar — top-bar icons (and their gradient
+               end), then the left menu/tab icons, then the reply area (outline, title contour). -->
+          <div class="theme-colors">
+            <label class="colpick"><span data-i18n="opt.colors.topIcon">Top bar icons</span><input type="color" id="topIconColor" /></label>
+            <label class="colpick"><span data-i18n="opt.colors.topIcon2">Top bar icons — 2nd (gradient)</span><input type="color" id="topIconColor2" /></label>
+            <label class="colpick"><span data-i18n="opt.layout.railIconColor">Menu / tab icons</span><input type="color" id="railIconColor" /></label>
+            <label class="colpick"><span data-i18n="opt.reply.borderColor">Reply outline / neon</span><input type="color" id="msgBorderColor" /></label>
+            <label class="colpick"><span data-i18n="opt.reply.contourColor">Title contour</span><input type="color" id="contourColor" /></label>
+          </div>
+          <label class="switch" style="margin-top:8px"><input type="checkbox" id="topIconGradient" /><span class="track"></span><span class="lbl" data-i18n="opt.colors.topIconGrad">Gradient on the top bar icons</span></label>
+          <button id="opacityBtn" class="ghost" type="button" style="margin-top:8px" data-i18n="opt.opacity.btn">⚙ Adjust opacity…</button>
+        </div>
+        <div class="color-group">
+          <span class="lbl-strong" data-i18n="opt.colors.gradient">Gradient (titles, logo, buttons)</span>
+          <label class="switch" style="margin-top:6px"><input type="checkbox" id="gradientOn" /><span class="track"></span><span class="lbl" data-i18n="opt.colors.gradientOn">Use the accent gradient</span></label>
+          <label class="rangepick"><span data-i18n="opt.colors.gradientSplit">Two-colour balance</span><input type="range" id="gradientSplit" min="0" max="100" step="5" /><span id="gradientSplitVal" class="muted"></span></label>
+          <p class="muted" data-i18n="opt.colors.gradientNote">Off = flat accent colour. The slider sets how aggressive the blend between the two accent colours is.</p>
+        </div>
+        <div class="color-group">
+          <span class="lbl-strong" data-i18n="opt.colors.aura">Background aura</span>
+          <div class="theme-colors">
+            <label class="colpick"><span data-i18n="opt.aura.color">Aura colour</span><input type="color" id="auraColor" /></label>
+          </div>
+          <label class="rangepick"><span data-i18n="opt.aura.opacity">Aura intensity</span><input type="range" id="auraOpacity" min="0" max="30" step="1" /><span id="auraOpacityVal" class="muted"></span></label>
+          <label class="rangepick"><span data-i18n="opt.aura.size">Aura size</span><input type="range" id="auraSize" min="300" max="1200" step="20" /><span id="auraSizeVal" class="muted"></span></label>
+          <p class="muted" data-i18n="opt.colors.auraNote">The two soft background glows. Also mirrored into Hivey Code.</p>
         </div>
         <button id="themeReset" class="ghost" data-i18n="opt.theme.reset">Reset colours to theme</button>
-        <label style="margin-top:14px"><span data-i18n="opt.layout.rail">Tabs menu position</span>
+        <h3 class="opt-subhead" data-i18n="opt.sub.typography">Typography</h3>
+        <label style="margin-top:6px"><span data-i18n="opt.font.label">Interface font</span>
+          <select id="uiFont"></select>
+        </label>
+        <p class="muted" data-i18n="opt.font.note">Pick a modern web font for the whole interface. Fonts are bundled in the extension, so they work offline.</p>
+        <h3 class="opt-subhead" data-i18n="opt.sub.menu">Menu &amp; layout</h3>
+        <label style="margin-top:6px"><span data-i18n="opt.layout.rail">Tabs menu position</span>
           <select id="railSide">
             <option value="left" data-i18n="opt.layout.left">Left (default)</option>
             <option value="right" data-i18n="opt.layout.right">Right</option>
@@ -148,6 +201,21 @@
           right »; Chrome's side panel is right-only). Tip: the ⤢ « open in a tab »
           button gives a full-screen view you can place anywhere.
         </p>
+        <details class="opt-dropdown" style="margin-top:14px">
+          <summary><span class="lbl-strong" data-i18n="opt.layout.tabs">Workspace icons to show</span><svg class="dd-caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <p class="muted" data-i18n="opt.layout.tabsNote">Untick a workspace to hide its icon from the tabs menu. You can also drag the icons in the sidebar to reorder them. Tip: right-click a tab in the sidebar to hide it.</p>
+          <div id="railTabsList" class="rail-tabs-list"></div>
+        </details>
+        <h3 class="opt-subhead" data-i18n="opt.sub.effects">Effects &amp; feedback</h3>
+        <div style="margin-top:2px">
+          <label class="switch" style="margin-top:4px"><input type="checkbox" id="msgBorderOn" /><span class="track"></span><span class="lbl" data-i18n="opt.reply.borderOn">Show an outline around replies</span></label>
+          <label class="switch"><input type="checkbox" id="textOutlineOn" /><span class="track"></span><span class="lbl" data-i18n="opt.reply.textOutline">Neon (title + icon)</span></label>
+          <label class="switch"><input type="checkbox" id="contourOn" /><span class="track"></span><span class="lbl" data-i18n="opt.reply.contour">Contour (title + icon)</span></label>
+          <label class="switch"><input type="checkbox" id="smoothStream" /><span class="track"></span><span class="lbl" data-i18n="opt.reply.smoothStream">Smooth streaming animation</span></label>
+          <label class="switch"><input type="checkbox" id="soundOnDone" /><span class="track"></span><span class="lbl" data-i18n="opt.reply.sound">Play a sound when the answer is ready</span></label>
+          <label class="switch"><input type="checkbox" id="tabDoneIndicator" /><span class="track"></span><span class="lbl" data-i18n="opt.reply.tabDone">Visual notification on tabs when the answer is ready</span></label>
+          <p class="muted" data-i18n="opt.reply.note2">Colours for these effects live in “Element colours” above. The eyedropper lets you pick any colour on screen.</p>
+        </div>
       </section>
 
       <section id="sec-security">
@@ -165,6 +233,7 @@
         <p class="muted" data-i18n-html="opt.behavior.reasoning">
           The reasoning is controlled directly from the sidebar.
         </p>
+        <label class="switch"><input type="checkbox" id="webDefault" /><span class="track"></span><span class="lbl" data-i18n-html="opt.behavior.webDefault"><b>Open Web chats by default</b>: start on the embedded Gemini/Claude/ChatGPT… (no API needed)</span></label>
         <label class="switch"><input type="checkbox" id="orFreeOnly" /><span class="track"></span><span class="lbl" data-i18n="opt.behavior.orFreeOnly">OpenRouter: show only free models (hide paid &amp; inaccessible)</span></label>
         <label class="switch"><input type="checkbox" id="webSearch" /><span class="track"></span><span class="lbl" data-i18n="opt.behavior.web">Web search on by default (Perplexity / OpenRouter / Claude)</span></label>
         <label class="switch"><input type="checkbox" id="includePageContext" /><span class="track"></span><span class="lbl" data-i18n="opt.behavior.page">The AI sees the current page (auto-injected in chat)</span></label>
@@ -186,11 +255,34 @@
         </label>
       </section>
 
+      <section id="sec-providers">
+        <h2 data-i18n="opt.providers.h">AI providers</h2>
+        <p class="muted" data-i18n-html="opt.providers.p">
+          Click « 🔐 Connect » on a provider to open its sign-in page.
+        </p>
+        <div id="providers"></div>
+      </section>
+
       <div class="actions">
         <span class="muted" data-i18n="opt.autosaveNote">Changes are saved automatically.</span>
         <span id="status" class="muted"></span>
       </div>
     </main>
+
+    <!-- Element colour opacity config popup -->
+    <div id="opacityModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <span class="lbl-strong" data-i18n="opt.opacity.h">Element colour opacity</span>
+          <button id="opacityClose" class="icon" type="button" title="Close">✕</button>
+        </div>
+        <label class="rangepick"><span data-i18n="opt.layout.railIconColor">Menu / tab icons</span><input type="range" id="op_railIcon" min="0" max="100" step="5" /><span class="op-val muted"></span></label>
+        <label class="rangepick"><span data-i18n="opt.opacity.neon">Neon colour</span><input type="range" id="op_msgBorder" min="0" max="100" step="5" /><span class="op-val muted"></span></label>
+        <label class="rangepick"><span data-i18n="opt.reply.contourColor">Title contour</span><input type="range" id="op_contour" min="0" max="100" step="5" /><span class="op-val muted"></span></label>
+        <p class="muted" data-i18n="opt.opacity.note">0% = fully transparent, 100% = solid. Changes apply live.</p>
+      </div>
+    </div>
+
     <script src="../../vendor/browser-polyfill.min.js"></script>
     <script type="module" src="options.js"></script>
   </body>

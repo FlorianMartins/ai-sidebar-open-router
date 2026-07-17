@@ -98,11 +98,18 @@ const reportedArtifacts = new Set();
 // Resize artifact iframes that report their own height.
 window.addEventListener("message", (e) => {
   const d = e.data;
-  if (d && d.__artifact) {
-    reportedArtifacts.add(d.id);
-    const f = document.querySelector(`iframe[data-aid="${d.id}"]`);
-    if (f) f.style.height = Math.min(d.h + 8, 900) + "px";
-  }
+  if (!d || !d.__artifact) return;
+  // Only trust messages that actually come from one of OUR artifact iframes. They're sandboxed with
+  // an OPAQUE origin (e.origin === "null"), so we can't match on origin — we match the source window
+  // against the live artifact frames instead. Without this, any frame/window with a reference could
+  // spoof {__artifact} to resize an iframe or suppress the "open in a tab" fallback.
+  let fromArtifact = false;
+  const frames = document.querySelectorAll("iframe.artifact-frame");
+  for (const fr of frames) { if (fr.contentWindow === e.source) { fromArtifact = true; break; } }
+  if (!fromArtifact) return;
+  reportedArtifacts.add(d.id);
+  const f = document.querySelector(`iframe[data-aid="${d.id}"]`);
+  if (f) f.style.height = Math.min(d.h + 8, 900) + "px";
 });
 
 export function configureMarkdown() {
@@ -158,11 +165,15 @@ function makeFrame(srcdoc, { sandbox, initialHeight }) {
     let sent = false;
     const send = () => {
       if (sent || !f.contentWindow) return;
+      // targetOrigin MUST stay "*": this frame is sandboxed with an OPAQUE origin, which can't be
+      // named as a targetOrigin. Safe here — the payload is (model-generated) artifact HTML, not a
+      // secret, and it's sent to a specific frame window we just created.
       try { f.contentWindow.postMessage({ type: "pg-artifact-render", html: srcdoc }, "*"); sent = true; } catch (_) {}
     };
     f.addEventListener("load", () => setTimeout(send, 20));
     const onReady = (e) => {
-      if (e.data && e.data.type === "pg-artifact-ready") { send(); window.removeEventListener("message", onReady); }
+      // Only react to the ready-signal from THIS artifact's own frame (not any window that can post).
+      if (e.source === f.contentWindow && e.data && e.data.type === "pg-artifact-ready") { send(); window.removeEventListener("message", onReady); }
     };
     window.addEventListener("message", onReady);
   }
@@ -333,7 +344,9 @@ function openArtifact(code, lang) {
   let tries = 0;
   const iv = setInterval(() => {
     tries++;
-    try { win.postMessage({ type: "pg-artifact-render", html: doc }, "*"); } catch (_) {}
+    // Real top-level window at a real origin → target it explicitly (not "*") so the artifact HTML
+    // can't leak to a different origin if the tab navigated away.
+    try { win.postMessage({ type: "pg-artifact-render", html: doc }, "https://hivey.be"); } catch (_) {}
     if (tries >= 25) clearInterval(iv);
   }, 180);
   setTimeout(() => clearInterval(iv), 5000);

@@ -26,7 +26,7 @@ echo "  node $(node --version) · npm $(npm --version 2>/dev/null || echo n/a)"
 # .build is a clean, curated copy of exactly what ships (no node_modules, no dev files).
 rm -rf .build
 mkdir -p .build
-rsync -a --delete src icons vendor .build/
+rsync -a --delete src icons vendor rules .build/
 cp LICENSE README.md manifest.json .build/
 
 FX_ZIP="ai-sidebar-${VER}-firefox.zip"

@@ -12,6 +12,24 @@
 
 import { PROVIDERS, baseUrlFor, modelFor, keyFor } from "./models.js";
 
+// Pull the real, resolvable source URLs out of web-plugin annotations (OpenRouter/OpenAI
+// `url_citation`). These are the ACTUAL search-result links — unlike URLs the model types into its
+// prose, which are frequently hallucinated or truncated (→ 404). Deduped, in first-seen order.
+function extractUrlCitations(annotations) {
+  const out = [];
+  const seen = new Set();
+  for (const a of annotations || []) {
+    if (!a) continue;
+    const uc = a.url_citation || (a.type === "url_citation" && a.url_citation) || (a.type === "url_citation" ? a : null);
+    const url = uc && uc.url;
+    if (typeof url === "string" && /^https?:\/\//.test(url) && !seen.has(url)) {
+      seen.add(url);
+      out.push({ url, title: (uc.title || "").slice(0, 200) });
+    }
+  }
+  return out;
+}
+
 const MAX_TOKENS = 4096;
 // Generous per-model OUTPUT cap for OpenRouter so big answers (full apps / artifacts /
 // long code) are NOT truncated. OpenRouter clamps this down to each model's real limit,
@@ -24,10 +42,33 @@ function orMaxTokens(model) {
   if (m.includes("deepseek") || m.includes("qwen") || m.includes("llama") || m.includes("nemotron")) return 12000;
   return 8000;
 }
-// Extended-thinking budget for Claude when the user turns Thinking ON. It's opt-in,
-// so we give it real room to reason (Claude-style deep thinking) rather than a token
-// sip. budget_tokens must stay below max_tokens (enforced via MAX_TOKENS + budget).
-const THINKING_BUDGET = 10000;
+// Extended-thinking budgets per reasoning LEVEL. Thinking has three levels now:
+//   "off"  — no reasoning at all (fast, cheap)
+//   "high" — deep, Claude-style reasoning
+//   "max"  — maximum reasoning budget (pushes the model as far as it goes)
+// budget_tokens must stay below max_tokens (enforced via MAX_TOKENS + budget below).
+const THINKING_BUDGET = 10000; // "high"
+const THINK_BUDGETS = { high: 10000, max: 28000 };
+
+// Normalise any incoming thinking value (boolean back-compat OR level string) to a level.
+function thinkLevelNorm(v) {
+  if (v === "high" || v === "max" || v === "off") return v;
+  return v ? "high" : "off";
+}
+
+// Open-weight model families (Llama, Qwen, DeepSeek, GLM, Mistral, Kimi, MiniMax, Nemotron,
+// Gemma…). OpenRouter spreads their traffic across many hosts that may serve degraded low-bit
+// quantizations (int4/int8) → quality varies host-to-host. For these we pin routing to
+// high-precision hosts. PROPRIETARY models (Claude/GPT/Gemini) have one official provider, so
+// they're already identical to the direct API and need no preference.
+const OPEN_WEIGHT_RE =
+  /^(z-ai|qwen|deepseek|meta-llama|mistralai|moonshotai|minimax|nvidia|nousresearch|cognitivecomputations|google\/gemma|microsoft\/phi)\b/i;
+function openWeightProviderPref(model) {
+  if (!OPEN_WEIGHT_RE.test(String(model || ""))) return undefined;
+  // fp8/fp16/bf16/fp32 are (near-)lossless for these models; "unknown" keeps untagged
+  // high-quality hosts available. Drops only the genuinely degraded int4/int8 hosts.
+  return { quantizations: ["fp8", "fp16", "bf16", "fp32", "unknown"] };
+}
 
 // Generic SSE reader: yields the payloads of "data:" lines.
 async function* sseData(response) {
@@ -56,25 +97,43 @@ async function ensureOk(response) {
   throw new Error(`HTTP ${response.status} — ${detail.slice(0, 500)}`);
 }
 
+// Auto-retry transient rate limits (429) and upstream hiccups (503). Free models get rate-limited
+// upstream for a second or two ("retry_after_seconds":1) — a short retry usually clears it, so the
+// right-click quick actions (translate/summarize…) keep working without a paid key.
+async function fetchWithRetry(url, opts, maxRetries = 3) {
+  let attempt = 0;
+  while (true) {
+    const res = await fetch(url, opts);
+    if ((res.status !== 429 && res.status !== 503) || attempt >= maxRetries || (opts.signal && opts.signal.aborted)) return res;
+    let waitMs = Math.min(4000, 700 * (attempt + 1));
+    const ra = res.headers.get("retry-after");
+    if (ra) { const s = parseInt(ra, 10); if (!Number.isNaN(s)) waitMs = Math.min(6000, Math.max(waitMs, (s || 1) * 1000)); }
+    try { await res.body?.cancel?.(); } catch (_) {}
+    await new Promise((r) => setTimeout(r, waitMs));
+    attempt++;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Anthropic (Claude) — native API, + extended thinking + server-side web search
 // ---------------------------------------------------------------------------
-function anthropicProvider({ apiKey, model, baseUrl, thinking, webSearch }) {
+function anthropicProvider({ apiKey, model, baseUrl, thinkLevel, webSearch }) {
   const url = baseUrl.replace(/\/$/, "") + "/messages";
   return {
     id: "anthropic",
 
     async runTurn({ system, history, tools, onText, onThink, signal }) {
-      const useThinking = !!thinking;
+      const lvl = thinkLevelNorm(thinkLevel);
+      const budget = lvl === "off" ? 0 : THINK_BUDGETS[lvl] || THINKING_BUDGET;
       const body = {
         model,
-        max_tokens: useThinking ? MAX_TOKENS + THINKING_BUDGET : MAX_TOKENS,
+        max_tokens: budget ? MAX_TOKENS + budget : MAX_TOKENS,
         system,
         messages: history,
         stream: true,
       };
-      if (useThinking) {
-        body.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
+      if (budget) {
+        body.thinking = { type: "enabled", budget_tokens: budget };
       }
       const toolList = [];
       if (tools && tools.length) {
@@ -174,12 +233,15 @@ function anthropicProvider({ apiKey, model, baseUrl, thinking, webSearch }) {
     formatToolResults(results) {
       return {
         role: "user",
-        content: results.map((r) => ({
-          type: "tool_result",
-          tool_use_id: r.id,
-          content: r.content,
-          is_error: !!r.isError,
-        })),
+        content: results.map((r) => {
+          const block = { type: "tool_result", tool_use_id: r.id, is_error: !!r.isError };
+          const m = r.image && /^data:([^;]+);base64,(.*)$/.exec(r.image);
+          // Anthropic supports image blocks inside a tool_result → the model actually SEES the screenshot.
+          block.content = m
+            ? [{ type: "image", source: { type: "base64", media_type: m[1], data: m[2] } }, { type: "text", text: r.content }]
+            : r.content;
+          return block;
+        }),
       };
     },
   };
@@ -189,20 +251,28 @@ function anthropicProvider({ apiKey, model, baseUrl, thinking, webSearch }) {
 // Generic OpenAI-compatible (OpenAI, OpenRouter, Gemini, Mistral, Groq,
 // DeepSeek, Ollama, LM Studio, self-hosted…)
 // ---------------------------------------------------------------------------
-function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinking }) {
+function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkLevel }) {
   const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
   const headers = { "content-type": "application/json" };
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  // Trim the key: a stray space/newline in a pasted or OAuth key makes OpenRouter reject it with a
+  // cryptic 401 "User not found".
+  if (apiKey && String(apiKey).trim()) headers.authorization = `Bearer ${String(apiKey).trim()}`;
   // OpenRouter attribution headers (ignored by other providers). They carry no
-  // user data — just the app name/repo — and are sent only to the chosen endpoint.
-  headers["HTTP-Referer"] = "https://github.com/FlorianMartins/firefox-ai-sidebar";
-  headers["X-Title"] = "Hivey AI";
+  // user data — just the app name/repo. CRITICAL: only send them to OpenRouter.
+  // On a LOCAL server (Ollama/LM Studio) these are non-simple request headers that
+  // force a CORS preflight (OPTIONS) which local servers reject → every local call
+  // fails. Restricting them to OpenRouter lets local requests stay "simple" CORS.
+  if (providerId === "openrouter") {
+    headers["HTTP-Referer"] = "https://github.com/FlorianMartins/firefox-ai-sidebar";
+    headers["X-Title"] = "Hivey AI";
+  }
 
   return {
     id: "openai",
 
     async runTurn({ system, history, tools, onText, onThink, signal }) {
       const messages = system ? [{ role: "system", content: system }, ...history] : [...history];
+      const lvl = thinkLevelNorm(thinkLevel);
       const body = { model, messages, stream: true };
       // Give answers room to be COMPLETE (full code/artifacts) — see orMaxTokens.
       if (providerId === "openrouter") body.max_tokens = orMaxTokens(model);
@@ -224,9 +294,23 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkin
       // OFF we explicitly DISABLE reasoning for a fast, cheap, near-instant answer — and
       // only enable it when the user actually asks for it.
       if (providerId === "openrouter") {
-        // Thinking is opt-in, so when it's on we ask for HIGH effort (deeper Claude-style
-        // reasoning) rather than medium; off = fully disabled for a fast, cheap answer.
-        body.reasoning = thinking ? { effort: "high" } : { enabled: false };
+        // Three reasoning levels: off = fully disabled (fast, cheap); high = deep Claude-style
+        // reasoning (effort "high"); max = the biggest reasoning budget we allow, pushing the
+        // model as far as it goes. For "max" we also raise the overall token cap so the long
+        // chain-of-thought doesn't eat into the final answer and truncate the code.
+        if (lvl === "max") {
+          body.reasoning = { max_tokens: THINK_BUDGETS.max };
+          body.max_tokens = Math.max(orMaxTokens(model), THINK_BUDGETS.max + 8000);
+        } else if (lvl === "high") {
+          body.reasoning = { effort: "high" };
+        }
+        // lvl === "off" → we DON'T send `reasoning:{enabled:false}`: some endpoints (R1,
+        // Qwen-thinking, Nemotron-reasoning, gpt-oss…) make reasoning MANDATORY and reject
+        // disabling it with "HTTP 400 — Reasoning is mandatory…". We simply omit the field;
+        // models that reason by default will reason (hidden, since the 💭 toggle is off).
+        // Quality: pin open-weight models to high-precision hosts (drop int4/int8 hosts).
+        const provPref = openWeightProviderPref(model);
+        if (provPref) body.provider = provPref;
       }
       if (tools && tools.length) {
         body.tools = tools.map((t) => ({
@@ -235,17 +319,31 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkin
         }));
       }
 
-      const response = await fetch(url, {
+      let response = await fetchWithRetry(url, {
         method: "POST",
         signal,
         headers,
         body: JSON.stringify(body),
       });
+      // Safety net: a few OpenRouter endpoints reject ANY reasoning override (mandatory or
+      // unsupported) with a 400 mentioning "reasoning". Retry once WITHOUT the reasoning field.
+      if (!response.ok && response.status === 400 && body.reasoning) {
+        let errText = "";
+        try { errText = await response.text(); } catch (_) {}
+        if (/reasoning/i.test(errText)) {
+          const retryBody = { ...body };
+          delete retryBody.reasoning;
+          response = await fetchWithRetry(url, { method: "POST", signal, headers, body: JSON.stringify(retryBody) });
+        } else {
+          throw new Error(`HTTP ${response.status} — ${errText.slice(0, 500)}`);
+        }
+      }
       await ensureOk(response);
 
       let text = "";
       let finishReason = null;
       const toolAcc = {};
+      const annotations = []; // web-plugin citations (url_citation) — the REAL, resolvable source URLs
 
       for await (const data of sseData(response)) {
         if (data === "[DONE]") break;
@@ -261,6 +359,10 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkin
         // Reasoning text (DeepSeek: reasoning_content ; OpenRouter: reasoning)
         const reason = delta.reasoning_content || delta.reasoning;
         if (reason) onThink && onThink(reason);
+        // OpenRouter web plugin returns url_citation annotations (real source URLs) on the delta
+        // and/or the final message — capture them so callers get resolvable links, not model-typed ones.
+        if (Array.isArray(delta.annotations)) annotations.push(...delta.annotations);
+        if (choice.message && Array.isArray(choice.message.annotations)) annotations.push(...choice.message.annotations);
         if (delta.content) {
           text += delta.content;
           onText && onText(delta.content);
@@ -299,15 +401,25 @@ function openaiProvider({ apiKey, model, baseUrl, webSearch, providerId, thinkin
         toolCalls,
         stopReason: finishReason === "tool_calls" ? "tool_use" : finishReason,
         text,
+        citations: extractUrlCitations(annotations),
       };
     },
 
     formatToolResults(results) {
-      return results.map((r) => ({
-        role: "tool",
-        tool_call_id: r.id,
-        content: r.content,
-      }));
+      const msgs = results.map((r) => ({ role: "tool", tool_call_id: r.id, content: r.content }));
+      // OpenAI tool messages can't carry images → append the screenshot(s) as a user message so
+      // vision-capable models (gpt-4o, Gemini, etc.) can see them.
+      const imgs = results.filter((r) => r.image);
+      if (imgs.length) {
+        msgs.push({
+          role: "user",
+          content: [
+            { type: "text", text: "(Screenshot(s) returned by the tool above — read them visually.)" },
+            ...imgs.map((r) => ({ type: "image_url", image_url: { url: r.image } })),
+          ],
+        });
+      }
+      return msgs;
     },
   };
 }
@@ -320,12 +432,16 @@ export function makeProvider(settings, opts = {}) {
   const model = modelFor(id, settings);
   const baseUrl = baseUrlFor(id, settings);
 
+  // Reasoning level: prefer the explicit `thinkLevel`, fall back to the legacy boolean
+  // `thinking`. Normalised to "off" | "high" | "max".
+  const lvl = thinkLevelNorm(opts.thinkLevel != null ? opts.thinkLevel : opts.thinking);
+
   if (meta.kind === "anthropic") {
     return anthropicProvider({
       apiKey,
       model,
       baseUrl,
-      thinking: !!opts.thinking && meta.supportsThinking,
+      thinkLevel: meta.supportsThinking ? lvl : "off",
       webSearch: !!opts.webSearch && meta.supportsWebSearch,
     });
   }
@@ -335,7 +451,7 @@ export function makeProvider(settings, opts = {}) {
     baseUrl,
     providerId: id,
     webSearch: !!opts.webSearch && !!meta.supportsWebSearch,
-    thinking: !!opts.thinking,
+    thinkLevel: lvl,
   });
 }
 
@@ -382,14 +498,29 @@ export async function listModels(providerId, settings) {
         ? { authorization: `Bearer ${apiKey}` }
         : {};
 
-  const res = await fetch(url, { headers });
-  await ensureOk(res);
-  const json = await res.json();
-  const data = json.data || json.models || [];
-  return data
-    .map((m) => m.id || m.name)
-    .filter(Boolean)
-    .sort();
+  try {
+    const res = await fetch(url, { headers });
+    await ensureOk(res);
+    const json = await res.json();
+    const data = json.data || json.models || [];
+    const ids = data.map((m) => m.id || m.name).filter(Boolean).sort();
+    if (ids.length) return ids;
+    // Empty list on a local server → fall through to the native endpoint below.
+    if (providerId === "ollama") throw new Error("empty");
+    return ids;
+  } catch (err) {
+    // Native Ollama fallback: older/proxied Ollama builds don't serve the
+    // OpenAI-compatible /v1/models. Its native /api/tags always lists installed
+    // models. Strip a trailing /v1 from the base URL to reach the native root.
+    if (providerId === "ollama") {
+      const root = baseUrl.replace(/\/$/, "").replace(/\/v1$/, "");
+      const res2 = await fetch(root + "/api/tags");
+      await ensureOk(res2);
+      const j2 = await res2.json();
+      return (j2.models || []).map((m) => m.name || m.model).filter(Boolean).sort();
+    }
+    throw err;
+  }
 }
 
 // -------- Audio transcription (Whisper-style /audio/transcriptions) ----------
@@ -417,9 +548,55 @@ export async function transcribeAudio(settings, blob) {
   return (json && (json.text || (json.results && json.results[0] && json.results[0].text))) || "";
 }
 
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => { const s = String(r.result || ""); resolve(s.slice(s.indexOf(",") + 1)); };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+// Dictation via a CHAT model that accepts AUDIO input (e.g. Gemini Flash on OpenRouter) — lets the
+// mic work with just the OpenRouter key (OpenRouter has no Whisper /audio/transcriptions endpoint).
+export async function transcribeAudioViaChat(settings, blob, modelId) {
+  const providerId = "openrouter";
+  const meta = PROVIDERS[providerId];
+  if (!meta) throw new Error("OpenRouter not available.");
+  const baseUrl = baseUrlFor(providerId, settings);
+  const apiKey = keyFor(providerId, settings);
+  if (!apiKey) throw new Error("OpenRouter API key missing.");
+  const type = (blob.type || "").toLowerCase();
+  const fmt = type.includes("ogg") ? "ogg" : type.includes("mp4") || type.includes("m4a") ? "mp4" : type.includes("wav") ? "wav" : type.includes("mp3") ? "mp3" : "webm";
+  const b64 = await blobToBase64(blob);
+  const body = {
+    model: modelId || "google/gemini-2.0-flash-001",
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: "Transcribe the following audio verbatim into text. Output ONLY the transcription — no preamble, no quotes, no commentary." },
+        { type: "input_audio", input_audio: { data: b64, format: fmt } },
+      ],
+    }],
+  };
+  const res = await fetch(baseUrl.replace(/\/$/, "") + "/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
+  });
+  await ensureOk(res);
+  const json = await res.json();
+  const msg = json && json.choices && json.choices[0] && json.choices[0].message;
+  const c = msg && msg.content;
+  if (typeof c === "string") return c.trim();
+  if (Array.isArray(c)) return c.map((p) => (p && (p.text || p.content)) || "").join("").trim();
+  return "";
+}
+
 // -------- Image generation (OpenAI-compatible /images/generations) ----------
 // Returns a list of data: (or http) URLs to display.
-export async function generateImage(settings, { prompt, size, signal, initImage }) {
+export async function generateImage(settings, { prompt, size, signal, initImage, initImages }) {
+  // Accept one image (initImage) or several (initImages, for "mix these images" requests).
+  const inputImages = (initImages && initImages.length) ? initImages : (initImage ? [initImage] : []);
   // size === "" (or unset) means: no fixed size — let the model use the dimensions
   // described in the prompt (and providers fall back to their own default).
   size = size != null ? size : (settings.imageSize || "");
@@ -440,12 +617,12 @@ export async function generateImage(settings, { prompt, size, signal, initImage 
   // INSTRUCTION inside the prompt.
   const model = settings.imageModel || (meta.imageModels && meta.imageModels[0][0]);
   if (meta.imageVia === "chat") {
-    return generateImageViaChat({ baseUrl, apiKey, providerId, model, prompt, size, signal, initImage });
+    return generateImageViaChat({ baseUrl, apiKey, providerId, model, prompt, size, signal, initImages: inputImages });
   }
 
-  // img2img / edit: when an input image is provided, use the /images/edits endpoint.
-  if (initImage) {
-    return generateImageEdit({ baseUrl, apiKey, model, prompt, size, signal, initImage });
+  // img2img / edit: when input image(s) are provided, use the /images/edits endpoint.
+  if (inputImages.length) {
+    return generateImageEdit({ baseUrl, apiKey, model, prompt, size, signal, initImages: inputImages });
   }
 
   const body = {
@@ -479,14 +656,18 @@ export async function generateImage(settings, { prompt, size, signal, initImage 
 // so the requested size is appended to the prompt as an instruction. Returns a
 // list of data: / http image URLs.
 // OpenAI-compatible image EDIT (img2img): multipart /images/edits with an input image.
-async function generateImageEdit({ baseUrl, apiKey, model, prompt, size, signal, initImage }) {
-  const blob = await (await fetch(initImage)).blob();
+async function generateImageEdit({ baseUrl, apiKey, model, prompt, size, signal, initImages }) {
+  const imgs = initImages || [];
   const fd = new FormData();
   fd.append("model", model);
   fd.append("prompt", prompt);
   fd.append("n", "1");
   if (size) fd.append("size", size);
-  fd.append("image", blob, "image.png");
+  // OpenAI-compatible edits accept several reference images via image[] (used to blend/mix).
+  for (let i = 0; i < imgs.length; i++) {
+    const blob = await (await fetch(imgs[i])).blob();
+    fd.append(imgs.length > 1 ? "image[]" : "image", blob, `image${i}.png`);
+  }
   const headers = {};
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
   const res = await fetch(baseUrl.replace(/\/$/, "") + "/images/edits", { method: "POST", signal, headers, body: fd });
@@ -501,7 +682,7 @@ async function generateImageEdit({ baseUrl, apiKey, model, prompt, size, signal,
   return out;
 }
 
-async function generateImageViaChat({ baseUrl, apiKey, providerId, model, prompt, size, signal, initImage }) {
+async function generateImageViaChat({ baseUrl, apiKey, providerId, model, prompt, size, signal, initImages }) {
   const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
   const headers = { "content-type": "application/json" };
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
@@ -510,13 +691,16 @@ async function generateImageViaChat({ baseUrl, apiKey, providerId, model, prompt
     headers["X-Title"] = "Hivey AI";
   }
   const sizeHint = size ? ` Target size/aspect: ${size} pixels.` : "";
-  // With an input image, send a multimodal message so the model EDITS it (img2img).
-  const content = initImage
-    ? [
-        { type: "text", text: `Edit this image as instructed: ${prompt}.${sizeHint}` },
-        { type: "image_url", image_url: { url: initImage } },
-      ]
-    : `Generate an image: ${prompt}.${sizeHint}`;
+  const imgs = initImages || [];
+  // With input image(s), send a multimodal message so the model EDITS/MIXES them (img2img).
+  const text = imgs.length > 1
+    ? `Combine/blend these ${imgs.length} images into a single new image as instructed: ${prompt}.${sizeHint}`
+    : imgs.length === 1
+      ? `Edit this image as instructed: ${prompt}.${sizeHint}`
+      : `Generate an image: ${prompt}.${sizeHint}`;
+  const content = imgs.length
+    ? [{ type: "text", text }, ...imgs.map((u) => ({ type: "image_url", image_url: { url: u } }))]
+    : text;
   const body = {
     model,
     modalities: ["image", "text"],

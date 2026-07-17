@@ -42,17 +42,28 @@ const FREE_PREF = [
   "nemotron", "gemini-2.0-flash", "gemma-3", "gemma-2",
   "mistral", "phi-4",
 ];
-// Notable PAID flagships to surface in the fallback (when present in the live list).
-const PAID_PREF = [
-  "anthropic/claude-opus-4", "anthropic/claude-sonnet-4", "anthropic/claude-3.7",
-  "openai/gpt-4o", "openai/o3", "openai/gpt-4.1",
-  "google/gemini-2.5-pro", "google/gemini-2.5-flash",
-  "deepseek/deepseek-r1", "deepseek/deepseek-chat",
-  "x-ai/grok", "mistralai/mistral-large", "qwen/qwen-max",
-];
+// PAID flagships: which VENDORS to surface, in display order — NEVER which versions.
+// Pinning versions (the old "openai/gpt-4o", "google/gemini-2.5-pro"…) meant a brand-new
+// release could never enter the list on its own: GPT-5.6, Claude Sonnet 5 and Grok 4.5 all
+// shipped while the fallback still advertised GPT-4o. We now take each vendor's NEWEST
+// flagships straight from the catalogue, so new releases are picked up with zero edits.
+const PAID_VENDORS = ["anthropic", "openai", "google", "x-ai", "deepseek", "qwen", "mistralai"];
+const PER_VENDOR = 3; // newest flagships kept per vendor
 const FREE_CAP = 18;
-const PAID_CAP = 10;
+const PAID_CAP = 21;
 const IMAGE_CAP = 8;
+
+// Small/cheap variants — kept, but never allowed to displace a vendor's flagship.
+// The token must start at a separator: without that, "mini" matches inside "ge-MINI-2.5-pro"
+// and every Gemini flagship gets demoted as a "small" model (it did — Gemma outranked Gemini).
+const SMALL = /(?:^|[-_/])(mini|nano|lite|small|tiny|haiku|8b|4b|3b|1b)\b/i;
+// Builds we never advertise as a default: experimental, pinned date snapshots ("…-20260420",
+// superseded by the moving id), agent-only / research-only SKUs.
+// "-fast" is a routing SKU of a model already listed — keep the canonical one in the fallback.
+const NOT_DEFAULT = /preview|-exp\b|experimental|multi-agent|deep-research|search-preview|:online|-20\d{6}\b|-fast$/i;
+// Open-weights families: they belong in the FREE section (that's how people use them), not
+// among a vendor's paid flagships — otherwise Gemma outranks Gemini in Google's own slot.
+const OPEN_WEIGHTS = /gemma|gpt-oss|llama|qwen[23]-|mistral-7b/i;
 
 function prettify(id) {
   const tail = id.split("/")[1] || id;
@@ -98,6 +109,79 @@ function renderPairs(pairs, indent) {
   return pairs.map(([id, label]) => `${indent}["${esc(id)}", "${esc(label)}"],`).join("\n");
 }
 
+// Newest-first, flagships before their small siblings (a vendor's "mini" must never hide
+// the model people actually came for).
+function byNewestFlagship(a, b) {
+  const fa = SMALL.test(a.id) ? 1 : 0, fb = SMALL.test(b.id) ? 1 : 0;
+  // On a tie (a vendor shipping "x" and "x-fast" the same day), the plain model is the default.
+  const xa = /-fast$/.test(a.id) ? 1 : 0, xb = /-fast$/.test(b.id) ? 1 : 0;
+  return fa - fb || (b.created || 0) - (a.created || 0) || xa - xb;
+}
+
+// The PAID fallback list: each vendor's newest flagships, vendors in PAID_VENDORS order.
+// Version-agnostic by construction — a GPT-5.7 or Claude Opus 5 lands here the day it ships.
+function pickFlagships(paid) {
+  const out = [];
+  for (const v of PAID_VENDORS) {
+    const mine = paid
+      .filter((m) => m.id.startsWith(v + "/") && !NOT_DEFAULT.test(m.id) && !OPEN_WEIGHTS.test(m.id))
+      .sort(byNewestFlagship)
+      .slice(0, PER_VENDOR);
+    out.push(...mine);
+  }
+  return out.slice(0, PAID_CAP);
+}
+
+// ---- NATIVE provider catalogues (OpenAI / Anthropic / Google / xAI direct APIs) --------
+// These lists used to be hand-written and rotted badly (OpenAI still offered "GPT-4o" long
+// after GPT-5.6 shipped). We now DERIVE them from the same OpenRouter catalogue — it carries
+// every vendor's releases with dates — and map the id back to the vendor's own naming.
+// The sidebar still queries each provider's live /models with the user's key at runtime and
+// PREFERS that; this is the out-of-the-box default (and the fallback when /models is blocked).
+const NATIVE = {
+  anthropic: {
+    vendor: "anthropic",
+    // OpenRouter "anthropic/claude-opus-4.8" → Anthropic API "claude-opus-4-8" (dots→dashes).
+    toNative: (id) => id.split("/")[1].replace(/\./g, "-"),
+    // "-fast" is an OpenRouter routing SKU, not an Anthropic model id.
+    skip: /-fast$/i,
+    cap: 5,
+  },
+  openai: {
+    vendor: "openai",
+    toNative: (id) => id.split("/")[1],
+    // gpt-oss = open-weights (not served by the OpenAI API); the rest aren't chat models.
+    skip: /gpt-oss|image|audio|realtime|tts|whisper|embed|moderation|codex/i,
+    cap: 6,
+  },
+  google: {
+    vendor: "google",
+    toNative: (id) => id.split("/")[1],
+    // Gemma is open-weights, not a Gemini-API model id.
+    skip: /gemma|lyria|image|embed|veo/i,
+    cap: 5,
+  },
+  xai: {
+    vendor: "x-ai",
+    toNative: (id) => id.split("/")[1],
+    skip: /image|build/i,
+    cap: 4,
+  },
+};
+
+// A vendor's newest models for its NATIVE dropdown, plus one cheap/fast option so the list
+// isn't all-flagship (people want a "mini" for throwaway work).
+function nativePairs(all, cfg) {
+  const pool = all.filter(
+    (m) => m.id.startsWith(cfg.vendor + "/") && isChat(m) && !isFree(m)
+      && !NOT_DEFAULT.test(m.id) && !cfg.skip.test(m.id),
+  );
+  const picked = pool.filter((m) => !SMALL.test(m.id)).sort(byNewestFlagship).slice(0, cfg.cap);
+  const cheap = pool.filter((m) => SMALL.test(m.id)).sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+  if (cheap && !picked.includes(cheap)) picked.push(cheap);
+  return picked.map((m) => [cfg.toNative(m.id), niceName(m) + (isReasoning(m.id) ? " (reasoning)" : "")]);
+}
+
 // Replace the lines BETWEEN two single-line markers (the marker lines stay intact).
 // Both markers must each sit on their own line, directly bracketing the array.
 function spliceMarkers(src, startMark, endMark, body) {
@@ -114,6 +198,16 @@ function idsInBlock(src, startMark, endMark) {
   if (s < 0 || e < 0) return [];
   const block = src.slice(s, e);
   return [...block.matchAll(/\["([^"]+)",/g)].map((m) => m[1]);
+}
+// Existing id → label inside a block. Used to PRESERVE the 🐝 Hivey rows' labels: they are
+// product naming (Pro / Smart / Free), not catalogue data, so a regeneration must not rename
+// what the user sees in the picker.
+function labelsInBlock(src, startMark, endMark) {
+  const s = src.indexOf(startMark), e = src.indexOf(endMark);
+  const map = new Map();
+  if (s < 0 || e < 0) return map;
+  for (const m of src.slice(s, e).matchAll(/\["([^"]+)",\s*"([^"]*)"\]/g)) map.set(m[1], m[2]);
+  return map;
 }
 
 // 🐝 Hivey auto-curation — KEY-FREE & automatic. For each role, bump the assigned model to
@@ -209,23 +303,23 @@ async function main() {
   const free = chat.filter(isFree);
   const paid = chat.filter((m) => !isFree(m));
 
-  free.sort((a, b) => rankBy(FREE_PREF, a.id) - rankBy(FREE_PREF, b.id) || a.id.localeCompare(b.id));
+  // Free: preferred families first, then NEWEST — so a fresh free model surfaces on its own.
+  free.sort((a, b) =>
+    rankBy(FREE_PREF, a.id) - rankBy(FREE_PREF, b.id) || (b.created || 0) - (a.created || 0) || a.id.localeCompare(b.id));
   const freePick = free.slice(0, FREE_CAP);
 
-  const paidPick = [];
-  for (const pref of PAID_PREF) {
-    const hit = paid.find((m) => m.id.toLowerCase().includes(pref) && !paidPick.includes(m));
-    if (hit) paidPick.push(hit);
-    if (paidPick.length >= PAID_CAP) break;
-  }
+  const paidPick = pickFlagships(paid);
 
   const chatPairs = [];
   // 🐝 Pin the Hivey smart-routing pseudo-models at the very top — they aren't real catalogue
-  // models, so they'd otherwise be stripped on every regeneration.
-  chatPairs.push(["hivey/free", "🎁 🐝 Hivey Free"]);
-  chatPairs.push(["hivey/low-cost", "🟢 🐝 Hivey Low-Cost"]);
-  chatPairs.push(["hivey/balanced", "🟡 🐝 Hivey"]);
-  chatPairs.push(["hivey/pro", "🟠 🐝 Hivey Pro"]);
+  // models, so they'd otherwise be stripped on every regeneration. Their LABELS are product
+  // naming: keep whatever models.js currently says (Pro / Smart / Free) instead of renaming them.
+  const keepLabels = labelsInBlock(
+    readFileSync(MODELS_FILE, "utf8"), "<models:openrouter:start>", "<models:openrouter:end>");
+  const hiveyRow = (id, fallback) => chatPairs.push([id, keepLabels.get(id) || fallback]);
+  hiveyRow("hivey/smart", "✨ Pro — top models per specialty + max reasoning");
+  hiveyRow("hivey/hybrid", "⚡ Smart — best quality/price (powerful + cheaper mix)");
+  hiveyRow("hivey/free", "🎁 Free — rotates the best free models");
   freePick.forEach((m, i) => {
     const r = isReasoning(m.id) ? " (reasoning)" : "";
     const rec = i === 0 ? " (recommended)" : "";
@@ -255,11 +349,25 @@ async function main() {
   out = spliceMarkers(out, "<models:openrouter:image:start>", "<models:openrouter:image:end>", imageBody);
   out = spliceMarkers(out, "<models:openrouter:start>", "<models:openrouter:end>", chatBody);
 
+  // ----- Native provider catalogues (direct APIs, not OpenRouter) -----
+  const beforeNative = [];
+  const afterNative = [];
+  for (const [pid, cfg] of Object.entries(NATIVE)) {
+    const pairs = nativePairs(all, cfg);
+    if (!pairs.length) { console.log(`(native ${pid}: no candidate — left untouched)`); continue; }
+    const s = `<models:${pid}:start>`, e = `<models:${pid}:end>`;
+    if (out.indexOf(s) < 0) { console.log(`(native ${pid}: markers absent — skipped)`); continue; }
+    beforeNative.push(...idsInBlock(out, s, e).map((id) => `${pid}:${id}`));
+    afterNative.push(...pairs.map(([id]) => `${pid}:${id}`));
+    out = spliceMarkers(out, s, e, "    models: [\n" + renderPairs(pairs, "      ") + "\n    ],");
+  }
+
   const changed = out !== src;
-  const newChatIds = chatPairs.map((p) => p[0]);
+  const newChatIds = [...chatPairs.map((p) => p[0]), ...afterNative];
   const newImgIds = imagePairs.map((p) => p[0]);
-  const added = [...newChatIds, ...newImgIds].filter((id) => ![...beforeChatIds, ...beforeImgIds].includes(id));
-  const removed = [...beforeChatIds, ...beforeImgIds].filter((id) => ![...newChatIds, ...newImgIds].includes(id));
+  const beforeAll = [...beforeChatIds, ...beforeImgIds, ...beforeNative];
+  const added = [...newChatIds, ...newImgIds].filter((id) => !beforeAll.includes(id));
+  const removed = beforeAll.filter((id) => ![...newChatIds, ...newImgIds].includes(id));
 
   console.log(`OpenRouter catalogue: ${all.length} models (${free.length} free).`);
   console.log(`Curated: ${chatPairs.length} chat + ${imagePairs.length} image.`);

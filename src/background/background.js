@@ -14,13 +14,16 @@ import "./compat.js";
 import { getSettings, setSettings } from "../lib/storage.js";
 import { setLang, t } from "../lib/i18n.js";
 import { makeProvider } from "../lib/providers.js";
-import { keyFor, WRITING_PRESETS } from "../lib/models.js";
+import { keyFor, WRITING_PRESETS, isHivey, hiveyTierFor } from "../lib/models.js";
 import { buildSystemPrompt, runConversation } from "../lib/agent.js";
 import { effectivePalette } from "../lib/theme.js";
 
 // Context-menu items. Contexts are fixed; titles are localised (English default,
 // French when the user picks uiLang="fr" in Settings).
 const MENU_ITEMS = [
+  // Explicit parent → the submenu shows "Hivey AI" instead of Firefox's auto label (the full
+  // extension name). All other items nest under it via parentId (set in buildMenus).
+  { id: "ai-root", contexts: ["all"] },
   { id: "ai-open", contexts: ["all"] },
   { id: "ai-summarize-page", contexts: ["page"] },
   { id: "ai-translate-page", contexts: ["page"] },
@@ -29,27 +32,44 @@ const MENU_ITEMS = [
   { id: "ai-translate-sel", contexts: ["selection"] },
   { id: "ai-improve", contexts: ["selection"] },
   { id: "ai-reply", contexts: ["selection", "editable"] },
+  { id: "ai-image-context", contexts: ["image"] },
+  { id: "ai-pdf-context", contexts: ["link"], targetUrlPatterns: ["*://*/*.pdf", "*://*/*.pdf?*", "*://*/*.PDF"] },
+  { id: "ai-security-sel", contexts: ["selection"] },
+  { id: "ai-security-page", contexts: ["page"] },
+  { id: "ai-security-link", contexts: ["link"] },
 ];
 const MENU_TITLES = {
   en: {
-    "ai-open": "Open Hivey AI",
-    "ai-summarize-page": "Summarize the page",
-    "ai-translate-page": "Translate the page",
-    "ai-summarize-sel": "Summarize the selection",
-    "ai-explain": "Explain the selection",
-    "ai-translate-sel": "Translate the selection",
-    "ai-improve": "Improve the selected text",
-    "ai-reply": "Draft a reply to this text",
+    "ai-root": "Hivey AI",
+    "ai-open": "🐝 Open Hivey AI",
+    "ai-summarize-page": "📝 Summarize the page",
+    "ai-translate-page": "🌐 Translate the page",
+    "ai-summarize-sel": "🗒️ Summarize the selection",
+    "ai-explain": "💡 Explain the selection",
+    "ai-translate-sel": "🔤 Translate the selection",
+    "ai-improve": "✨ Improve the selected text",
+    "ai-reply": "↩️ Draft a reply to this text",
+    "ai-image-context": "🖼️ Use this image in Hivey AI",
+    "ai-pdf-context": "📕 Read this PDF in Hivey AI",
+    "ai-security-sel": "🛡️ Analyze for threats (defensive)",
+    "ai-security-page": "🛡️ Security analysis of this page",
+    "ai-security-link": "🛡️ Check this link (phishing / safety)",
   },
   fr: {
-    "ai-open": "Ouvrir Hivey AI",
-    "ai-summarize-page": "Résumer la page",
-    "ai-translate-page": "Traduire la page",
-    "ai-summarize-sel": "Résumer la sélection",
-    "ai-explain": "Expliquer la sélection",
-    "ai-translate-sel": "Traduire la sélection",
-    "ai-improve": "Améliorer le texte sélectionné",
-    "ai-reply": "Rédiger une réponse à ce texte",
+    "ai-root": "Hivey AI",
+    "ai-open": "🐝 Ouvrir Hivey AI",
+    "ai-summarize-page": "📝 Résumer la page",
+    "ai-translate-page": "🌐 Traduire la page",
+    "ai-summarize-sel": "🗒️ Résumer la sélection",
+    "ai-explain": "💡 Expliquer la sélection",
+    "ai-translate-sel": "🔤 Traduire la sélection",
+    "ai-improve": "✨ Améliorer le texte sélectionné",
+    "ai-reply": "↩️ Rédiger une réponse à ce texte",
+    "ai-image-context": "🖼️ Utiliser cette image dans Hivey AI",
+    "ai-pdf-context": "📕 Lire ce PDF dans Hivey AI",
+    "ai-security-sel": "🛡️ Analyser la menace (défensif)",
+    "ai-security-page": "🛡️ Analyse sécurité de la page",
+    "ai-security-link": "🛡️ Vérifier ce lien (phishing / sécurité)",
   },
 };
 
@@ -62,7 +82,10 @@ async function buildMenus() {
   const titles = MENU_TITLES[lang] || MENU_TITLES.en;
   await browser.contextMenus.removeAll();
   for (const m of MENU_ITEMS) {
-    browser.contextMenus.create({ id: m.id, title: titles[m.id], contexts: m.contexts });
+    const spec = { id: m.id, title: titles[m.id], contexts: m.contexts };
+    if (m.id !== "ai-root") spec.parentId = "ai-root"; // nest everything under the "Hivey AI" parent
+    if (m.targetUrlPatterns) spec.targetUrlPatterns = m.targetUrlPatterns;
+    browser.contextMenus.create(spec);
   }
 }
 
@@ -76,6 +99,9 @@ const MENU_ACTION = {
   "ai-translate-sel": "translate",
   "ai-improve": "improve",
   "ai-reply": "reply",
+  "ai-security-sel": "security",
+  "ai-security-page": "security-page",
+  "ai-security-link": "security",
 };
 
 // Selection actions that run as a floating ON-PAGE bubble (no sidebar).
@@ -137,6 +163,24 @@ browser.storage.onChanged.addListener((changes, area) => {
 browser.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "ai-open") {
     openSidebar(tab);
+    return;
+  }
+  // Right-click an image → open the sidebar and hand it the image to use as context (the
+  // sidebar fetches the URL and adds it as an attachment on the Image tab).
+  if (info.menuItemId === "ai-image-context") {
+    openSidebar(tab);
+    browser.storage.local.set({ pendingImage: { srcUrl: info.srcUrl || "", ts: Date.now() } });
+    return;
+  }
+  // Right-click a PDF link → open the sidebar and hand it the PDF to read on the PDF tab.
+  if (info.menuItemId === "ai-pdf-context") {
+    openSidebar(tab);
+    browser.storage.local.set({ pendingPdf: { url: info.linkUrl || info.srcUrl || "", ts: Date.now() } });
+    return;
+  }
+  // Right-click a link → defensive check of that URL (phishing/safety) on the Security tab.
+  if (info.menuItemId === "ai-security-link") {
+    fallbackToSidebar(tab, "security", info.linkUrl || info.srcUrl || "");
     return;
   }
   const action = MENU_ACTION[info.menuItemId];
@@ -275,31 +319,67 @@ async function runBubbleModel() {
   send({ type: "bubble_reset" });
 
   let raw = "";
-  try {
-    const provider = makeProvider(settings, { thinking: false, webSearch: false });
-    const system = buildSystemPrompt({
-      agentMode: false,
-      targetLang: lang,
-      responseLang: settings.responseLang,
-      mode: action === "translate" ? "translate" : action === "improve" ? "improve" : "chat",
-      blockPayments: settings.blockPayments,
-      artifacts: false, // the on-page bubble shows plain text, not a live artifact frame
-    });
-    await runConversation({
-      provider, system,
-      history: [{ role: "user", content: req.content }],
-      tools: [],
-      onText: (d) => { raw += d; send({ type: "bubble_delta", text: d }); },
-      onThink: () => {},
-      signal: bubbleAbort.signal,
-    });
-    // The content script renders the final markdown itself (the SW has no DOM).
-    send({ type: "bubble_done", raw });
-  } catch (e) {
-    if (!(e && e.name === "AbortError")) {
-      send({ type: "bubble_error", error: (e && e.message) ? e.message : String(e) });
+  // Resolve a 🐝 Hivey pseudo-model (e.g. hivey/hybrid) to a REAL model for this task — the bubble
+  // path doesn't go through the chat dispatcher, so we'd otherwise send an invalid model id → 400.
+  const bubbleMode = action === "translate" ? "translate" : action === "improve" ? "improve" : "chat";
+  let effSettings = settings;
+  const chosen = settings.models && settings.models[settings.provider];
+  if (isHivey(chosen)) {
+    const sel = String(hiveyTierFor(chosen, bubbleMode, text) || "");
+    const bar = sel.indexOf("|");
+    const provId = bar > 0 ? sel.slice(0, bar) : settings.provider;
+    const modId = bar > 0 ? sel.slice(bar + 1) : sel;
+    if (modId && !isHivey(modId)) {
+      effSettings = { ...settings, provider: provId, models: { ...settings.models, [provId]: modId } };
     }
   }
+  const system = buildSystemPrompt({
+    agentMode: false, targetLang: lang, responseLang: settings.responseLang,
+    mode: bubbleMode, blockPayments: settings.blockPayments, artifacts: false,
+  });
+
+  // Build the list of models to try. On a FREE model via OpenRouter, rotate through a few free
+  // fallbacks when one is upstream rate-limited (429) — so the right-click quick actions keep working
+  // without a paid key (that was the "translate/summarize don't work on Free" breakage).
+  const FREE_FALLBACKS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-4-31b-it:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "openai/gpt-oss-20b:free",
+  ];
+  const primary = String((effSettings.models && effSettings.models[effSettings.provider]) || "");
+  // Rotate free fallbacks ONLY when the RESOLVED model is genuinely free (":free"). A chosen provider
+  // model or a paid Hivey tier is used AS-IS — the quick actions respect the user's model choice.
+  const isFreeOR = effSettings.provider === "openrouter" && /:free$/i.test(primary);
+  const candidates = isFreeOR ? [...new Set([primary || FREE_FALLBACKS[0], ...FREE_FALLBACKS])] : [primary];
+
+  let lastErr = null;
+  for (const modelId of candidates) {
+    if (bubbleAbort.signal.aborted) return;
+    raw = "";
+    send({ type: "bubble_reset" });
+    try {
+      const runSettings = { ...effSettings, models: { ...effSettings.models, [effSettings.provider]: modelId } };
+      const provider = makeProvider(runSettings, { thinking: false, webSearch: false });
+      await runConversation({
+        provider, system,
+        history: [{ role: "user", content: req.content }],
+        tools: [],
+        onText: (d) => { raw += d; send({ type: "bubble_delta", text: d }); },
+        onThink: () => {},
+        signal: bubbleAbort.signal,
+      });
+      send({ type: "bubble_done", raw });
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      lastErr = e;
+      const rl = /\b429\b|rate.?limit|temporarily rate-limited|quota/i.test(String((e && e.message) || ""));
+      if (!rl || raw) break; // non-rate-limit error, or we already streamed some text → stop rotating
+    }
+  }
+  send({ type: "bubble_error", error: (lastErr && lastErr.message) ? lastErr.message : String(lastErr || "failed") });
 }
 
 // The on-page bubble asks for a re-run when the user changes its language / style.
@@ -310,4 +390,229 @@ browser.runtime.onMessage.addListener((msg) => {
     if (msg.preset) await setSettings({ improvePreset: msg.preset });
     runBubbleModel();
   })();
+});
+
+// Hivey Code (app.hivey.be) asks — via the page bridge — to open the sidebar's own settings, so
+// the two products share one settings page (theme/colours/providers).
+browser.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.type !== "hivey-open-options") return;
+  try { browser.runtime.openOptionsPage(); } catch (_) {}
+});
+
+// ----- 🔔 Page-change monitoring --------------------------------------------
+// Watch a set of URLs and notify the user when a page's visible text changes (price / availability
+// watch). All local: we fetch the page from the background on a periodic alarm, hash its text, and
+// compare to the last hash. No third-party service.
+const WATCH_KEY = "pageWatches";
+
+function textHash(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return String(h >>> 0);
+}
+function stripHtml(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200000);
+}
+async function getWatches() {
+  const { [WATCH_KEY]: list } = await browser.storage.local.get(WATCH_KEY);
+  return Array.isArray(list) ? list : [];
+}
+async function setWatches(list) {
+  await browser.storage.local.set({ [WATCH_KEY]: list });
+}
+async function checkWatches() {
+  const list = await getWatches();
+  if (!list.length) return;
+  let changed = false;
+  for (const w of list) {
+    try {
+      const res = await fetch(w.url, { credentials: "omit", cache: "no-store" });
+      if (!res.ok) continue;
+      const hash = textHash(stripHtml(await res.text()));
+      if (w.hash && hash !== w.hash) {
+        w.changedAt = Date.now();
+        try {
+          browser.notifications.create("hiveyWatch:" + w.url, {
+            type: "basic",
+            iconUrl: browser.runtime.getURL("icons/icon.svg"),
+            title: "Page changed",
+            message: (w.title || w.url).slice(0, 80),
+          });
+        } catch (_) {}
+      }
+      if (w.hash !== hash) { w.hash = hash; w.checkedAt = Date.now(); changed = true; }
+    } catch (_) {
+      // unreachable page — skip this round
+    }
+  }
+  if (changed) await setWatches(list);
+}
+
+try {
+  if (browser.alarms) {
+    browser.alarms.create("hiveyPageWatch", { periodInMinutes: 15 });
+    browser.alarms.onAlarm.addListener((a) => { if (a && a.name === "hiveyPageWatch") checkWatches(); });
+  }
+} catch (_) {}
+
+// Clicking a change notification opens the page.
+try {
+  if (browser.notifications && browser.notifications.onClicked) {
+    browser.notifications.onClicked.addListener((id) => {
+      if (id && id.startsWith("hiveyWatch:")) {
+        const url = id.slice("hiveyWatch:".length);
+        try { browser.tabs.create({ url }); } catch (_) {}
+        try { browser.notifications.clear(id); } catch (_) {}
+      }
+    });
+  }
+} catch (_) {}
+
+// 🛡 Security-header analysis of a URL. Extension fetches (with host permission) expose ALL response
+// headers, so we can inspect CSP / HSTS / X-Frame-Options / etc. — 100% defensive, read-only.
+const SEC_HEADER_CHECKS = [
+  { key: "content-security-policy", label: "Content-Security-Policy", why: "Mitigates XSS & data injection by restricting sources." },
+  { key: "strict-transport-security", label: "Strict-Transport-Security (HSTS)", why: "Forces HTTPS, blocks protocol-downgrade attacks." },
+  { key: "x-content-type-options", label: "X-Content-Type-Options", why: "Stops MIME-type sniffing (should be 'nosniff')." },
+  { key: "x-frame-options", label: "X-Frame-Options", why: "Prevents clickjacking (or use CSP frame-ancestors)." },
+  { key: "referrer-policy", label: "Referrer-Policy", why: "Limits referrer leakage to third parties." },
+  { key: "permissions-policy", label: "Permissions-Policy", why: "Restricts powerful browser features (camera, geolocation…)." },
+  { key: "cross-origin-opener-policy", label: "Cross-Origin-Opener-Policy", why: "Isolates the browsing context (Spectre-class defense)." },
+];
+async function analyzeHeaders(url) {
+  const res = await fetch(url, { credentials: "omit", cache: "no-store", redirect: "follow" });
+  const headers = {};
+  res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
+  const checks = SEC_HEADER_CHECKS.map((c) => ({
+    label: c.label,
+    present: headers[c.key] != null,
+    value: headers[c.key] || "",
+    why: c.why,
+  }));
+  const score = Math.round((checks.filter((c) => c.present).length / checks.length) * 100);
+  return { url: res.url || url, status: res.status, score, checks, server: headers["server"] || "" };
+}
+
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "headers:analyze" || !msg.url) return;
+  analyzeHeaders(msg.url)
+    .then((r) => sendResponse({ ok: true, ...r }))
+    .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+  return true;
+});
+
+// YouTube transcript fallback: fetch the watch page FRESH by video id (SPA-proof, avoids the
+// content script's stale inline ytInitialPlayerResponse) and pull the caption track. `hl=en` +
+// `bpctr` help skip the EU consent interstitial. Used by the universal-summary "Summarize" action.
+function bgExtractJsonObject(str, startIdx) {
+  let depth = 0, inStr = false, esc = false;
+  for (let i = startIdx; i < str.length; i++) {
+    const ch = str[i];
+    if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') inStr = false; }
+    else if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") { depth--; if (depth === 0) return str.slice(startIdx, i + 1); }
+  }
+  return null;
+}
+async function ytTranscript(videoId) {
+  const html = await (await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&hl=en&bpctr=9999999999&has_verified=1`, { credentials: "omit", cache: "no-store" })).text();
+  const i = html.indexOf("ytInitialPlayerResponse");
+  if (i < 0) return { ok: false, error: "no_player" };
+  const brace = html.indexOf("{", i);
+  const json = brace >= 0 ? bgExtractJsonObject(html, brace) : null;
+  let player;
+  try { player = JSON.parse(json); } catch (_) { return { ok: false, error: "parse" }; }
+  const tl = player && player.captions && player.captions.playerCaptionsTracklistRenderer;
+  const tracks = tl && tl.captionTracks;
+  if (!tracks || !tracks.length) return { ok: false, error: "no_captions" };
+  const track = tracks.find((t) => (t.languageCode || "").startsWith("en")) || tracks[0];
+  if (!track || !track.baseUrl) return { ok: false, error: "no_captions" };
+  const url = track.baseUrl + (track.baseUrl.includes("?") ? "&" : "?") + "fmt=json3";
+  const data = await (await fetch(url, { credentials: "omit", cache: "no-store" })).json();
+  const segments = (data.events || []).filter((e) => e.segs).map((e) => ({
+    start: Math.round((e.tStartMs || 0) / 1000),
+    text: e.segs.map((x) => x.utf8 || "").join("").replace(/\s+/g, " ").trim(),
+  })).filter((s) => s.text);
+  if (!segments.length) return { ok: false, error: "empty" };
+  return { ok: true, videoId, lang: track.languageCode, segments, title: (player.videoDetails && player.videoDetails.title) || "" };
+}
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "yt:transcript" || !msg.videoId) return;
+  ytTranscript(msg.videoId)
+    .then((r) => sendResponse(r))
+    .catch((e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+  return true;
+});
+
+// DeepSearch source reader: fetch an arbitrary URL and return its plain text. Runs in the
+// background (extension context) so it bypasses CORS via the <all_urls> host permission. Only
+// static HTML is read (no JS execution); credentials are omitted. Used to deep-read the best
+// sources found during a DeepSearch run.
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "fetch:page" || !msg.url) return;
+  (async () => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
+      const res = await fetch(msg.url, { credentials: "omit", cache: "no-store", redirect: "follow", signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return sendResponse({ ok: false, error: "HTTP " + res.status });
+      const ct = res.headers.get("content-type") || "";
+      const raw = await res.text();
+      const text = /text\/html|application\/xhtml/i.test(ct) ? stripHtml(raw) : raw.replace(/\s+/g, " ").trim().slice(0, 200000);
+      sendResponse({ ok: true, url: res.url || msg.url, text });
+    } catch (e) {
+      sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  })();
+  return true;
+});
+
+// Watch / unwatch / list, driven from the sidebar.
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || !msg.type || !msg.type.startsWith("watch:")) return;
+  (async () => {
+    const list = await getWatches();
+    if (msg.type === "watch:add" && msg.url) {
+      if (!list.some((w) => w.url === msg.url)) {
+        list.push({ url: msg.url, title: msg.title || msg.url, addedAt: Date.now(), hash: "" });
+        await setWatches(list);
+        checkWatches(); // seed the initial hash right away
+      }
+      sendResponse({ ok: true, watching: true });
+    } else if (msg.type === "watch:remove" && msg.url) {
+      await setWatches(list.filter((w) => w.url !== msg.url));
+      sendResponse({ ok: true, watching: false });
+    } else if (msg.type === "watch:list") {
+      sendResponse({ ok: true, watches: list });
+    } else {
+      sendResponse({ ok: false });
+    }
+  })();
+  return true; // async response
+});
+
+// The document_start frame script asks, on EVERY page load, whether its tab is currently under
+// agent control — so it can redraw the control frame instantly without waiting for the sidebar.
+// The sidebar keeps the set of glowed tabs (+ theme accents) in storage.session.
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "agent_glow_query") return;
+  const tabId = sender && sender.tab && sender.tab.id;
+  if (tabId == null) { sendResponse({ on: false }); return true; }
+  browser.storage.session
+    .get("hiveyGlowTabs")
+    .then((d) => {
+      const map = (d && d.hiveyGlowTabs) || {};
+      const e = map[tabId];
+      sendResponse(e ? { on: true, accent: e.accent, accent2: e.accent2 } : { on: false });
+    })
+    .catch(() => sendResponse({ on: false }));
+  return true; // async sendResponse
 });

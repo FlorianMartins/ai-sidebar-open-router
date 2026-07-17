@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Hivey AI — IA multi-fournisseurs",
-  "version": "1.55.1",
+  "version": "2.174.0",
   "description": "Sidebar IA open-source type Sider : branchez votre IA (Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek, xAI, Perplexity, Together, Fireworks, OpenRouter, Ollama/LM Studio local…). Liste les modèles réellement dispo selon votre clé/compte. Lit page et onglets, résume, traduit, améliore (presets), compare un modèle à un autre, artifacts interactifs, images, capture de zone, thèmes, agent (avec garde-fous). Historique local, 100% BYOK.",
   "author": "Florian Martins",
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "browser_specific_settings": {
     "gecko": {
@@ -29,8 +29,20 @@
     "scripting",
     "contextMenus",
     "clipboardWrite",
-    "identity"
+    "identity",
+    "declarativeNetRequest",
+    "alarms",
+    "notifications"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "frame_unblock",
+        "enabled": true,
+        "path": "rules/frame-unblock.json"
+      }
+    ]
+  },
   "host_permissions": [
     "https://api.anthropic.com/*",
     "https://api.openai.com/*",
@@ -39,9 +51,6 @@
     "https://api.mistral.ai/*",
     "https://api.groq.com/*",
     "https://api.deepseek.com/*",
-    "<all_urls>"
-  ],
-  "optional_host_permissions": [
     "<all_urls>"
   ],
   "background": {
@@ -68,11 +77,53 @@
         "<all_urls>"
       ],
       "js": [
+        "src/content/agent-frame.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
         "vendor/browser-polyfill.min.js",
         "src/content/content.js"
       ],
       "run_at": "document_idle",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "https://app.hivey.be/*",
+        "https://code.hivey.be/*"
+      ],
+      "js": [
+        "vendor/browser-polyfill.min.js",
+        "src/content/hivey-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*",
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://chat.mistral.ai/*",
+        "https://chat.deepseek.com/*",
+        "https://chat.qwen.ai/*",
+        "https://www.kimi.com/*",
+        "https://chat.z.ai/*",
+        "https://huggingface.co/*"
+      ],
+      "js": [
+        "src/content/webchat-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "commands": {

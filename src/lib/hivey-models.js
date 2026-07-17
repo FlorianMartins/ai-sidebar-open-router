@@ -1,82 +1,66 @@
-// 🐝 Hivey model assignments — the OpenRouter model behind each tier/role of each variant.
+// 🐝 Hivey model assignments — the OpenRouter model behind each tier/role.
 //
-// AUTO-CURATED by scripts/update-models.mjs (daily, after the catalogue refresh): an LLM
-// curator re-picks the best AVAILABLE model per role/budget when a clearly better one ships
-// (it knows model benchmarks/reputation). Every id is validated against the live catalogue,
-// so a removed model is never kept. Hand-edits here are allowed but may be overwritten by
-// the next curation — change the curation prompt in update-models.mjs for lasting tweaks.
+// Hivey now has a SINGLE variant: "hivey/free". It maps each capability role to a strong
+// FREE OpenRouter model, and the sidebar auto-rotates to another free model when one hits a
+// rate-limit / runs out of free credits. The paid composite variants (low-cost/balanced/pro)
+// were removed: routing one request across several paid APIs cost more for a worse result,
+// and all the good "technologies" (artifacts, Thinking, web, verify) now work on ANY model.
+//
+// AUTO-CURATED by scripts/update-models.mjs (daily): each role is bumped to a newer free
+// model of the same family when one ships. Every id is validated against the live catalogue.
 //
 // <hivey:start>
 export const HIVEY_MODELS = {
+  "hivey/smart": {
+    "router": "anthropic/claude-haiku-4.5",
+    "utility": "anthropic/claude-haiku-4.5",
+    "light": "anthropic/claude-haiku-4.5",
+    "chat": "anthropic/claude-opus-4.8",
+    "code": "anthropic/claude-opus-4.8",
+    "test": "qwen/qwen3-coder",
+    "reasoning": "anthropic/claude-opus-4.8",
+    "math": "anthropic/claude-opus-4.8",
+    "creative": "anthropic/claude-opus-4.8",
+    "extract": "anthropic/claude-haiku-4.5",
+    "vision": "anthropic/claude-sonnet-5",
+    "verify": "anthropic/claude-sonnet-5",
+    "agent": "anthropic/claude-opus-4.8",
+    "search": "anthropic/claude-sonnet-5",
+    "image": "google/gemini-3-pro-image"
+  },
+  "hivey/hybrid": {
+    "router": "anthropic/claude-haiku-4.5",
+    "utility": "anthropic/claude-haiku-4.5",
+    "light": "anthropic/claude-haiku-4.5",
+    "chat": "anthropic/claude-haiku-4.5",
+    "code": "anthropic/claude-sonnet-5",
+    "test": "qwen/qwen3-coder",
+    "reasoning": "anthropic/claude-sonnet-5",
+    "math": "anthropic/claude-sonnet-5",
+    "creative": "anthropic/claude-haiku-4.5",
+    "extract": "anthropic/claude-haiku-4.5",
+    "vision": "anthropic/claude-haiku-4.5",
+    "verify": "anthropic/claude-haiku-4.5",
+    "agent": "anthropic/claude-sonnet-5",
+    "search": "anthropic/claude-haiku-4.5",
+    "image": "google/gemini-3.1-flash-image"
+  },
   "hivey/free": {
     "router": "meta-llama/llama-3.3-70b-instruct:free",
     "utility": "meta-llama/llama-3.3-70b-instruct:free",
     "light": "meta-llama/llama-3.3-70b-instruct:free",
-    "chat": "meta-llama/llama-3.3-70b-instruct:free",
+    "chat": "qwen/qwen3-next-80b-a3b-instruct:free",
     "code": "qwen/qwen3-coder:free",
     "test": "qwen/qwen3-coder:free",
     "reasoning": "nvidia/nemotron-3-super-120b-a12b:free",
-    "math": "qwen/qwq-32b:free",
-    "creative": "meta-llama/llama-3.3-70b-instruct:free",
+    "math": "nvidia/nemotron-3-super-120b-a12b:free",
+    "creative": "qwen/qwen3-next-80b-a3b-instruct:free",
     "extract": "meta-llama/llama-3.3-70b-instruct:free",
     "vision": "nvidia/nemotron-nano-12b-v2-vl:free",
     "verify": "meta-llama/llama-3.3-70b-instruct:free",
     "agent": "qwen/qwen3-coder:free",
     "search": "meta-llama/llama-3.3-70b-instruct:free",
     "image": "google/gemini-3.1-flash-image"
-  },
-  "hivey/low-cost": {
-    "router": "deepseek/deepseek-chat-v3.1",
-    "utility": "google/gemini-3.1-flash-lite",
-    "light": "deepseek/deepseek-chat-v3.1",
-    "chat": "deepseek/deepseek-chat-v3.1",
-    "code": "deepseek/deepseek-chat-v3.1",
-    "test": "qwen/qwen3-coder:free",
-    "reasoning": "deepseek/deepseek-r1-0528",
-    "math": "qwen/qwq-32b",
-    "creative": "deepseek/deepseek-chat-v3.1",
-    "extract": "google/gemini-3.1-flash-lite",
-    "vision": "google/gemini-3.1-flash-lite",
-    "verify": "deepseek/deepseek-chat-v3.1",
-    "agent": "deepseek/deepseek-chat-v3.1",
-    "search": "google/gemini-3.1-flash-lite",
-    "image": "google/gemini-3.1-flash-image"
-  },
-  "hivey/balanced": {
-    "router": "anthropic/claude-opus-4.8",
-    "utility": "google/gemini-3.1-flash-lite",
-    "light": "google/gemini-3.5-flash",
-    "chat": "anthropic/claude-sonnet-4.6",
-    "code": "anthropic/claude-sonnet-4.6",
-    "test": "qwen/qwen3-coder:free",
-    "reasoning": "anthropic/claude-sonnet-4.6",
-    "math": "qwen/qwq-32b",
-    "creative": "anthropic/claude-sonnet-4.6",
-    "extract": "google/gemini-3.5-flash",
-    "vision": "google/gemini-3.5-flash",
-    "verify": "google/gemini-3.5-flash",
-    "agent": "anthropic/claude-sonnet-4.6",
-    "search": "google/gemini-3.5-flash",
-    "image": "google/gemini-3.1-flash-image"
-  },
-  "hivey/pro": {
-    "router": "anthropic/claude-opus-4.8",
-    "utility": "google/gemini-3.1-flash-lite",
-    "light": "google/gemini-3.1-flash-lite",
-    "chat": "anthropic/claude-sonnet-4.6",
-    "code": "anthropic/claude-opus-4.8",
-    "codePlanner": "anthropic/claude-opus-4.8",
-    "codeWriter": "anthropic/claude-sonnet-4.6",
-    "test": "anthropic/claude-sonnet-4.6",
-    "reasoning": "anthropic/claude-opus-4.8",
-    "math": "qwen/qwen3.7-max",
-    "creative": "anthropic/claude-sonnet-4.6",
-    "extract": "google/gemini-3.5-flash",
-    "vision": "google/gemini-3.5-flash",
-    "verify": "anthropic/claude-sonnet-4.6",
-    "agent": "anthropic/claude-sonnet-4.6",
-    "search": "google/gemini-3.5-flash",
-    "image": "google/gemini-3-pro-image"
   }
 };
 // <hivey:end>

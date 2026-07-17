@@ -64,7 +64,25 @@ export async function connectOpenRouter() {
     throw new Error(`Échange OAuth échoué (HTTP ${res.status}). ${detail.slice(0, 200)}`);
   }
   const json = await res.json();
-  const key = json.key || json.api_key;
+  const key = String(json.key || json.api_key || json.data?.key || "").trim();
   if (!key) throw new Error("OpenRouter n'a pas renvoyé de clé.");
+
+  // Verify the key IMMEDIATELY so we never save one that OpenRouter then rejects with a confusing
+  // "User not found" 401 on the first request. If it fails, tell the user to create a key manually.
+  try {
+    const check = await fetch("https://openrouter.ai/api/v1/key", {
+      headers: { authorization: `Bearer ${key}` },
+    });
+    if (check.status === 401) {
+      throw new Error(
+        "La clé renvoyée par la connexion OpenRouter a été refusée (401 « User not found »). " +
+          "Créez plutôt une clé manuellement sur openrouter.ai/keys et collez-la dans les réglages.",
+      );
+    }
+  } catch (e) {
+    // Only rethrow our explicit validation error; a network hiccup on the check shouldn't block a
+    // key that may well be valid.
+    if (e && /User not found|manuellement/.test(String(e.message))) throw e;
+  }
   return key;
 }
