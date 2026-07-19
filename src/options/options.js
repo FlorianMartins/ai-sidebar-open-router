@@ -7,6 +7,7 @@ import { THEMES, CUSTOM_KEYS, applyTheme, effectivePalette, UI_FONTS, applyFont,
 import { t, setLang, applyDom } from "../lib/i18n.js";
 import { SHORTCUT_ACTIONS, defaultShortcuts, comboFromEvent, isBindable } from "../lib/shortcuts.js";
 import { encryptSettings, decryptSettings } from "../lib/syncCrypto.js";
+import { setHTML } from "../lib/dom.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -879,7 +880,7 @@ function buildQuickNav() {
     const label = h.textContent.trim();
     const a = el("a", "qn-pin");
     const ic = el("span", "qn-ic");
-    if (SECTION_ICONS[sec.id]) ic.innerHTML = SECTION_ICONS[sec.id]; // trusted static SVG
+    if (SECTION_ICONS[sec.id]) setHTML(ic, SECTION_ICONS[sec.id]); // trusted static SVG
     a.appendChild(ic);
     a.appendChild(el("span", "qn-text", label));
     a.href = "#" + sec.id;
@@ -911,7 +912,7 @@ function addSectionIcons() {
     if (!icon) return;
     const ic = document.createElement("span");
     ic.className = "h2-ic";
-    ic.innerHTML = icon; // trusted static SVG
+    setHTML(ic, icon); // trusted static SVG
     h.insertBefore(ic, h.firstChild);
   });
 }

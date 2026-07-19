@@ -586,7 +586,7 @@ body.text-outline.title-contour .code-launch .cl-logo svg, body.text-outline.tit
 .msg.assistant { background: transparent; border: 0; align-self: flex-start; width: 100%; max-width: 100%; padding: 2px 0; transition: none; }
 body.msg-noborder .msg.assistant { border-color: transparent; }
 .msg.tool { background: var(--tool); font-size: 11.5px; color: var(--muted); font-family: ui-monospace, monospace; align-self: flex-start; }
-.msg.error { background: var(--error); border: 1px solid #5a2a36; align-self: stretch; position: relative; padding-right: 48px; }
+.msg.error { background: var(--error); border: 1px solid #5a2a36; align-self: stretch; position: relative; }
 /* Error notices carry a top-right toolbar: copy the message + dismiss (✕). */
 /* ----- In-place message edit + version switcher ----- */
 .umsg-text { white-space: pre-wrap; }
@@ -608,10 +608,18 @@ body.msg-noborder .msg.assistant { border-color: transparent; }
 .umsg-vers .mact { width: 18px; height: 18px; font-size: 12px; }
 .umsg-vers-n { font-size: 11px; color: var(--muted); min-width: 26px; text-align: center; }
 
-.mact-bar.err { position: absolute; top: 6px; right: 6px; margin: 0; gap: 4px; opacity: 0.9; }
-.msg.error:hover .mact-bar.err, .mact-bar.err:focus-within { opacity: 1; }
-.mact-bar.err .mact { width: 20px; height: 20px; font-size: 11px; }
-.mact-bar.err .mact.mclose { font-weight: 700; }
+/* Error actions (copy / close): BELOW the message, revealed on hover — same as the assistant bar.
+   (They used to be absolutely positioned in the top-right corner, where the copy icon sat on top of
+   the error text and was unreadable.) */
+.mact-bar.err {
+  justify-content: flex-start; gap: 4px; opacity: 0; pointer-events: none;
+  max-height: 0; margin-top: 0; overflow: hidden;
+  transition: opacity .12s ease, max-height .15s ease, margin-top .15s ease;
+}
+.msg.error:hover .mact-bar.err, .mact-bar.err:focus-within {
+  opacity: 1; pointer-events: auto; max-height: 38px; margin-top: 6px;
+}
+/* size/icon are unified with the user/assistant bars below (.mact-bar.err included there) */
 /* Keep code blocks INSIDE the bubble while streaming (scroll horizontally instead of
    pushing the message off to the right). Flex items need min-width:0 to be allowed to
    shrink below their content's intrinsic width. */
@@ -767,6 +775,20 @@ body.mode-chat .composer textarea, body.mode-wisebase .composer textarea { align
 body.mode-chat .composer textarea:placeholder-shown,
 body.mode-wisebase .composer textarea:placeholder-shown,
 body.mode-code .composer textarea:placeholder-shown { text-align: left; }
+/* VERTICAL centring of the placeholder — robust across engines. `align-content: center` (above) is
+   unreliable on <textarea> in some builds, which left the placeholder stuck at the top. Instead, on
+   the descriptive tabs (everything except chat/wisebase/code) we keep the input ROW a fixed height
+   and let the textarea SHRINK to its content while empty — the row's `align-items: center` then
+   centres it vertically, exactly at the level of the + / mic buttons (which are centred the same
+   way). Works no matter how many lines the placeholder wraps to, and reverts the instant the user
+   types (the field grows again). */
+body:not(.mode-chat):not(.mode-wisebase):not(.mode-code) .composer-main { min-height: 88px; }
+/* `!important` beats the inline height autoGrow() leaves on the textarea (and any leftover height
+   from typing on another tab) — otherwise the empty field stays tall and the placeholder floats in
+   the middle of an oversized box instead of sitting at the buttons' level. */
+body:not(.mode-chat):not(.mode-wisebase):not(.mode-code) .composer textarea:placeholder-shown {
+  min-height: 0 !important; height: auto !important;
+}
 /* Second row: an optional left slot (the "+" on the Chat tab) and the chat toggles +
    stop on the right. */
 .composer-tools { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 2px 0; min-height: 0; }
@@ -1505,7 +1527,7 @@ body.mode-code #confirmBar { display: none !important; }
   transition: opacity .12s ease, max-height .15s ease, margin-top .15s ease;
 }
 .msg:hover > .mact-bar.user, .mact-bar.user:focus-within {
-  opacity: 1; pointer-events: auto; max-height: 32px; margin-top: 6px;
+  opacity: 1; pointer-events: auto; max-height: 38px; margin-top: 6px;
 }
 /* Assistant answer actions: SAME behaviour as the user bar — collapsed until the message is hovered,
    then the row (copy / copy-md / mindmap / delete) slides in BELOW the answer, on the left. */
@@ -1515,15 +1537,12 @@ body.mode-code #confirmBar { display: none !important; }
   transition: opacity .12s ease, max-height .15s ease, margin-top .15s ease;
 }
 .msg:hover > .mact-bar.assistant, .mact-bar.assistant:focus-within {
-  opacity: 1; pointer-events: auto; max-height: 32px; margin-top: 6px;
+  opacity: 1; pointer-events: auto; max-height: 38px; margin-top: 6px;
 }
-/* Slightly larger, more legible icons on both message types (shown on hover). */
-.mact-bar.user .mact, .mact-bar.assistant .mact { width: 26px; height: 24px; font-size: 13px; border-radius: 6px; }
-/* The ↻ "resend" glyph reads smaller than the others because of its shape — bump it. */
-.mact.mresend { font-size: 16px; }
-.mact-bar.user .mact.mresend { font-size: 17px; }
-/* "M↓" markdown-copy glyph: two chars, so shrink + tighten so it reads as one compact badge. */
-.mact.mcopymd { font-size: 11px; font-weight: 700; letter-spacing: -0.5px; }
+/* Unified, slightly larger icons on both message types (shown on hover). Every action is now a
+   stroke SVG of the same size, so the toolbar reads as one clean, consistent row. */
+.mact-bar.user .mact, .mact-bar.assistant .mact, .mact-bar.err .mact { width: 30px; height: 28px; border-radius: 7px; }
+.mact-bar.user .mact svg, .mact-bar.assistant .mact svg, .mact-bar.err .mact svg { width: 16px; height: 16px; display: block; }
 /* FLAT icons (no border, no background) for a clean HiveyCode-like look — a subtle tinted pad appears
    only on hover. Applies to both the user and assistant action bars. */
 .mact {
@@ -2065,6 +2084,15 @@ body:not(.mode-chat):not(.mode-wisebase).opts-open #chatControls { display: none
    and push the tools (capture region / pick element / tab picker) to the TOP-RIGHT like Chat. */
 .pagebar.selectors-only .page-title { display: none; }
 .pagebar.selectors-only { justify-content: flex-end; }
+/* When tabs are selected, the bar shows a clickable "📑 N tabs in context" notification on the LEFT.
+   The tool icons must STAY grouped on the right and not move — so we keep justify-content:flex-end
+   (NOT space-between, which would spread the individual icons apart) and simply push the title left
+   with margin-right:auto. Clicking the title re-opens the tab picker. */
+.pagebar.selectors-only.has-tabsel .page-title {
+  display: block; flex: 0 1 auto; margin-right: auto;
+  cursor: pointer; color: var(--accent); font-weight: 600;
+}
+.pagebar.selectors-only.has-tabsel .page-title:hover { text-decoration: underline; }
 /* The "Page" option (auto page reading) is removed from the options popup — the page TOOLS bar
    (pick element / capture region / tab picker) is always available at the top instead. */
 #chatControls .ctoggle:has(#pageCtx) { display: none !important; }

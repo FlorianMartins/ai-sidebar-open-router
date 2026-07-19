@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Hivey AI — IA multi-fournisseurs",
-  "version": "2.174.0",
+  "version": "2.195.0",
   "description": "Sidebar IA (BYOK) : chat, lecture page/élément, traduction, résumé, images, agent. Claude, OpenAI, Gemini, OpenRouter, etc.",
-  "author": "Florian Martins",
+  "minimum_chrome_version": "119",
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
@@ -36,6 +36,16 @@
     ]
   },
   "host_permissions": [
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*",
+    "https://openrouter.ai/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.mistral.ai/*",
+    "https://api.groq.com/*",
+    "https://api.deepseek.com/*",
+    "<all_urls>"
+  ],
+  "optional_host_permissions": [
     "<all_urls>"
   ],
   "background": {

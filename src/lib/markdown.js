@@ -1,3 +1,4 @@
+import { setHTML } from "./dom.js";
 // Markdown rendering (marked + DOMPurify) and "artifacts" (HTML/SVG preview,
 // Mermaid diagrams). Artifacts run inside sandboxed iframes (opaque origin): the
 // model-generated code can reach neither the extension, the pages, nor the API
@@ -48,7 +49,7 @@ async function runJudge0Block(source, lang, slot, btn) {
   const orig = btn ? btn.textContent : "";
   if (btn) { btn.textContent = "…"; btn.disabled = true; }
   slot.style.display = "";
-  slot.innerHTML = '<pre class="j0-out">' + escapeHtml(isFr() ? "Compilation & exécution sur Judge0…" : "Compiling & running on Judge0…") + "</pre>";
+  setHTML(slot, '<pre class="j0-out">' + escapeHtml(isFr() ? "Compilation & exécution sur Judge0…" : "Compiling & running on Judge0…") + "</pre>");
   try {
     const langs = await (await fetch(base + "/languages", { headers })).json();
     const matches = (Array.isArray(langs) ? langs : []).filter((l) => re.test(l.name || "")).sort((a, b) => b.id - a.id);
@@ -66,11 +67,11 @@ async function runJudge0Block(source, lang, slot, btn) {
     if (r.stderr) out += (out ? "\n" : "") + "[stderr]\n" + r.stderr;
     if (!out && r.message) out = r.message;
     out += "\n\n[" + ((r.status && r.status.description) || "?") + " · " + (r.time ?? "?") + "s · " + (r.memory ?? "?") + " KB · " + matches[0].name + "]";
-    slot.innerHTML = '<pre class="j0-out">' + escapeHtml(out) + "</pre>";
+    setHTML(slot, '<pre class="j0-out">' + escapeHtml(out) + "</pre>");
   } catch (e) {
     const msg = "Judge0: " + (e && e.message ? e.message : String(e)) +
       (isFr() ? "\n(vérifiez l'endpoint/clé dans Réglages ; l'instance doit autoriser le CORS)" : "\n(check the endpoint/key in Settings; the instance must allow CORS)");
-    slot.innerHTML = '<pre class="j0-out err">' + escapeHtml(msg) + "</pre>";
+    setHTML(slot, '<pre class="j0-out err">' + escapeHtml(msg) + "</pre>");
   } finally {
     if (btn) { btn.textContent = orig; btn.disabled = false; }
   }

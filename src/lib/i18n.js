@@ -9,6 +9,7 @@
 // uses {name} placeholders replaced from the `vars` object.
 
 import { ES, DE, IT, PT } from "./i18n-langs.js";
+import { setHTML } from "./dom.js";
 
 let lang = "en";
 
@@ -69,6 +70,8 @@ const EN = {
   "tabs.hint": "Tick tabs to add them to the context",
   "tabs.clear": "Reset",
   "tabs.clearTitle": "Deselect all tabs",
+  "tabs.inContext": "📑 {n} tab(s) in context",
+  "tabs.inContextTitle": "Tabs given to the AI — click to change the selection",
   "refresh.title": "Refresh",
   "expand.title": "Open in a full-screen tab",
   "expand.exit": "Back to the docked sidebar",
@@ -128,10 +131,13 @@ const EN = {
   "mind.system": "Convert the user's content into a Mermaid diagram. Use `mindmap` syntax for conceptual or hierarchical content, or `flowchart TD` for processes and sequences. Keep node labels short and quote any label containing special characters. Output ONLY valid Mermaid code — no explanation, no markdown fences.",
   "region.start": "🔳 Draw a rectangle over the page to capture it. (Esc, the button, or a click in the sidebar cancels)",
   "region.error": "Couldn't capture this area (try again on a normal website).",
+  "region.activating": "🔄 Activating capture access — the extension is reloading. Click the capture button again in a moment.",
+  "region.shareTab": "In the share dialog, choose THIS TAB (not the whole screen/window), then draw your area again.",
   "region.imgName": "Page capture",
   "region.added": "✓ Captured the area — ask your question below.",
   "region.reload": "Extension updated — refresh this web page once, then try the capture again.",
   "region.perm": "Screen-capture permission is needed — please allow access when prompted, then try again.",
+  "region.needAccess": "Firefox only lets the screenshot run from a toolbar/right-click gesture. Use the 📸 Hivey capture icon in the toolbar, or right-click the page → “📸 Capture an area”.",
 
   "mic.title": "Dictate (voice to text)",
   "mic.listening": "Listening… click to stop",
@@ -428,8 +434,8 @@ const EN = {
   // ----- Placeholders (per workspace) ---------------------------------------
   "ph.chat": "Write a message…",
   "ph.agent": "Describe a task to perform in the browser…",
-  "ph.translate": "Text to translate (or leave empty for the page)…",
-  "ph.improve": "Text to improve (or leave empty for the selection)…",
+  "ph.translate": "Text to translate…",
+  "ph.improve": "Text to improve…",
   "ph.image": "Describe the image to generate…",
   "ph.security": "Ask a security question…",
   "ph.terminal": "Ask for code, a command, a script…",
@@ -997,6 +1003,8 @@ const FR = {
   "tabs.hint": "Cochez les onglets à ajouter au contexte",
   "tabs.clear": "Réinitialiser",
   "tabs.clearTitle": "Tout désélectionner",
+  "tabs.inContext": "📑 {n} onglet(s) en contexte",
+  "tabs.inContextTitle": "Onglets donnés à l'IA — cliquez pour changer la sélection",
   "refresh.title": "Rafraîchir",
   "expand.title": "Ouvrir en plein écran (nouvel onglet)",
   "expand.exit": "Revenir à la barre latérale",
@@ -1056,10 +1064,13 @@ const FR = {
   "mind.system": "Convertis le contenu de l'utilisateur en diagramme Mermaid. Utilise la syntaxe `mindmap` pour du contenu conceptuel ou hiérarchique, ou `flowchart TD` pour des processus et séquences. Garde des libellés de nœuds courts et mets entre guillemets tout libellé contenant des caractères spéciaux. Renvoie UNIQUEMENT du code Mermaid valide — aucune explication, aucune balise markdown.",
   "region.start": "🔳 Tracez un rectangle sur la page pour la capturer. (Échap, le bouton, ou un clic dans la sidebar annule)",
   "region.error": "Impossible de capturer cette zone (réessayez sur un site web normal).",
+  "region.activating": "🔄 Activation de l'accès capture — l'extension se recharge. Reclique sur le bouton capture dans un instant.",
+  "region.shareTab": "Dans la fenêtre de partage, choisis CET ONGLET (pas tout l'écran/la fenêtre), puis redessine ta zone.",
   "region.imgName": "Capture de page",
   "region.added": "✓ Zone capturée — posez votre question ci-dessous.",
   "region.reload": "Extension mise à jour — rafraîchissez cette page web une fois, puis relancez la capture.",
   "region.perm": "La permission de capture d'écran est nécessaire — autorisez l'accès dans la fenêtre, puis réessayez.",
+  "region.needAccess": "Firefox n'autorise le screenshot que depuis un geste barre d'outils / clic droit. Utilise l'icône 📸 Hivey dans la barre d'outils, ou clic droit sur la page → « 📸 Capturer une zone ».",
 
   "mic.title": "Dicter (voix vers texte)",
   "mic.listening": "Écoute… cliquez pour arrêter",
@@ -1348,8 +1359,8 @@ const FR = {
 
   "ph.chat": "Écrivez un message…",
   "ph.agent": "Décrivez une tâche à réaliser dans le navigateur…",
-  "ph.translate": "Texte à traduire (ou laissez vide pour la page)…",
-  "ph.improve": "Texte à améliorer (ou laissez vide pour la sélection)…",
+  "ph.translate": "Texte à traduire…",
+  "ph.improve": "Texte à améliorer…",
   "ph.image": "Décrivez l'image à générer…",
   "ph.security": "Analyse .pcap, en-têtes, CVE, durcissement…",
   "ph.terminal": "Demandez du code, une commande, un script…",
@@ -1885,7 +1896,7 @@ export function applyDom(root = document) {
     el.textContent = t(el.getAttribute("data-i18n"));
   });
   root.querySelectorAll("[data-i18n-html]").forEach((el) => {
-    el.innerHTML = t(el.getAttribute("data-i18n-html"));
+    setHTML(el, t(el.getAttribute("data-i18n-html")));
   });
   root.querySelectorAll("[data-i18n-title]").forEach((el) => {
     el.title = t(el.getAttribute("data-i18n-title"));

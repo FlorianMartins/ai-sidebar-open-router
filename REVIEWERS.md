@@ -121,8 +121,10 @@ bash scripts/fetch-vendor.sh
 
 ## 4. Optional: lint and sign
 
-- **Lint** (Mozilla's validator): `npx --yes web-ext@7.6.2 lint --source-dir=.build`
-  → 0 errors. Warnings, if any, come only from the minified `vendor/` libraries.
+- **Lint** (Mozilla's validator, requires Node 20+):
+  `npx --yes addons-linter@latest .build`
+  → **0 errors, 0 notices, 0 warnings on `manifest.json`**. See §6 for the remaining
+  warnings, which are expected.
 - **Sign** (Firefox, requires an AMO API key): see the signing instructions in the
   project notes / `scripts/build.sh` output. Signing is **not** required to reproduce
   the package contents.
@@ -143,3 +145,65 @@ bash scripts/fetch-vendor.sh
 The extension is 100% BYOK: it makes network requests **only** to the AI provider
 endpoint the user configured, with the user's own key. No analytics, no telemetry, no
 remote code. See `privacy-policy.html`.
+
+---
+
+## 6. Expected linter warnings (none are defects)
+
+`addons-linter` reports **0 errors, 0 notices, 24 warnings** — **22 of which are
+in third-party `vendor/` libraries**, and 2 of which are deliberate.
+
+**`DANGEROUS_EVAL` (12)** — exclusively inside `vendor/`: `pdf.min.js`,
+`pdf.worker.min.js`, `mermaid.min.js`, `transformers.min.js`, `jszip.min.js`.
+These are third-party open-source libraries shipped **unmodified** from their
+official releases; their SHA-256 sums are listed in §3 and can be verified against
+upstream. We never call `eval()` or the `Function` constructor in our own code.
+
+**`UNSAFE_VAR_ASSIGNMENT` (12)** — 10 in `vendor/` (`mermaid.min.js`,
+`purify.min.js`), and **exactly 2 in our own code, by design**:
+
+| File | Line | What it is |
+|---|---|---|
+| `src/lib/dom.js` | 32 | `setHTML()` — the single HTML-insertion chokepoint for the whole extension |
+| `src/content/content.js` | 7 | the same helper, duplicated locally because a content script cannot `import` an ES module |
+
+As of 2.195.0 every HTML insertion in our code goes through one of these two
+functions — there were 37 scattered `innerHTML` assignments before. Callers pass
+only (a) hardcoded inline SVG from our own source, (b) the output of
+`renderMarkdown()`, which runs **DOMPurify** (`vendor/purify.min.js`), or (c)
+strings built solely from `escapeHtml()`-escaped values. See the header comment
+in `src/lib/dom.js`.
+
+`printConversation()` in `src/lib/exportConversation.js` was rewritten to use
+pure DOM APIs: no `document.write`, no HTML string, no inline `<script>`, and
+message text inserted via `textContent`.
+
+---
+
+## 7. Data collection disclosure
+
+`browser_specific_settings.gecko.data_collection_permissions.required` declares
+**`websiteContent`**.
+
+This is deliberate and accurate: when the user explicitly asks a question about a
+page (or selects an element, or captures a region), that page content is sent — as
+the prompt — to **the AI provider the user configured, using the user's own API
+key**. It never transits through any server we control. Nothing is collected,
+stored or transmitted in the background, and there is no telemetry.
+
+---
+
+## 8. `declarativeNetRequest` rule — scope and intent
+
+`rules/frame-unblock.json` contains a **single** rule that removes `X-Frame-Options`
+and `Content-Security-Policy` response headers, restricted to `sub_frame` requests
+on an explicit allow-list of **11 chat hosts** (`gemini.google.com`, `claude.ai`,
+`chatgpt.com`, `chat.openai.com`, `copilot.microsoft.com`, `chat.mistral.ai`,
+`chat.deepseek.com`, `chat.qwen.ai`, `www.kimi.com`, `chat.z.ai`, `huggingface.co`).
+
+Purpose: let the user open the web UI of a provider they are already signed in to
+**inside the sidebar panel**, instead of a separate window.
+
+Scope is deliberately minimal: the list matches `content_scripts` exactly, contains
+**no authentication or sign-in host**, and no broad parent domain. Sign-in is
+performed in a normal tab, never in an embedded frame.

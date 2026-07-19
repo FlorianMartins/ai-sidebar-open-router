@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hivey AI — IA multi-fournisseurs",
-  "version": "2.174.0",
+  "version": "2.195.0",
   "description": "Sidebar IA open-source type Sider : branchez votre IA (Claude, OpenAI, Gemini, Mistral, Groq, DeepSeek, xAI, Perplexity, Together, Fireworks, OpenRouter, Ollama/LM Studio local…). Liste les modèles réellement dispo selon votre clé/compte. Lit page et onglets, résume, traduit, améliore (presets), compare un modèle à un autre, artifacts interactifs, images, capture de zone, thèmes, agent (avec garde-fous). Historique local, 100% BYOK.",
   "author": "Florian Martins",
   "content_security_policy": {
@@ -10,10 +10,10 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "ai-sidebar-open-router@github",
-      "strict_min_version": "121.0",
+      "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": [
-          "none"
+          "websiteContent"
         ]
       }
     }
@@ -21,6 +21,10 @@
   "icons": {
     "48": "icons/icon.svg",
     "96": "icons/icon.svg"
+  },
+  "action": {
+    "default_title": "Hivey — 📸 Capturer une zone (screenshot)",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png" }
   },
   "permissions": [
     "storage",
@@ -51,6 +55,9 @@
     "https://api.mistral.ai/*",
     "https://api.groq.com/*",
     "https://api.deepseek.com/*",
+    "<all_urls>"
+  ],
+  "optional_host_permissions": [
     "<all_urls>"
   ],
   "background": {

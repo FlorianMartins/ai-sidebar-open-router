@@ -1,6 +1,11 @@
 // Content script: reads the page and performs the DOM actions requested by the
 // agent. Injected on every page (document_idle) and re-injected on demand by
 // tools.js. Also powers the page element picker and region screenshot capture.
+
+// Single chokepoint for HTML insertion in this content script — see src/lib/dom.js
+// for the rationale. Callers pass only sanitized (miniMarkdown) or trusted HTML.
+function setHTML(el, html) { if (el) el.innerHTML = html == null ? "" : html; }
+
 (function () {
   if (window.__aiSidebarInjected) return;
   window.__aiSidebarInjected = true;
@@ -689,7 +694,9 @@
     const r = regResolve; regResolve = null;
     if (!r) return;
     if (cancelled || !rect || rect.w < 5 || rect.h < 5) { r({ cancelled: true }); return; }
-    r({ rect, dpr: window.devicePixelRatio || 1, url: location.href, title: document.title });
+    // vw/vh (CSS viewport) let the sidebar scale the rect onto a getDisplayMedia frame, whose pixel
+    // size differs from CSS px. (Unused by the captureVisibleTab path, which crops via dpr.)
+    r({ rect, dpr: window.devicePixelRatio || 1, vw: window.innerWidth, vh: window.innerHeight, url: location.href, title: document.title });
   }
   function startRegion() {
     if (regResolve) endRegion(true);
@@ -907,8 +914,8 @@
           pageBubble.body.className = "body done";
           // Prefer a pre-rendered html if one is supplied; otherwise render the
           // markdown safely here (the background service worker has no DOM).
-          if (msg.html) { pageBubble.body.innerHTML = msg.html; }
-          else { pageBubble.body.innerHTML = miniMarkdown(pageBubble.raw); }
+          if (msg.html) { setHTML(pageBubble.body, msg.html); }
+          else { setHTML(pageBubble.body, miniMarkdown(pageBubble.raw)); }
           pageBubble.reclamp && pageBubble.reclamp(); // keep it on-screen after it grows
         }
         return Promise.resolve({ ok: true });

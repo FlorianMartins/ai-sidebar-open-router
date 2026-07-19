@@ -37,6 +37,9 @@ const MENU_ITEMS = [
   { id: "ai-security-sel", contexts: ["selection"] },
   { id: "ai-security-page", contexts: ["page"] },
   { id: "ai-security-link", contexts: ["link"] },
+  // Region screenshot from the right-click menu — the gesture grants activeTab, so captureVisibleTab
+  // works with NO site-permission dance (which the sidebar button can't do).
+  { id: "ai-capture-region", contexts: ["page", "image", "selection"] },
 ];
 const MENU_TITLES = {
   en: {
@@ -54,6 +57,7 @@ const MENU_TITLES = {
     "ai-security-sel": "🛡️ Analyze for threats (defensive)",
     "ai-security-page": "🛡️ Security analysis of this page",
     "ai-security-link": "🛡️ Check this link (phishing / safety)",
+    "ai-capture-region": "📸 Capture an area (screenshot)",
   },
   fr: {
     "ai-root": "Hivey AI",
@@ -70,6 +74,7 @@ const MENU_TITLES = {
     "ai-security-sel": "🛡️ Analyser la menace (défensif)",
     "ai-security-page": "🛡️ Analyse sécurité de la page",
     "ai-security-link": "🛡️ Vérifier ce lien (phishing / sécurité)",
+    "ai-capture-region": "📸 Capturer une zone (capture d'écran)",
   },
 };
 
@@ -139,6 +144,44 @@ function openSidebar(tab) {
   } catch (_) {}
 }
 
+// 🩹 Firefox MV3 quirk: when <all_urls> is granted at RUNTIME, tabs.captureVisibleTab keeps throwing
+// "Missing activeTab permission" until the extension is RELOADED — the API only picks up the host
+// grant on a fresh load (Mozilla Discourse thread 122965). We do that reload ONCE, PROACTIVELY (at
+// startup or the moment the grant lands) — never mid-capture — so it can't reset the user's chat or
+// interrupt a selection. A persistent flag makes it happen exactly once per grant.
+async function reloadOnceForHostGrant(trigger) {
+  try {
+    if (!browser.permissions || !browser.permissions.contains || !browser.runtime || !browser.runtime.reload) return;
+    const has = await browser.permissions.contains({ origins: ["<all_urls>"] });
+    if (!has) return;
+    const { _capHostReloaded } = await browser.storage.local.get("_capHostReloaded");
+    if (_capHostReloaded) return;
+    await browser.storage.local.set({ _capHostReloaded: true });
+    browser.runtime.reload();
+  } catch (_) {}
+}
+if (typeof browser !== "undefined" && browser.permissions) {
+  reloadOnceForHostGrant("startup");
+  if (browser.permissions.onAdded) {
+    browser.permissions.onAdded.addListener((perms) => {
+      if (perms && Array.isArray(perms.origins) && perms.origins.includes("<all_urls>")) reloadOnceForHostGrant("granted");
+    });
+  }
+}
+
+// Firefox toolbar button = one-click area capture. Clicking a browser action IS a qualifying user
+// gesture, so Firefox grants `activeTab` for the tab — which is exactly what captureVisibleTab needs
+// and what a button INSIDE the sidebar panel can never obtain. So this icon screenshots reliably,
+// with no site-permission prompt, doing the same thing as the right-click "Capture an area".
+// Guarded to Firefox (browser.sidebarAction exists there; on Chrome the action opens the side panel
+// via openPanelOnActionClick, so this listener never fires).
+if (typeof browser !== "undefined" && browser.action && browser.action.onClicked && browser.sidebarAction) {
+  browser.action.onClicked.addListener((tab) => {
+    openSidebar(tab);
+    browser.storage.local.set({ pendingCapture: { ts: Date.now() } });
+  });
+}
+
 // Fall back to the legacy sidebar path (used on pages we can't overlay).
 function fallbackToSidebar(tab, action, text) {
   openSidebar(tab);
@@ -181,6 +224,13 @@ browser.contextMenus.onClicked.addListener((info, tab) => {
   // Right-click a link → defensive check of that URL (phishing/safety) on the Security tab.
   if (info.menuItemId === "ai-security-link") {
     fallbackToSidebar(tab, "security", info.linkUrl || info.srcUrl || "");
+    return;
+  }
+  // Right-click → capture an area. The right-click already granted activeTab for this tab, so the
+  // sidebar's captureVisibleTab will work with no site permission. Open the sidebar and queue it.
+  if (info.menuItemId === "ai-capture-region") {
+    openSidebar(tab);
+    browser.storage.local.set({ pendingCapture: { ts: Date.now() } });
     return;
   }
   const action = MENU_ACTION[info.menuItemId];
@@ -568,6 +618,26 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const raw = await res.text();
       const text = /text\/html|application\/xhtml/i.test(ct) ? stripHtml(raw) : raw.replace(/\s+/g, " ").trim().slice(0, 200000);
       sendResponse({ ok: true, url: res.url || msg.url, text });
+    } catch (e) {
+      sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  })();
+  return true;
+});
+
+// Screenshot the visible tab FROM THE BACKGROUND. captureVisibleTab called from the sidebar/popup
+// context can fail with "Missing activeTab permission" even when <all_urls> is granted (the sidebar
+// isn't a tab, so the activeTab fallback the API reaches for isn't in effect). The background page
+// runs with the extension's host permissions directly, so it captures reliably via <all_urls>.
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "capture:visible") return;
+  (async () => {
+    try {
+      const opts = { format: msg.format || "png" };
+      const dataUrl = msg.windowId != null
+        ? await browser.tabs.captureVisibleTab(msg.windowId, opts)
+        : await browser.tabs.captureVisibleTab(opts);
+      sendResponse({ ok: true, dataUrl });
     } catch (e) {
       sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
     }

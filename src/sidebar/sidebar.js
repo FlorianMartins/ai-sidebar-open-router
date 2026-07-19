@@ -26,6 +26,7 @@ import {
   listConversations, getConversation, saveConversation, deleteConversation,
   newConversationId, titleFrom, togglePinned, conversationMatches,
 } from "../lib/history.js";
+import { setHTML } from "../lib/dom.js";
 
 const $ = (id) => document.getElementById(id);
 // Are we running as a standalone full-screen TAB (vs the docked sidebar)? The
@@ -461,10 +462,12 @@ async function init() {
     if (area === "local" && changes.pendingAction && changes.pendingAction.newValue) consumePendingAction();
     if (area === "local" && changes.pendingImage && changes.pendingImage.newValue) consumePendingImage();
     if (area === "local" && changes.pendingPdf && changes.pendingPdf.newValue) consumePendingPdf();
+    if (area === "local" && changes.pendingCapture && changes.pendingCapture.newValue) consumePendingCapture();
   });
   await refreshCurrentPage();
   await consumePendingAction();
   await consumePendingImage();
+  await consumePendingCapture();
   await consumePendingPdf();
 }
 // Right-click-a-PDF → read it. The background stores the PDF URL; we fetch it, extract its text
@@ -522,6 +525,21 @@ async function consumePendingImage() {
   } catch (_) {
     addMessage("error", t("img.fetchFailed"));
   }
+}
+
+// Region capture triggered from the RIGHT-CLICK menu. The right-click is a genuine user gesture, so
+// Firefox grants `activeTab` for that tab — which is exactly what captureVisibleTab needs and what a
+// sidebar-button click can never obtain. So this path screenshots reliably with NO site permission.
+let lastPendingCaptureTs = 0;
+async function consumePendingCapture() {
+  let pendingCapture;
+  try { ({ pendingCapture } = await browser.storage.local.get("pendingCapture")); } catch (_) { return; }
+  if (!pendingCapture || Date.now() - pendingCapture.ts > 60000) return;
+  if (pendingCapture.ts === lastPendingCaptureTs) return;
+  lastPendingCaptureTs = pendingCapture.ts;
+  try { await browser.storage.local.remove("pendingCapture"); } catch (_) {}
+  if (!["chat", "agent", "translate", "improve", "image", "pdf"].includes(mode)) setMode("chat");
+  captureRegion();
 }
 
 // ----- Unified model picker -------------------------------------------------
@@ -901,7 +919,7 @@ function buildMetricToggle(rerender) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "cm-btn icon-only" + (onFor[m] ? " on" : "");
-    b.innerHTML = METRIC_ICON[m];
+    setHTML(b, METRIC_ICON[m]);
     b.title = tip[m];
     b.setAttribute("aria-label", tip[m]);
     b.addEventListener("mousedown", (e) => { e.preventDefault(); toggleMetric(m); setTimeout(rerender, 0); });
@@ -916,7 +934,7 @@ function buildMetricToggle(rerender) {
   const sortBtn = document.createElement("button");
   sortBtn.type = "button";
   sortBtn.className = "cm-btn icon-only sort-cycle" + (dir ? " on" : "");
-  sortBtn.innerHTML = dir === "asc" ? SORT_ASC_ICON : dir === "desc" ? SORT_DESC_ICON : SORT_NONE_ICON;
+  setHTML(sortBtn, dir === "asc" ? SORT_ASC_ICON : dir === "desc" ? SORT_DESC_ICON : SORT_NONE_ICON);
   sortBtn.title = dir === "asc" ? t("sort.asc") : dir === "desc" ? t("sort.desc") : t("sort.off");
   sortBtn.setAttribute("aria-label", sortBtn.title);
   sortBtn.addEventListener("mousedown", (e) => { e.preventDefault(); cycleSort(); setTimeout(rerender, 0); });
@@ -926,7 +944,7 @@ function buildMetricToggle(rerender) {
   const fbtn = document.createElement("button");
   fbtn.type = "button";
   fbtn.className = "cm-btn icon-only cm-filter" + (filterIsActive() ? " on" : "");
-  fbtn.innerHTML = COMBO_FILTER_ICON;
+  setHTML(fbtn, COMBO_FILTER_ICON);
   fbtn.title = t("filter.title");
   fbtn.setAttribute("aria-label", t("filter.title"));
   fbtn.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); toggleFilterPanel(fbtn); });
@@ -1050,7 +1068,7 @@ function updateEmptyState() {
       mode === "wisebase" ? t("greeting.wisebase") :
       t("greeting");
     const feat = t("feat." + mode);
-    if (els.emptyFeatures) els.emptyFeatures.innerHTML = feat && feat !== "feat." + mode ? feat : ""; // feat.* may contain <strong> emphasis
+    if (els.emptyFeatures) setHTML(els.emptyFeatures, feat && feat !== "feat." + mode ? feat : ""); // feat.* may contain <strong> emphasis
   }
 }
 // Swap the big centred logo for the active tab's icon (cloned from the rail), or restore the
@@ -1059,7 +1077,7 @@ let emptyLogoMode = "__init__";
 function setEmptyLogo(m) {
   if (!els.emptyLogo || emptyLogoMode === m) return;
   emptyLogoMode = m;
-  if (!m) { els.emptyLogo.innerHTML = HIVEY_LOGO_SVG; return; } // onboarding → Hivey brand mark
+  if (!m) { setHTML(els.emptyLogo, HIVEY_LOGO_SVG); return; } // onboarding → Hivey brand mark
   const railSvg = els.rail.querySelector('.railtab[data-mode="' + m + '"] svg');
   if (railSvg) {
     const c = railSvg.cloneNode(true);
@@ -1067,7 +1085,7 @@ function setEmptyLogo(m) {
     els.emptyLogo.innerHTML = "";
     els.emptyLogo.appendChild(c);
   } else {
-    els.emptyLogo.innerHTML = HIVEY_LOGO_SVG;
+    setHTML(els.emptyLogo, HIVEY_LOGO_SVG);
   }
 }
 const HIVEY_LOGO_SVG = '<svg viewBox="0 0 96 96" role="img" aria-label="Hivey AI"><defs><linearGradient id="hiveLogoA" x1="12" y1="10" x2="84" y2="86" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:var(--accent)"/><stop offset="0.55" style="stop-color:var(--accent)"/><stop offset="1" style="stop-color:var(--accent-2)"/></linearGradient></defs><g fill="url(#hiveLogoA)"><rect x="17" y="9" width="62" height="14" rx="7"/><rect x="8" y="30" width="80" height="14" rx="7"/><rect x="12" y="51" width="72" height="14" rx="7"/><rect x="23" y="72" width="50" height="14" rx="7"/></g></svg>';
@@ -1781,8 +1799,9 @@ async function readZipAttachment(file) {
       added++;
     } catch (_) { /* skip unreadable entry */ }
   }
-  if (added) addMessage("tool", t("attach.zipAdded", { n: added, name: file.name }));
-  else addMessage("error", t("attach.zipEmpty", { name: file.name }));
+  // No "N files added" status line — the attachment strip already shows them, and we keep the
+  // empty-state background until there's a real user message.
+  if (!added) addMessage("error", t("attach.zipEmpty", { name: file.name }));
 }
 function readFileAs(file, how) {
   return new Promise((res, rej) => {
@@ -2101,29 +2120,35 @@ function isRestrictedUrl(url) {
     || /^(about:|moz-extension:|chrome:|chrome-extension:|resource:|view-source:|data:|javascript:|edge:|opera:|vivaldi:|brave:)/i.test(url)
     || /^https:\/\/(addons\.mozilla\.org|chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url);
 }
-// captureVisibleTab needs the `<all_urls>` host permission. It's declared in the
-// manifest's REQUIRED `host_permissions`, so:
-//   • Chrome/Chromium grants it at install and does NOT allow permissions.request() for it
-//     (request() rejects for anything not in optional_host_permissions). So we must NOT rely
-//     on request() there — we check permissions.contains() first and, if it's already present,
-//     return true without ever calling request(). (The old code called request() unconditionally,
-//     which threw on Chrome → returned false → the capture/pick tools showed "region.perm" and
-//     never ran. That's the regression this fixes.)
-//   • Firefox MV3 treats host permissions as runtime-optional, so request() IS valid there and
-//     will prompt the first time. request() must run inside the click gesture, so this is called
-//     FIRST in the handler.
-// Resolves true when we may proceed; only returns false when the user explicitly denies a prompt.
-async function ensurePagePermission() {
+// captureVisibleTab / element-pick / page-reading all need host access to the current page.
+// `<all_urls>` is declared in `optional_host_permissions` (NOT required) precisely so we can
+// obtain it at runtime with permissions.request() — which only works for OPTIONAL permissions,
+// on BOTH Chrome and Firefox. (When it was a REQUIRED host permission, request() was rejected on
+// both browsers, and an install/update where the user hadn't granted all-sites access left
+// captureVisibleTab throwing "Missing activeTab permission" with no way to fix it in-page.)
+//
+// This MUST run synchronously inside the click gesture (request() needs a user gesture), so it's
+// called FIRST in each tool's click handler. Returns true only once we genuinely hold the grant.
+async function hasAllUrls() {
   try {
-    if (!browser.permissions) return true;
-    if (browser.permissions.contains) {
-      try { if (await browser.permissions.contains({ origins: ["<all_urls>"] })) return true; } catch (_) {}
+    if (browser.permissions && browser.permissions.contains) {
+      return !!(await browser.permissions.contains({ origins: ["<all_urls>"] }));
     }
-    if (!browser.permissions.request) return true;
-    try { return !!(await browser.permissions.request({ origins: ["<all_urls>"] })); }
-    catch (_) { return true; } // required perm not requestable (Chrome) → it's already granted; proceed
+  } catch (_) {}
+  return false;
+}
+async function ensurePagePermission() {
+  // The proven config (restored from v1.22.3, which fixed exactly this): `<all_urls>` is declared in
+  // BOTH host_permissions AND optional_host_permissions, so permissions.request() is allowed and will
+  // grant it. request() MUST be the FIRST awaited call — it only works while the browser is still
+  // handling the click, so ANY prior await (e.g. permissions.contains) would break the gesture and
+  // make it reject. If it's already granted, request() resolves true with no prompt.
+  try {
+    if (!browser.permissions || !browser.permissions.request) return true;
+    const granted = await browser.permissions.request({ origins: ["<all_urls>"] });
+    return !!granted;
   } catch (_) {
-    return true;
+    return false;
   }
 }
 
@@ -2243,6 +2268,16 @@ async function ensureAgentTab() {
 function loadImage(src) {
   return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
 }
+// Screenshot a tab. Prefers Firefox's captureTab(tabId), which is satisfied by the <all_urls> host
+// permission alone and does NOT demand `activeTab` the way captureVisibleTab does from a sidebar
+// context — so the sidebar tools capture without the right-click. Falls back to captureVisibleTab
+// (Chrome / older Firefox). Returns a data: URL or throws with a readable message.
+async function captureVisible(tabId, winId) {
+  if (browser.tabs.captureTab && tabId != null) {
+    try { return await browser.tabs.captureTab(tabId, { format: "png" }); } catch (_) {}
+  }
+  return await browser.tabs.captureVisibleTab(winId, { format: "png" });
+}
 function cropFromShot(img, rect, dpr) {
   const sx = Math.max(0, rect.x * dpr), sy = Math.max(0, rect.y * dpr);
   const sw = Math.min(img.width - sx, rect.w * dpr), sh = Math.min(img.height - sy, rect.h * dpr);
@@ -2251,6 +2286,39 @@ function cropFromShot(img, rect, dpr) {
   canvas.width = Math.round(sw); canvas.height = Math.round(sh);
   canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/png");
+}
+// Crop a rect (given in CSS px) from an image using independent X/Y scale factors — used for the
+// getDisplayMedia frame, whose pixel size differs from the page's CSS viewport.
+function cropScaled(img, rect, scaleX, scaleY) {
+  const sx = Math.max(0, rect.x * scaleX), sy = Math.max(0, rect.y * scaleY);
+  const sw = Math.min(img.width - sx, rect.w * scaleX), sh = Math.min(img.height - sy, rect.h * scaleY);
+  if (sw <= 4 || sh <= 4) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(sw); canvas.height = Math.round(sh);
+  canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
+}
+// Grab a single still frame (data URL) from a MediaStream (getDisplayMedia).
+function frameFromStream(stream) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.muted = true; video.playsInline = true; video.srcObject = stream;
+    const grab = () => {
+      // A short delay so the first real frame is painted before we read it.
+      setTimeout(() => {
+        try {
+          const w = video.videoWidth, h = video.videoHeight;
+          if (!w || !h) return reject(new Error("empty video frame"));
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(video, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/png"));
+        } catch (e) { reject(e); }
+      }, 140);
+    };
+    video.onloadedmetadata = () => { video.play().then(grab).catch(reject); };
+    video.onerror = () => reject(new Error("video error"));
+  });
 }
 // A confirmation banner pinned at the TOP of the response area (more readable than a corner
 // toast) — e.g. after a quick-connect. Auto-dismisses; replaced on repeat.
@@ -2300,7 +2368,7 @@ async function pickElement() {
   const tabId = tab.id;
   if (!["chat","agent","translate","improve","image","pdf"].includes(mode)) setMode("chat");
   picking = true; pickTabId = tabId; els.pickEl.classList.add("active"); setPickBanner(true);
-  const note = addMessage("tool", t("pick.start"));
+  const note = { remove() {} }; // no response-area status message (banner covers it; keep empty state)
   let res;
   try {
     res = await sendToTab(tabId, { type: "pick_element", ...themeAccents() });
@@ -2326,7 +2394,6 @@ async function pickElement() {
     if (el.text) attachments.push({ type: "text", name: t("pick.attName", { tag: el.tag }), text: `[Selected <${el.tag}> on ${res.title} — ${res.url}]\n${el.text}` });
   }
   renderAttachStrip();
-  addMessage("tool", list.length > 1 ? t("pick.addedN", { n: list.length }) : t("pick.added", { tag: list[0].tag }));
   els.input.focus();
 }
 
@@ -2352,7 +2419,9 @@ async function captureRegion() {
   const tabId = tab.id;
   if (!["chat","agent","translate","improve","image","pdf"].includes(mode)) setMode("chat");
   capturing = true; pickTabId = tabId; els.captureRegion.classList.add("active"); setPickBanner(true);
-  const note = addMessage("tool", t("region.start"));
+  // No status message in the response area — the on-screen banner (setPickBanner) already tells the
+  // user to draw, and we keep the empty-state background until there's a real user message.
+  const note = { remove() {} };
   let res;
   try {
     res = await sendToTab(tabId, { type: "capture_region", ...themeAccents() });
@@ -2374,12 +2443,16 @@ async function captureRegion() {
     const winId = tabs && tabs[0] ? tabs[0].windowId : undefined;
     img = await loadImage(await browser.tabs.captureVisibleTab(winId, { format: "png" }));
   } catch (e) { capErr = (e && e.message) || String(e); }
-  if (!img) { addMessage("error", t("region.error") + (capErr ? " — " + capErr : "")); return; }
+  if (!img) {
+    // The host-grant reload is handled ONCE at startup (background), so we don't reload mid-capture
+    // here anymore — that was what reset the chat / forced a re-select on the first use.
+    addMessage("error", t("region.error") + (capErr ? " — " + capErr : ""));
+    return;
+  }
   const crop = cropFromShot(img, res.rect, res.dpr || 1);
   if (!crop) { addMessage("error", t("region.error")); return; }
   attachments.push({ type: "image", name: t("region.imgName"), dataUrl: crop, mediaType: "image/png" });
   renderAttachStrip();
-  addMessage("tool", t("region.added"));
   els.input.focus();
 }
 
@@ -2802,6 +2875,27 @@ function updatePageBar() {
   // The controls-row "launch page popup" icon is removed — the bar is permanently open instead.
   if (els.selPageToggle) els.selPageToggle.classList.add("hidden");
   if (!show || !pageCapable) els.tabsPanel.classList.add("hidden");
+  updateTabsIndicator();
+}
+// The tabs-as-context picker is available on Chat AND the selector tabs (translate/improve/image/pdf).
+function tabsPickerAvailable() { return mode === "chat" || ["translate", "improve", "image", "pdf"].includes(mode); }
+async function toggleTabsPanel() {
+  if (!tabsPickerAvailable()) return;
+  const show = els.tabsPanel.classList.contains("hidden");
+  if (show) await buildTabsList();
+  els.tabsPanel.classList.toggle("hidden");
+}
+// Show "📑 N tabs in context" in the page bar whenever tabs are selected (the bar otherwise only
+// holds the tool icons on the right). It's the clickable notification the user relies on to see and
+// re-open their tab selection.
+function updateTabsIndicator() {
+  const n = (settings.selectedTabs || []).length;
+  const has = n > 0 && tabsPickerAvailable();
+  els.pageBar.classList.toggle("has-tabsel", has);
+  if (els.pageTitle && has) {
+    els.pageTitle.textContent = t("tabs.inContext", { n });
+    els.pageTitle.title = t("tabs.inContextTitle");
+  }
 }
 // Per-tab open/closed state of the selector page-tools popup (in-memory; closed by default).
 const selectorPagePopup = {};
@@ -2908,6 +3002,7 @@ async function clearSelectedTabs() {
   await setSettings({ selectedTabs: [] });
   els.tabsList.querySelectorAll("input[type=checkbox]").forEach((cb) => (cb.checked = false));
   updateTabsClearBtn();
+  updateTabsIndicator();
 }
 async function persistSelectedTabs() {
   const ids = [];
@@ -2917,6 +3012,7 @@ async function persistSelectedTabs() {
   settings.selectedTabs = ids;
   await setSettings({ selectedTabs: ids });
   updateTabsClearBtn();
+  updateTabsIndicator();
 }
 async function selectedTabsContext() {
   // Any tab the user has ticked is always added to the context (no extra toggle).
@@ -3298,7 +3394,7 @@ function renderTranscriptItem(item) {
       el.appendChild(b);
     }
     const body = document.createElement("div");
-    body.innerHTML = renderMarkdown(item.text || "");
+    setHTML(body, renderMarkdown(item.text || ""));
     el.appendChild(body);
     enhanceArtifacts(body);
     el._raw = item.text || "";
@@ -3355,6 +3451,7 @@ function startFreshChat() {
     settings.selectedTabs = [];
     setSettings({ selectedTabs: [] });
     if (els.tabsPanel && !els.tabsPanel.classList.contains("hidden")) buildTabsList();
+    updateTabsIndicator(); // hide the "N tabs in context" pill — the fresh chat holds no context
   }
   clearMessages();
   els.empty.classList.remove("hidden");
@@ -3672,7 +3769,7 @@ function abIcon(svg, cls, title, onClick) {
   const b = document.createElement("button");
   b.className = "icon " + (cls || "");
   if (title) b.title = title;
-  b.innerHTML = svg;
+  setHTML(b, svg);
   b.addEventListener("click", (e) => { e.stopPropagation(); onClick(e); });
   return b;
 }
@@ -3830,7 +3927,7 @@ async function openActionBubble(action, providedText) {
       });
       card._raw = raw;
       body.className = "ab-body";
-      body.innerHTML = renderMarkdown(raw);
+      setHTML(body, renderMarkdown(raw));
       enhanceArtifacts(body);
     } catch (e) {
       body.className = "ab-body";
@@ -4026,6 +4123,11 @@ function wire() {
     });
   });
   bindToggle(els.pageCtx, "includePageContext", updatePageBar);
+  // Enabling "Page" needs host access to read the page. Ask for it right here, in the toggle's
+  // user gesture, so page-context (and, once granted, the agent) work — same optional <all_urls>
+  // grant the capture/pick tools request. Fire-and-forget: if declined, page-context simply stays
+  // inert, as before.
+  els.pageCtx.addEventListener("change", () => { if (els.pageCtx.checked) ensurePagePermission(); });
   // Auto-scroll is a GLOBAL preference (not per-tab): whether the view follows the AI's
   // answer as it streams. OFF = stay put so you can read/scroll freely while it types.
   els.autoScroll.checked = settings.autoScroll !== false;
@@ -4197,28 +4299,38 @@ function wire() {
   });
   els.closeHistory.addEventListener("click", () => els.historyPanel.classList.add("hidden"));
 
-  // Only the dedicated tabs icon expands/collapses the tabs panel. (It used to be the whole
-  // page bar, but the empty gap / page-title area then behaved like an invisible button that
-  // popped the tabs picker on any stray click — confusing.)
-  if (els.tabsBtn) els.tabsBtn.addEventListener("click", async (e) => {
+  // Opening the tabs-as-context picker. The dedicated tabs icon does it; so does the "N tabs in
+  // context" indicator (see updateTabsIndicator) when tabs are selected. NOT the whole page bar
+  // anymore — the empty gap used to behave like an invisible button that popped the picker on any
+  // stray click.
+  if (els.tabsBtn) els.tabsBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleTabsPanel(); });
+  if (els.pageTitle) els.pageTitle.addEventListener("click", (e) => {
+    // The page-title slot doubles as the "N tabs in context" indicator; clicking it opens the picker.
+    if (!els.pageBar.classList.contains("has-tabsel")) return;
     e.stopPropagation();
-    // The tabs-as-context picker is available on Chat AND the selector tabs (translate/improve/image/pdf).
-    if (!(mode === "chat" || ["translate", "improve", "image", "pdf"].includes(mode))) return;
-    const show = els.tabsPanel.classList.contains("hidden");
-    if (show) await buildTabsList();
-    els.tabsPanel.classList.toggle("hidden");
+    toggleTabsPanel();
   });
   if (els.pageToggle) els.pageToggle.addEventListener("click", (e) => { e.stopPropagation(); togglePageMode(); });
   if (els.selPageToggle) els.selPageToggle.addEventListener("click", (e) => { e.stopPropagation(); toggleSelectorPagePopup(); });
+  // NOTE: no ensurePagePermission()/permissions.request() here — on purpose. The web-tab capture &
+  // element tools DON'T request a permission and work fine; the chat region/pick tools DID, and that
+  // request() call (inside the click gesture, while <all_urls> is already granted) is exactly what
+  // broke them — the screenshot then failed with "Missing activeTab permission". We rely on the same
+  // already-granted host access the other tools use; if it's genuinely missing, captureRegion() shows
+  // an actionable message telling the user to enable site access.
   els.pickEl.addEventListener("click", (e) => {
     e.stopPropagation();
     if (picking) return cancelPicking();
-    ensurePagePermission().then((ok) => (ok ? pickElement() : addMessage("error", t("region.perm"))));
+    pickElement();
   });
   els.captureRegion.addEventListener("click", (e) => {
     e.stopPropagation();
     if (capturing) return cancelCapture();
-    ensurePagePermission().then((ok) => (ok ? captureRegion() : addMessage("error", t("region.perm"))));
+    // Ask for <all_urls> here (in the click gesture). On a FRESH grant the background reloads the
+    // extension (Firefox MV3 quirk — captureVisibleTab only sees the host grant after a reload), and
+    // capture works on the next click. If already granted, we proceed and, on the permission error,
+    // trigger that reload ourselves (see captureRegion).
+    ensurePagePermission().finally(() => captureRegion());
   });
   if (els.watchBtn) els.watchBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleWatchCurrentPage(); });
   if (els.secHeadersBtn) els.secHeadersBtn.addEventListener("click", (e) => { e.stopPropagation(); analyzePageHeaders(); });
@@ -4607,7 +4719,7 @@ function wire() {
     let res;
     try { res = await executeTool("list_tabs", {}, {}); } catch (_) {}
     const tabs = ((res && res.tabs) || []).filter((tb) => tb.url && !/^about:/.test(tb.url));
-    if (!tabs.length) { els.webTabsList.innerHTML = '<div class="web-tabs-empty">' + t("web.tabsNone") + "</div>"; return; }
+    if (!tabs.length) { setHTML(els.webTabsList, '<div class="web-tabs-empty">' + t("web.tabsNone") + "</div>"); return; }
     els.webTabsList.innerHTML = "";
     for (const tb of tabs) {
       const row = document.createElement("label");
@@ -4977,7 +5089,7 @@ async function analyzePageHeaders() {
     ];
     const md = lines.join("\n");
     const div = addMessage("assistant", "");
-    try { div.innerHTML = renderMarkdown(md); div._raw = md; } catch (_) { div.textContent = md; }
+    try { setHTML(div, renderMarkdown(md)); div._raw = md; } catch (_) { div.textContent = md; }
     attachAssistantActions(div, () => md);
     transcript.push({ role: "assistant", text: md });
     scrollMessages(false);
@@ -5065,7 +5177,7 @@ const WBI = {
 // A labelled wb-btn with a leading line-icon (no emoji).
 function wbIconBtn(icon, label, cls) {
   const b = document.createElement("button"); b.type = "button"; b.className = cls || "wb-btn";
-  const s = document.createElement("span"); s.className = "wb-btn-ic"; s.innerHTML = icon;
+  const s = document.createElement("span"); s.className = "wb-btn-ic"; setHTML(s, icon);
   const l = document.createElement("span"); l.textContent = label;
   b.appendChild(s); b.appendChild(l); return b;
 }
@@ -5175,12 +5287,12 @@ async function renderWbCollections(body) {
     main.appendChild(wbEl("span", "wb-col-name", c.name));
     main.appendChild(wbEl("span", "wb-col-stat", t("wb.stat", { sources: st.sources, chunks: st.chunks })));
     main.addEventListener("click", () => { wbCurrentCollection = c.id; renderWbPanel(); });
-    const ren = wbEl("button", "wb-icon"); ren.type = "button"; ren.title = t("wb.rename"); ren.innerHTML = WBI.ren;
+    const ren = wbEl("button", "wb-icon"); ren.type = "button"; ren.title = t("wb.rename"); setHTML(ren, WBI.ren);
     ren.addEventListener("click", async () => {
       const name = (window.prompt(t("wb.renamePrompt"), c.name) || "").trim();
       if (name) { await wb.renameCollection(c.id, name); renderWbPanel(); renderWbScope(); }
     });
-    const del = wbEl("button", "wb-icon wb-icon-del"); del.type = "button"; del.title = t("wb.delete"); del.innerHTML = WBI.del;
+    const del = wbEl("button", "wb-icon wb-icon-del"); del.type = "button"; del.title = t("wb.delete"); setHTML(del, WBI.del);
     del.addEventListener("click", async () => {
       if (!window.confirm(t("wb.deleteCollectionConfirm"))) return;
       await wb.deleteCollection(c.id); renderWbPanel(); renderWbScope();
@@ -5199,7 +5311,7 @@ async function renderWbSources(body) {
   // Heading row: collection name + Export.
   const headRow = wbEl("div", "wb-col-headrow");
   headRow.appendChild(wbEl("div", "wb-col-heading", col.name));
-  const exp = wbEl("button", "wb-icon"); exp.type = "button"; exp.title = t("wb.export"); exp.innerHTML = WBI.exp;
+  const exp = wbEl("button", "wb-icon"); exp.type = "button"; exp.title = t("wb.export"); setHTML(exp, WBI.exp);
   exp.addEventListener("click", async () => {
     const data = await wb.exportCollection(col.id);
     if (data) downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), `wisebase-${col.name.replace(/[^\w-]+/g, "_")}.json`);
@@ -5276,12 +5388,12 @@ async function renderWbSources(body) {
     const info = wbEl("div", "wb-src-info");
     info.appendChild(wbEl("span", "wb-src-title", s.title));
     info.appendChild(wbEl("span", "wb-src-meta", t("wb.sourceMeta", { type: s.type, chunks: s.chunkCount, kb: Math.max(1, Math.round((s.size || 0) / 1024)) })));
-    const ren = wbEl("button", "wb-icon"); ren.type = "button"; ren.title = t("wb.rename"); ren.innerHTML = WBI.ren;
+    const ren = wbEl("button", "wb-icon"); ren.type = "button"; ren.title = t("wb.rename"); setHTML(ren, WBI.ren);
     ren.addEventListener("click", async () => {
       const nm = (window.prompt(t("wb.renamePrompt"), s.title) || "").trim();
       if (nm) { await wb.renameSource(s.id, nm); renderWbPanel(); }
     });
-    const del = wbEl("button", "wb-icon wb-icon-del"); del.type = "button"; del.title = t("wb.delete"); del.innerHTML = WBI.del;
+    const del = wbEl("button", "wb-icon wb-icon-del"); del.type = "button"; del.title = t("wb.delete"); setHTML(del, WBI.del);
     del.addEventListener("click", async () => {
       if (!window.confirm(t("wb.deleteSourceConfirm"))) return;
       await wb.deleteSource(s.id); renderWbPanel(); renderWbScope();
@@ -5727,7 +5839,7 @@ function openMindmapPanel() {
 function closeMindmap() { if (mmOverlayEl) mmOverlayEl.classList.add("hidden"); }
 function setMindmapState(kind, msg) {
   const d = document.getElementById("mmDiagram"); if (!d) return;
-  d.innerHTML = `<div class="mm-msg ${kind === "error" ? "mm-err" : ""}">${escapeHtmlSafe(msg)}</div>`;
+  setHTML(d, `<div class="mm-msg ${kind === "error" ? "mm-err" : ""}">${escapeHtmlSafe(msg)}</div>`);
 }
 function escapeHtmlSafe(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
@@ -5747,7 +5859,7 @@ async function renderMindmap(code) {
       // sidebar DOM — so even a Mermaid sanitizer bypass can't land script in an origin that can read
       // the stored BYOK keys. This is the one model-output→DOM path that wasn't already sanitized.
       const safe = window.DOMPurify ? window.DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } }) : svg;
-      d.innerHTML = safe; d._svg = safe;
+      setHTML(d, safe); d._svg = safe;
     }
   } catch (e) {
     // Invalid diagram → show the error and reveal the code so the user can fix it.
@@ -6065,8 +6177,8 @@ function addMessage(role, text, m) {
     div.appendChild(span);
     const bar = document.createElement("div");
     bar.className = "mact-bar err";
-    bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copy"), (b) => copyToClipboard(text || "", b)));
-    bar.appendChild(makeActBtn("mclose", "✕", t("close.title"), () => div.remove()));
+    bar.appendChild(makeActBtn("mcopy", COPY_GLYPH, t("msg.copy"), (b) => copyToClipboard(text || "", b)));
+    bar.appendChild(makeActBtn("mclose", CLOSE_GLYPH, t("close.title"), () => div.remove()));
     div.appendChild(bar);
   } else if (role === "user") {
     // User text lives in its own span so it can be edited/swapped (versions) without wiping the
@@ -6190,7 +6302,7 @@ function makeActBtn(cls, glyph, title, fn) {
   const b = document.createElement("button");
   b.className = "mact " + cls;
   b.type = "button";
-  b.innerHTML = glyph;
+  setHTML(b, glyph);
   b.title = title;
   b.addEventListener("click", (e) => { e.stopPropagation(); fn(b); });
   return b;
@@ -6221,16 +6333,24 @@ function deleteMessageBubble(div, role, rawText) {
     saveSession(sess, mode, currentSelection());
   } catch (_) {}
 }
+// One consistent SVG icon set for the message hover actions (all stroke-based, same 24-viewBox
+// weight) so the copy / edit / resend / markdown / mindmap / delete row reads as ONE clean toolbar
+// instead of a mix of text glyphs (⧉ ✎ ↻ M) and SVGs.
 const DEL_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+const COPY_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const EDIT_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+const RESEND_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v6h6"/><path d="M21 12A9 9 0 0 0 6 5.3L3 8"/><path d="M21 22v-6h-6"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/></svg>';
+const COPYMD_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6 3 12l5 6"/><path d="M16 6l5 6-5 6"/></svg>';
+const CLOSE_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 function attachUserActions(div, rawText) {
   if (!div || div._actsBound) return;
   div._actsBound = true;
   div._raw = rawText || "";
   const bar = document.createElement("div");
   bar.className = "mact-bar user";
-  bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copy"), (b) => copyToClipboard(div._raw, b)));
-  bar.appendChild(makeActBtn("medit", "✎", t("msg.edit"), () => beginEditUserMessage(div)));
-  bar.appendChild(makeActBtn("mresend", "↻", t("msg.resend"), () => resendPrompt(div._raw)));
+  bar.appendChild(makeActBtn("mcopy", COPY_GLYPH, t("msg.copy"), (b) => copyToClipboard(div._raw, b)));
+  bar.appendChild(makeActBtn("medit", EDIT_GLYPH, t("msg.edit"), () => beginEditUserMessage(div)));
+  bar.appendChild(makeActBtn("mresend", RESEND_GLYPH, t("msg.resend"), () => resendPrompt(div._raw)));
   bar.appendChild(makeActBtn("mdel", DEL_GLYPH, t("msg.delete"), () => deleteMessageBubble(div, "user", div._raw)));
   div.appendChild(bar);
   div.addEventListener("dblclick", () => beginEditUserMessage(div));
@@ -6345,8 +6465,8 @@ function attachAssistantActions(el, getRaw) {
   el._actsBound = true;
   const bar = document.createElement("div");
   bar.className = "mact-bar assistant";
-  bar.appendChild(makeActBtn("mcopy", "⧉", t("msg.copyText"), (b) => copyToClipboard(plainTextFromEl(el), b)));
-  bar.appendChild(makeActBtn("mcopymd", "M", t("msg.copyMd"), (b) => copyToClipboard((getRaw && getRaw()) || el._raw || "", b)));
+  bar.appendChild(makeActBtn("mcopy", COPY_GLYPH, t("msg.copyText"), (b) => copyToClipboard(plainTextFromEl(el), b)));
+  bar.appendChild(makeActBtn("mcopymd", COPYMD_GLYPH, t("msg.copyMd"), (b) => copyToClipboard((getRaw && getRaw()) || el._raw || "", b)));
   bar.appendChild(makeActBtn("mmind", '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M7 12h4"/><path d="M11 12 17 7"/><path d="M11 12l6 5"/></svg>', t("mind.make"), () => openMindmapFrom((getRaw && getRaw()) || el._raw || "")));
   bar.appendChild(makeActBtn("mdel", DEL_GLYPH, t("msg.delete"), () => deleteMessageBubble(el, "assistant", (getRaw && getRaw()) || el._raw || "")));
   el.appendChild(bar);
@@ -6529,7 +6649,7 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null, m = null) {
   // tail end glides in like a typewriter — fluid regardless of the provider's chunking.
   const smooth = settings.smoothStream !== false && !prefersReducedMotion();
   let shown = 0, rafId = 0;
-  const paint = () => { contentEl.innerHTML = renderMarkdown(smooth ? raw.slice(0, shown) : raw); };
+  const paint = () => { setHTML(contentEl, renderMarkdown(smooth ? raw.slice(0, shown) : raw)); };
   const tick = () => {
     rafId = 0;
     const gap = raw.length - shown;
@@ -6607,7 +6727,7 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null, m = null) {
       } else if (smooth) {
         if (!rafId) rafId = requestAnimationFrame(tick); // glide new text in via the rAF loop
       } else {
-        contentEl.innerHTML = renderMarkdown(raw);
+        setHTML(contentEl, renderMarkdown(raw));
       }
       scrollMessages();
     },
@@ -6627,7 +6747,7 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null, m = null) {
       if (raw) ensure();
       if (contentEl) {
         contentEl.style.display = "";
-        contentEl.innerHTML = renderMarkdown(raw);
+        setHTML(contentEl, renderMarkdown(raw));
         enhanceArtifacts(contentEl); // turn code blocks into runnable artifact cards
       }
       if (codingDetails) { codingDetails.remove(); codingDetails = null; } // live view no longer needed
@@ -6636,7 +6756,7 @@ function makeSink(badgeLabel, showThink = true, pendingEl = null, m = null) {
     // Replace the rendered content (e.g. to append a verified, deterministic Sources section).
     setRaw(newRaw) {
       raw = newRaw || "";
-      if (contentEl) { contentEl.style.display = ""; contentEl.innerHTML = renderMarkdown(raw); enhanceArtifacts(contentEl); }
+      if (contentEl) { contentEl.style.display = ""; setHTML(contentEl, renderMarkdown(raw)); enhanceArtifacts(contentEl); }
     },
     getEl: () => el,
   };
@@ -7238,9 +7358,9 @@ function voteButtons(el) {
   const wrap = document.createElement("span");
   wrap.className = "cmp-rate";
   const up = document.createElement("button");
-  up.type = "button"; up.className = "cmp-vote cmp-like"; up.innerHTML = THUMB_UP_SVG; up.title = t("vote.like");
+  up.type = "button"; up.className = "cmp-vote cmp-like"; setHTML(up, THUMB_UP_SVG); up.title = t("vote.like");
   const down = document.createElement("button");
-  down.type = "button"; down.className = "cmp-vote cmp-dislike"; down.innerHTML = THUMB_DOWN_SVG; down.title = t("vote.dislike");
+  down.type = "button"; down.className = "cmp-vote cmp-dislike"; setHTML(down, THUMB_DOWN_SVG); down.title = t("vote.dislike");
   const sync = () => {
     up.classList.toggle("on", el._vote === "up");
     down.classList.toggle("on", el._vote === "down");
@@ -7723,7 +7843,7 @@ async function sendToModel(displayText, modelContent, { forceWeb = false, runMod
               head.textContent = "🔁 " + t("hivey.corrected");
               wrap.appendChild(head);
               const body = document.createElement("div");
-              body.innerHTML = renderMarkdown(fixed);
+              setHTML(body, renderMarkdown(fixed));
               enhanceArtifacts(body);
               wrap.appendChild(body);
               wrap._raw = fixed; attachAssistantActions(wrap, () => fixed);
@@ -8311,7 +8431,7 @@ function pdfExtractTextAction() {
   addMessage("user", t("pdf.textLabel"));
   const el = addMessage("assistant", "");
   const all = pdfs.map((p) => `### ${p.name}\n\n${p.text}`).join("\n\n");
-  el.innerHTML = renderMarkdown("```text\n" + all.slice(0, 100000) + "\n```");
+  setHTML(el, renderMarkdown("```text\n" + all.slice(0, 100000) + "\n```"));
   enhanceArtifacts(el);
 }
 async function pdfExtractImages() {
