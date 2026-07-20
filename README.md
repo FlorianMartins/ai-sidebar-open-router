@@ -1,10 +1,67 @@
 # Hivey AI — IA multi-fournisseurs pour Firefox & Chromium
 
-Une extension Firefox **open-source** qui ajoute une **sidebar IA** à la manière de
+![version](https://img.shields.io/badge/version-2.195.0-8b5cf6) ![MV3](https://img.shields.io/badge/manifest-v3-blue) ![licence](https://img.shields.io/badge/licence-MIT-green)
+
+Une extension **open-source** qui ajoute une **sidebar IA** à la manière de
 [sider.ai](https://sider.ai), mais où **vous branchez votre propre IA** (BYOK) et
 qui **interagit réellement avec la page et les onglets** — ce que la sidebar native
 de Firefox ne permet pas. Un équivalent libre n'existait pas.
 
+**Aucun backend, aucune télémétrie, aucune clé fournie.** Tout (clés, conversations,
+base de connaissance, embeddings) reste dans votre navigateur.
+
+## 10 espaces de travail
+
+Une **barre latérale d'activité** à gauche (convention « activity bar » façon
+VS Code / Slack — scale mieux qu'une rangée d'onglets) donne accès à :
+
+| Espace | Rôle |
+|---|---|
+| 💬 **Chat** | Conversation avec la page comme contexte + DeepSearch, résumé, mindmap |
+| 🌐 **Web chats** | Gemini, Claude, ChatGPT, Copilot, Mistral, DeepSeek, Qwen, Kimi, Z.ai, HuggingFace **dans la sidebar, sans clé API** (votre session web) |
+| 🤖 **Agent** | L'IA lit, navigue, clique, remplit — autorisations réglables + garde-fou anti-achat |
+| 🌍 **Traduire** | Traduction page / sélection |
+| ✨ **Améliorer** | Réécriture avec styles (Marketing, Newsletter, Email pro, LinkedIn, Tweet, Blog…) |
+| 🎨 **Image** | Génération d'images (endpoint compatible OpenAI) |
+| 📄 **PDF** | Lecture d'un document et questions dessus |
+| 🛡 **Sécurité** | Assistant **cybersécurité défensive** — analyse de capture `.pcap` résumée localement |
+| 🧠 **Wisebase** | **Base de connaissance locale + RAG**, embeddings calculés dans le navigateur |
+| `</>` **Code** | Atelier d'app IA complet (aperçu live, terminal, QR Expo Go) |
+
+## Fonctionnalités
+
+- 🐝 **Moteur Hivey — orchestration multi-modèles** : au lieu de choisir un modèle,
+  choisissez une **intention**. Trois variantes (**🎁 Free**, **⚡ Smart**, **✨ Pro**)
+  routent chaque message vers le meilleur modèle pour la tâche — un dispatcher LLM
+  bon marché classe la demande (code / raisonnement / recherche / maths / créatif /
+  test / trivial) et bascule sur le palier adéquat, avec repli heuristique si le
+  dispatcher échoue. Le catalogue est **auto-curé quotidiennement**, sans version en dur.
+- 🧠 **Wisebase (RAG 100% local)** : importez documents et pages dans des collections ;
+  le texte est découpé, **vectorisé dans le navigateur** (transformers.js +
+  onnxruntime WASM, modèle `all-MiniLM-L6-v2`) et stocké en **IndexedDB**. Les
+  réponses citent vos sources. Rien n'est jamais téléversé ; désinstaller l'extension
+  purge la base.
+- 🔎 **DeepSearch** : bascule de recherche web approfondie dans le chat, avec une
+  **profondeur réglable** (rapide / standard / approfondie).
+- 🗺 **Mindmap** : génère une **carte mentale ou un flowchart Mermaid** à partir d'une
+  réponse ou de la page courante, dans un panneau dédié.
+- 📚 **Prompt Library** : prompts prêts à l'emploi (rédaction, code, cybersec,
+  marketing, productivité, apprentissage, business, data) + vos propres prompts,
+  favoris et insertion en un clic.
+- ⚡ **Skills & slash-commands** : `/skill` applique un prompt d'expert qui reste actif
+  (chip) et rend **n'importe quel modèle** meilleur sur un domaine — pur prompt
+  engineering côté client, donc compatible avec tous les fournisseurs.
+- 📊 **Modèles classés par spécialité** : chaque espace trie sa liste de modèles selon
+  un **index de qualité curé par catégorie** (les endpoints `/models` n'exposent aucun
+  score) — le picker de l'onglet Image ne classe pas comme celui de l'onglet Code.
+- ⌨️ **Raccourcis clavier configurables** (nouveau chat, focus composer, historique…).
+- 🔐 **Sauvegarde/synchro chiffrée** : export d'un blob **AES-256-GCM** (PBKDF2, 100k
+  itérations) de vos réglages et clés, à transporter vers un autre appareil.
+  Rien ne transite par un serveur — la synchro, c'est vous qui déplacez le fichier.
+- 📤 **Export de conversation** (impression / PDF via le rendu natif du navigateur).
+- 🎨 **Interface moderne & personnalisable** : **6 thèmes** (Dark, Hive, Modern, Neon,
+  Sunset, Light) avec **personnalisation des couleurs par-dessus** (accent, fond,
+  surface, texte) et une **pipette** pour capturer une couleur à l'écran.
 - 🎨 **Interface moderne & personnalisable** : plusieurs **thèmes** (Default, Pro,
   Gamer, Modern, Sunset, Light) avec **personnalisation des couleurs par-dessus**
   (accent, fond, surface, texte) et une **pipette** pour capturer une couleur à
@@ -31,13 +88,16 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
   directement. (Mermaid/SVG pour les diagrammes.)
 - 🕘 **Historique local** : vos conversations sont enregistrées **uniquement dans
   ce navigateur** (privacy) ; liste, rechargement, et « tout effacer ».
-- 🗂 **7 espaces de travail** via une **barre latérale d'activité** à gauche
-  (convention « activity bar » façon VS Code / Slack — scale mieux qu'une rangée
-  d'onglets) : **💬 Chat**, **🤖 Agent**, **🌐 Traduire**, **✨ Améliorer**,
-  **🎨 Image**, **📄 PDF**, **&lt;/&gt; Code**. Le mode Améliorer propose des
-  **styles d'écriture** (Marketing, Newsletter, Email pro, LinkedIn, Tweet, Blog…) ;
-  le mode **PDF** lit un document et répond à vos questions dessus ; le
-  mode **Code** ouvre un atelier d'app IA complet (voir ci-dessous).
+- 🌐 **Web chats sans clé API** : dix IA grand public (Gemini, Claude, ChatGPT,
+  Copilot, Mistral, DeepSeek, Qwen, Kimi, Z.ai, HuggingFace) s'ouvrent **dans la
+  sidebar**, via votre session web déjà connectée — utile quand vous n'avez pas de
+  clé ou que votre abonnement est déjà payé.
+- 🛡 **Espace Sécurité défensive** : assistant orienté défense, avec un parseur
+  `.pcap` **côté client** qui ne produit qu'un **résumé anonymisé** (flux, top
+  talkers/ports, mix protocolaire, heuristiques de scan TCP) — **jamais** les
+  charges utiles. Seul ce résumé peut partir vers le modèle.
+- 🌍 **Interface multilingue** : anglais, français, espagnol, allemand, italien,
+  portugais (réglable dans les paramètres).
 - 👁 **L'IA voit la page** : le contenu est lu automatiquement à l'ouverture d'un
   site **et à chaque navigation** (y compris changement de sous-domaine et
   navigations SPA), puis utilisé comme support pour répondre.
@@ -49,7 +109,6 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
   **outil de capture de zone** (📸) qui ajoute une capture d'écran de la page au contexte.
 - 💭 **Thinking** : le raisonnement du modèle (extended thinking de Claude,
   `reasoning` de DeepSeek / o-series) s'affiche dans un bloc repliable.
-- 🎨 **Génération d'images** (endpoint compatible OpenAI `/images/generations`).
 - 🤖 **Espace Agent** (onglet dédié) : l'IA peut lire la page/les onglets, naviguer,
   cliquer, remplir des champs. **Autorisations réglables** : *Autoriser* (par défaut —
   exécution automatique, mais les **actions sensibles** comme télécharger, réserver,
@@ -60,10 +119,11 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
   panier mais **ne peut jamais payer/commander**. Un **modèle d'agent** dédié est
   réglable (beaucoup de modèles rapides/gratuits ne savent pas appeler d'outils).
 - 🛠 **Espace Code — atelier d'app IA** : ouvre, dans un **nouvel onglet isolé**, un
-  builder d'apps web & mobiles (type **Bolt.diy** / Program Generator) avec **génération de
-  code par l'IA**, **aperçu live**, **terminal intégré** et **QR code Expo Go** pour
-  tester sur mobile. L'URL de l'atelier est **configurable** dans les réglages (votre
-  instance auto-hébergée ou l'instance publique). *Pourquoi un onglet et pas une
+  builder d'apps web & mobiles — **HiveyCode** (`https://app.hivey.be` par défaut) — avec
+  **génération de code par une boucle d'agents** (planner → coder → reviewer → debugger),
+  **aperçu live**, **terminal intégré** et **QR code Expo Go** pour tester sur mobile.
+  L'URL de l'atelier est **configurable** dans les réglages (votre instance
+  auto-hébergée ou l'instance publique). *Pourquoi un onglet et pas une
   iframe ?* le builder s'appuie sur **WebContainers**, qui exigent l'isolation
   cross-origine (COOP/COEP) impossible dans une iframe d'extension — le nouvel onglet
   préserve preview, terminal et Expo Go.
@@ -73,17 +133,13 @@ de Firefox ne permet pas. Un équivalent libre n'existait pas.
 
 ## Capture
 
-Sidebar — thème sombre + dégradé bleu/violet, **barre latérale d'activité** à
-gauche (7 espaces : Chat / Agent / Traduire / Améliorer / Image / PDF / Code),
-sélecteur de modèle juste au-dessus du chat, boutons à bascule, **bouton
-« Comparer » sous la dernière réponse**, et un **artifact interactif jouable** (un
-mini-jeu qui tourne dans l'aperçu sandboxé) — Firefox 152 :
-
 ![Sidebar](docs/screenshots/sidebar-v14.png)
 
-> Capture générée via la page `demo/index.html` (reproduit la sidebar avec une
-> réponse type), rendue dans Firefox sous Xvfb. Validé par `web-ext lint`
-> (0 erreur ; les avertissements proviennent uniquement des libs vendorées).
+> ⚠️ **Capture datée (v1.4, juin 2026)** — elle montre l'ancienne barre d'activité à
+> 7 espaces. L'interface actuelle en compte **10** (ajout de Web chats, Sécurité et
+> Wisebase) et le sélecteur Hivey a remplacé la liste brute de modèles.
+> Capture générée via `demo/index.html`, rendue dans Firefox sous Xvfb.
+> *Contribution bienvenue : une capture à jour.*
 
 ## Installation
 
@@ -152,6 +208,19 @@ src/
     history.js           Historique local des conversations (storage.local)
     storage.js           Réglages locaux (clés/modèles/URLs, autorisations agent, URL atelier Code)
     markdown.js          Rendu Markdown + artifacts interactifs (HTML/JS, React, SVG, Mermaid)
+    hivey-models.js      Moteur Hivey : paliers par capacité, auto-curation du catalogue
+    benchmarks.js        Index de qualité curé par famille de modèle et par catégorie
+    wisebase.js          Base de connaissance locale + RAG (collections, chunks, IndexedDB)
+    embeddings.js        Embeddings calculés dans le navigateur (transformers.js / WASM)
+    skills.js            Skills experts + objectifs, exposés en slash-commands
+    prompts.js           Prompt Library intégrée (8 catégories, bilingue)
+    pcap.js              Parseur .pcap client → résumé défensif anonymisé
+    shortcuts.js         Raccourcis clavier configurables
+    syncCrypto.js        Export/import chiffré AES-256-GCM des réglages (PBKDF2)
+    exportConversation.js Export/impression d'une conversation
+    theme.js             6 thèmes + surcouche de couleurs personnalisées
+    i18n.js / i18n-langs.js  Traductions UI (en, fr, es, de, it, pt)
+    dom.js               Point d'insertion HTML unique (audit sécurité)
 ```
 
 ### Détails techniques
@@ -198,6 +267,22 @@ src/
   configurée par l'utilisateur (pas de redirection silencieuse). La séparation
   d'origine (WebContainers/COOP-COEP) qui empêche l'embarquement en iframe **renforce**
   aussi l'isolation : la sidebar et l'atelier ne partagent pas de contexte d'exécution.
+- **Wisebase entièrement local** : les collections, les extraits de texte **et les
+  vecteurs d'embedding** vivent en IndexedDB. Les embeddings sont calculés **dans le
+  navigateur** (moteur WASM embarqué dans l'extension) ; seul le *modèle* (~23 Mo) est
+  téléchargé une fois depuis le CDN Hugging Face puis mis en cache. Aucun texte ne sort.
+- **Analyse `.pcap` anonymisante** : le parseur tourne côté client et ne produit qu'un
+  **résumé statistique** (flux, ports, protocoles). Les charges utiles ne sont ni
+  extraites ni envoyées.
+- **Sauvegarde chiffrée, pas de cloud** : l'export des réglages est chiffré en
+  **AES-256-GCM** avec une clé dérivée par **PBKDF2 (100 000 itérations)**. Le fichier
+  est déplacé par vos soins — il n'existe aucun serveur de synchro.
+- **Point d'insertion HTML unique** : toute écriture de HTML passe par `src/lib/dom.js`,
+  ce qui réduit la surface XSS à un seul fichier auditable. Le Markdown du modèle est
+  systématiquement passé dans **DOMPurify** avant rendu.
+- **`declarativeNetRequest` au périmètre minimal** : les règles ne s'appliquent qu'aux
+  **11 domaines de chat web** effectivement supportés — aucun domaine
+  d'authentification, aucun domaine parent large.
 - **CSP stricte** sur les pages d'extension (`script-src 'self'`) ; les artifacts
   (HTML/JS/React/SVG/Mermaid) s'exécutent en **iframe sandboxée** (origine opaque,
   sans `allow-same-origin`), isolés de l'extension, des pages et des clés.
@@ -225,23 +310,30 @@ bouton **Ouvrir** (plein écran) :
 ## Feuille de route
 
 - [x] Multi-fournisseurs + modèles locaux (Ollama / LM Studio / custom)
-- [x] Lecture auto de la page à chaque navigation (sous-domaine, SPA)
-- [x] Lecture multi-onglets (sélection des onglets à donner en contexte)
-- [x] Espaces dédiés via barre d'activité : Chat / Agent / Traduire / Améliorer / Image / PDF / Code
-- [x] Actions rapides + clic droit (page & sélection) + rédaction de réponse
-- [x] Espace agent avec autorisations réglables (manuel / auto) + garde-fou anti-achat
-- [x] Espace Code : atelier d'app IA (Bolt.diy / Program Generator) en nouvel onglet (preview, Expo Go)
-- [x] Thinking / raisonnement
-- [x] Interface moderne (sombre + dégradé), sélecteur unifié, boutons à bascule
-- [x] Connexion par compte (OAuth OpenRouter)
-- [x] Comparaison de 2 modèles côte à côte
+- [x] Moteur **Hivey** : orchestration multi-modèles (Free / Smart / Pro) + auto-curation du catalogue
+- [x] **Wisebase** : base de connaissance locale + RAG, embeddings dans le navigateur
+- [x] **DeepSearch**, **Mindmap**, **Prompt Library**, **Skills** en slash-commands
+- [x] **Web chats sans clé API** (10 IA grand public dans la sidebar)
+- [x] **Espace Sécurité défensive** + parseur `.pcap` anonymisant côté client
+- [x] Lecture auto de la page à chaque navigation (sous-domaine, SPA) + multi-onglets
+- [x] Espace agent avec autorisations réglables + garde-fou anti-achat
+- [x] Espace Code : atelier d'app IA en nouvel onglet (preview, terminal, Expo Go)
 - [x] Artifacts interactifs façon Claude (HTML/JS jouable, React/JSX)
-- [x] Historique de conversations local (privacy)
-- [x] Styles d'écriture (marketing, newsletter, email, LinkedIn…)
-- [ ] Capture d'écran d'onglet pour modèles vision
-- [ ] Publication sur AMO — note aux relecteurs pour `vendor/mermaid.min.js`
-      (lib minifiée ; son `Function` constructor ne s'exécute que dans l'iframe
-      sandboxée, hors CSP de l'extension)
+- [x] Historique local, export de conversation, sauvegarde chiffrée, raccourcis configurables
+- [x] 6 thèmes + couleurs personnalisées, interface en 6 langues
+- [x] **Conformité magasins** : `addons-linter` **0 erreur / 0 note**, manifests Firefox
+      et Chromium dédiés, périmètre `declarativeNetRequest` restreint, déclaration de
+      collecte de données — voir [PUBLISHING.md](PUBLISHING.md)
+- [ ] Soumission **AMO** (canal *listed*)
+- [ ] Soumission **Chrome Web Store**
+- [ ] Capture d'écran du README à régénérer (UI à 10 espaces)
+
+## Documentation
+
+| Document | Contenu |
+|---|---|
+| [PUBLISHING.md](PUBLISHING.md) | Publication pas-à-pas sur **AMO**, **Chrome Web Store** et **Edge** : signature *unlisted*, auto-update auto-hébergé, justification de **chaque permission**, réponses de l'onglet « Confidentialité », checklist avant soumission |
+| [REVIEWERS.md](REVIEWERS.md) | Note aux relecteurs : build reproductible, libs vendorées, avertissements attendus et pourquoi, déclaration de collecte de données, périmètre `declarativeNetRequest` |
 
 ## Licence
 

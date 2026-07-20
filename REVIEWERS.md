@@ -13,7 +13,7 @@ shipped **unmodified** from their official releases (verifiable by SHA-256, see 
 
 - Source repository: https://github.com/FlorianMartins/ai-sidebar-open-router
 - The submitted package corresponds to the git tag matching its `version`
-  (e.g. version `1.33.0` → tag `v1.33.0`).
+  (e.g. version `2.195.0` → tag `v2.195.0`).
 
 ---
 
@@ -71,8 +71,8 @@ bash scripts/build.sh
 
 This produces, in the repository root:
 
-- `ai-sidebar-1.33.0-firefox.zip`  (Firefox — built from `manifest.json`)
-- `ai-sidebar-chrome-1.33.0.zip`   (Chromium — built from `manifest.chrome.json`)
+- `ai-sidebar-2.195.0-firefox.zip`  (Firefox — built from `manifest.json`)
+- `ai-sidebar-chrome-2.195.0.zip`   (Chromium — built from `manifest.chrome.json`)
 
 The contents of `ai-sidebar-<version>-firefox.zip` are byte-for-byte the files under
 `src/`, `icons/`, `vendor/`, plus `manifest.json`, `LICENSE` and `README.md` — i.e.
@@ -106,6 +106,8 @@ each from its official source and verifies it against the SHA-256 below.
 | `mermaid.min.js`            | Mermaid                | 10.9.1     | `mermaid@10.9.1/dist/mermaid.min.js` | `61b335a4…04a936d6` |
 | `pdf.min.js`                | PDF.js (pdfjs-dist)    | 3.11.174   | `pdfjs-dist@3.11.174/legacy/build/pdf.min.js` | `978fd1b2…21a5aa6c` |
 | `pdf.worker.min.js`         | PDF.js worker          | 3.11.174   | `pdfjs-dist@3.11.174/legacy/build/pdf.worker.min.js` | `38cde531…f00e96f2` |
+| `transformers/transformers.min.js` | Transformers.js | 2.17.2     | `@xenova/transformers@2.17.2/dist/transformers.min.js` | `bcf7cf30…9c4ff812` |
+| `transformers/ort-wasm-simd.wasm`  | ONNX Runtime Web (WASM) | 1.14.0 | `onnxruntime-web@1.14.0/dist/ort-wasm-simd.wasm` | `9bd07bab…fe776d865` |
 
 Verify them at any time:
 
