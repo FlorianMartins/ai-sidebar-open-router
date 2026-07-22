@@ -109,6 +109,7 @@ export const PROVIDERS = {
       ["nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron 3 Nano 30B A3B — free"],
       ["nvidia/nemotron-nano-12b-v2-vl:free", "Nemotron Nano 12B 2 VL — free"],
       ["nvidia/nemotron-nano-9b-v2:free", "Nemotron Nano 9B V2 — free"],
+      ["poolside/laguna-s-2.1:free", "Laguna S 2.1 — free"],
       ["poolside/laguna-xs-2.1:free", "Laguna XS 2.1 — free"],
       ["cohere/north-mini-code:free", "North Mini Code — free"],
       ["poolside/laguna-m.1:free", "Laguna M.1 — free"],
@@ -119,9 +120,9 @@ export const PROVIDERS = {
       ["openai/gpt-5.6-luna-pro", "GPT-5.6 Luna Pro (paid)"],
       ["openai/gpt-5.6-luna", "GPT-5.6 Luna (paid)"],
       ["openai/gpt-5.6-terra-pro", "GPT-5.6 Terra Pro (paid)"],
+      ["google/gemini-3.6-flash", "Gemini 3.6 Flash (paid)"],
       ["google/gemini-3.5-flash", "Gemini 3.5 Flash (paid)"],
       ["google/gemini-2.5-flash", "Gemini 2.5 Flash (paid)"],
-      ["google/gemini-2.5-pro", "Gemini 2.5 Pro (paid)"],
       ["x-ai/grok-4.5", "Grok 4.5 (paid)"],
       ["x-ai/grok-build-0.1", "Grok Build 0.1 (paid)"],
       ["x-ai/grok-4.3", "Grok 4.3 (paid)"],
@@ -149,10 +150,11 @@ export const PROVIDERS = {
     // auto-maintained by scripts/update-models.mjs (daily)
     // <models:google:start>
     models: [
+      ["gemini-3.6-flash", "Gemini 3.6 Flash"],
       ["gemini-3.5-flash", "Gemini 3.5 Flash"],
       ["gemini-2.5-flash", "Gemini 2.5 Flash"],
       ["gemini-2.5-pro", "Gemini 2.5 Pro"],
-      ["gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite"],
+      ["gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"],
     ],
     // <models:google:end>
   },
