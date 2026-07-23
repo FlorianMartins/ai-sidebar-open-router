@@ -154,7 +154,7 @@ export const PROVIDERS = {
       ["gemini-3.5-flash", "Gemini 3.5 Flash"],
       ["gemini-2.5-flash", "Gemini 2.5 Flash"],
       ["gemini-2.5-pro", "Gemini 2.5 Pro"],
-      ["gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"],
+      ["gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite"],
     ],
     // <models:google:end>
   },
