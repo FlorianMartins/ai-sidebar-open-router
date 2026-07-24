@@ -109,6 +109,7 @@ export const PROVIDERS = {
       ["nvidia/nemotron-3-nano-30b-a3b:free", "Nemotron 3 Nano 30B A3B — free"],
       ["nvidia/nemotron-nano-12b-v2-vl:free", "Nemotron Nano 12B 2 VL — free"],
       ["nvidia/nemotron-nano-9b-v2:free", "Nemotron Nano 9B V2 — free"],
+      ["inclusionai/ling-3.0-flash:free", "Ling-3.0-flash — free"],
       ["poolside/laguna-s-2.1:free", "Laguna S 2.1 — free"],
       ["poolside/laguna-xs-2.1:free", "Laguna XS 2.1 — free"],
       ["cohere/north-mini-code:free", "North Mini Code — free"],
